@@ -413,6 +413,7 @@ def load_api_keys():
     for k in [
         "ANTHROPIC_API_KEY",
         "ELEVENLABS_API_KEY",
+        "ELEVENLABS_VOICE_ID",
         "FAL_KEY",
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용
         "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID
@@ -513,6 +514,52 @@ with st.sidebar:
             if st.button(label, key=f"proj_{p['id']}", use_container_width=True):
                 st.session_state.current_project = manager.load_state(p["dir"])
                 st.rerun()
+
+    st.markdown("---")
+
+    # ── JSON 백업 / 복구 ──────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="color:rgba(255,255,255,0.6); font-size:11px; '
+        'margin-bottom:6px;">💾 프로젝트 백업 / 복구</div>',
+        unsafe_allow_html=True,
+    )
+
+    # 현재 프로젝트 JSON 다운로드
+    if st.session_state.get("current_project"):
+        import json as _json
+        _proj = st.session_state.current_project
+        _json_bytes = _json.dumps(_proj, ensure_ascii=False, indent=2).encode("utf-8")
+        _filename = f"{_proj.get('title', 'project')[:30]}.json"
+        st.download_button(
+            label="⬇ 현재 프로젝트 JSON 저장",
+            data=_json_bytes,
+            file_name=_filename,
+            mime="application/json",
+            use_container_width=True,
+            key="json_download",
+        )
+    else:
+        st.caption("프로젝트를 선택하면 JSON 저장 버튼이 나타납니다.")
+
+    # JSON 업로드로 복구
+    uploaded_json = st.file_uploader(
+        "⬆ JSON 업로드로 복구",
+        type=["json"],
+        key="json_upload",
+        label_visibility="collapsed",
+    )
+    if uploaded_json is not None:
+        import json as _json
+        try:
+            restored = _json.loads(uploaded_json.read().decode("utf-8"))
+            # projects/ 에 상태 파일 재저장
+            manager.save_state(restored)
+            st.session_state.current_project = restored
+            st.success("복구 완료!")
+            time.sleep(0.5)
+            st.rerun()
+        except Exception as _e:
+            st.error(f"복구 실패: {_e}")
 
     st.markdown("---")
     st.markdown(
@@ -932,17 +979,37 @@ if step3_audio_done:
     if os.path.exists(audio_path):
         st.audio(audio_path, format="audio/mp3")
     else:
-        st.caption(f"파일 경로: `{audio_path}`")
+        st.warning("음성 파일이 세션 초기화로 사라졌습니다. 아래 버튼으로 재생성하세요.")
+
 elif not step3_audio_locked:
     if not api_keys.get("ELEVENLABS_API_KEY"):
         st.info("ELEVENLABS_API_KEY를 Streamlit Cloud Secrets에 등록하면 이 단계를 실행할 수 있습니다.")
     else:
-        st.info(
-            "🔧 **`src/audio.py` 구현 대기 중** — "
-            "ElevenLabs 연동 코드가 완성되면 이 버튼이 활성화됩니다.",
-            icon="ℹ️",
-        )
-        st.button("음성 생성 실행 (준비 중)", disabled=True)
+        narration_text = state.get("full_narration", "").strip()
+        if not narration_text:
+            st.warning("대본에 full_narration 텍스트가 없습니다. STEP 1을 먼저 실행하세요.")
+        else:
+            voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+            st.caption(f"음성 ID: `{voice_id}` · 모델: `eleven_multilingual_v2`")
+            audio_btn = st.button("🎙 나레이션 음성 생성", key="audio_gen")
+            if audio_btn:
+                with st.spinner("ElevenLabs 음성 생성 중..."):
+                    try:
+                        from src.audio import generate_narration
+                        audio_out = os.path.join(state["project_dir"], "narration.mp3")
+                        generate_narration(
+                            api_key=api_keys["ELEVENLABS_API_KEY"],
+                            text=narration_text,
+                            output_path=audio_out,
+                            voice_id=voice_id,
+                        )
+                        state["audio_path"] = audio_out
+                        manager.save_state(state)
+                        st.session_state.current_project = state
+                        st.success("음성 생성 완료!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"음성 생성 실패: {e}")
 
 st.markdown("---")
 
