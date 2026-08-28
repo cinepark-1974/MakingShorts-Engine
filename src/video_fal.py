@@ -18,6 +18,35 @@ DEFAULT_ASPECT   = "9:16" # 세로 숏폼
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 내부 헬퍼: 로컬 파일 → fal.ai 업로드 URL 변환
+# ─────────────────────────────────────────────────────────────────────────────
+def _local_to_fal_url(local_path: str) -> str:
+    """
+    로컬 이미지 파일을 fal.ai 스토리지에 업로드하고 CDN URL을 반환한다.
+    Flux로 생성한 PNG를 Kling image-to-video 첫 프레임으로 사용할 때 호출된다.
+
+    Args:
+        local_path : 로컬 이미지 파일 경로 (.png / .jpg / .jpeg / .webp)
+
+    Returns:
+        str : fal.ai CDN URL
+    """
+    ext = os.path.splitext(local_path)[1].lower()
+    mime_map = {
+        ".png":  "image/png",
+        ".jpg":  "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    content_type = mime_map.get(ext, "image/png")
+
+    with open(local_path, "rb") as f:
+        image_bytes = f.read()
+
+    return fal_client.upload(image_bytes, content_type)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 내부 헬퍼: 구글 드라이브 URL → fal.ai 업로드 URL 변환
 # ─────────────────────────────────────────────────────────────────────────────
 def _gdrive_file_id(url: str) -> str | None:
@@ -121,11 +150,13 @@ def generate_single_clip(
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # 구글 드라이브 URL → fal.ai CDN URL로 변환
-        if "drive.google.com" in image_url:
+        # 이미지 소스 판별: 로컬 파일 → fal 업로드 / 드라이브 → 변환 / 공개 URL → 그대로
+        if os.path.isfile(image_url):
+            fal_image_url = _local_to_fal_url(image_url)
+        elif "drive.google.com" in image_url:
             fal_image_url = _gdrive_to_fal_url(image_url)
         else:
-            fal_image_url = image_url  # 이미 공개 URL이면 그대로 사용
+            fal_image_url = image_url  # 이미 공개 URL
 
         model = KLING_IMAGE_MODEL
         arguments = {
