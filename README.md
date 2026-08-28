@@ -49,7 +49,7 @@ youandiknowcoffee-shorts-factory/
 │   └── assembler.py              # FFmpeg + Whisper — 자막·SFX·BGM 합성기
 ├── assets/
 │   └── sfx/                      # whoosh, impact, tech, steam 등 효과음
-├── app.py                        # Streamlit 메인 대시보드
+├── main.py                       # Streamlit 메인 대시보드
 ├── packages.txt                  # Streamlit Cloud 서버 패키지 (ffmpeg)
 ├── requirements.txt              # Python 라이브러리 의존성
 └── README.md
@@ -103,7 +103,7 @@ FAL_KEY            = "..."
 ### 4. 앱 실행
 
 ```bash
-streamlit run app.py
+streamlit run main.py
 ```
 
 브라우저에서 `http://localhost:8501` 접속
@@ -125,7 +125,7 @@ git push -u origin main
 ### 2. Streamlit Cloud 배포
 
 1. [share.streamlit.io](https://share.streamlit.io) 접속 → **New app**
-2. GitHub 저장소 선택 → Main file: `app.py`
+2. GitHub 저장소 선택 → Main file: `main.py`
 3. **Advanced settings > Secrets**에 아래 3개 키 등록:
 
 ```toml
@@ -153,7 +153,7 @@ FAL_KEY            = "..."
 
 | 파일 | 상태 | 비고 |
 |---|---|---|
-| `app.py` | ✅ 완성 | Streamlit 메인 대시보드 |
+| `main.py` | ✅ 완성 | Streamlit 메인 대시보드 |
 | `src/state_manager.py` | ✅ 완성 | JSON 상태 저장·불러오기 |
 | `src/prompts.py` | ✅ 완성 | Claude API 대본 생성 |
 | `src/video_fal.py` | ✅ 완성 | Fal.ai Kling 영상 생성 |

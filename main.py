@@ -15,124 +15,157 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ──────────────────────────────────────────────────────────────────────
+# ── CSS (라이트 테마 — config.toml 기준) ─────────────────────────────────────
 st.markdown("""
 <style>
+/* ── 기본 팔레트 변수 ──
+   primary  : #FFCB05  (밝은 노랑)
+   bg       : #F7F7F5  (아이보리 화이트)
+   bg2      : #EEEEF6  (연보라 그레이)
+   text     : #1A1A2E  (딥 네이비)
+   coffee   : #7B4F2E  (커피 브라운 — 포인트)
+   success  : #2D6A4F
+   error    : #C0392B
+*/
+
 /* 전체 배경 */
-.stApp { background-color: #0e0e0e; color: #f0ece4; }
+.stApp { background-color: #F7F7F5; color: #1A1A2E; }
 
 /* 사이드바 */
-section[data-testid="stSidebar"] { background-color: #1a1410; }
+section[data-testid="stSidebar"] {
+    background-color: #EEEEF6;
+    border-right: 1px solid #D8D8EC;
+}
 
-/* 카드 컨테이너 */
+/* ── 씬 카드 ── */
 .scene-card {
-    background: #1c1812;
-    border: 1px solid #3a2e22;
+    background: #FFFFFF;
+    border: 1.5px solid #E0E0EE;
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 12px;
-    position: relative;
+    box-shadow: 0 1px 4px rgba(26,26,46,0.06);
+    transition: border-color 0.15s;
 }
-.scene-card:hover { border-color: #c8a96e; }
+.scene-card:hover { border-color: #FFCB05; }
 
-/* 상태 배지 */
+/* ── 상태 배지 ── */
 .badge {
     display: inline-block;
     padding: 2px 10px;
     border-radius: 20px;
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
 }
-.badge-pending  { background:#2a2520; color:#8a7a6a; border:1px solid #3a3028; }
-.badge-generating { background:#1a2a1a; color:#6abf6a; border:1px solid #2a4a2a; }
-.badge-done     { background:#1a2a1a; color:#4caf50; border:1px solid #2a5a2a; }
-.badge-error    { background:#2a1a1a; color:#e05050; border:1px solid #5a2020; }
+.badge-pending    { background:#F0F0F8; color:#8888AA; border:1px solid #D0D0E8; }
+.badge-generating { background:#FFFBE6; color:#B8860B; border:1px solid #FFCB05; }
+.badge-done       { background:#E8F5E9; color:#2D6A4F; border:1px solid #81C784; }
+.badge-error      { background:#FDECEA; color:#C0392B; border:1px solid #EF9A9A; }
 
-/* 씬 번호 */
+/* ── 씬 번호 / 이름 ── */
 .scene-num {
     font-size: 22px;
-    font-weight: 800;
-    color: #c8a96e;
+    font-weight: 900;
+    color: #FFCB05;
     line-height: 1;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.08);
 }
-.scene-name { font-size: 12px; color: #8a7a6a; margin-top: 2px; }
+.scene-name { font-size: 12px; color: #7B4F2E; margin-top: 2px; font-weight: 600; }
 
-/* 나레이션 */
+/* ── 나레이션 박스 ── */
 .narration-text {
     font-size: 13px;
-    color: #d4cfc8;
-    line-height: 1.6;
+    color: #1A1A2E;
+    line-height: 1.7;
     margin: 8px 0;
     padding: 8px 12px;
-    background: #130f0b;
-    border-left: 3px solid #c8a96e;
+    background: #FFFEF0;
+    border-left: 3px solid #FFCB05;
     border-radius: 0 6px 6px 0;
 }
 
-/* 프롬프트 박스 */
+/* ── 영문 프롬프트 박스 ── */
 .prompt-text {
     font-size: 11px;
-    color: #7a9a8a;
+    color: #5A7A6A;
     font-family: monospace;
-    background: #0d1510;
+    background: #F0F4F2;
     padding: 6px 10px;
     border-radius: 6px;
     word-break: break-all;
     margin-top: 6px;
+    border: 1px solid #D8E8E0;
 }
 
-/* 오버레이 텍스트 / SFX */
+/* ── 메타 칩 (SFX / 오버레이) ── */
 .meta-chips { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .chip {
     font-size: 11px;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 12px;
-    background: #241e16;
-    color: #b09060;
-    border: 1px solid #3a2e1c;
+    background: #EEEEF6;
+    color: #7B4F2E;
+    border: 1px solid #D8D8EC;
+    font-weight: 600;
 }
 
-/* 스텝 헤더 */
+/* ── 스텝 헤더 ── */
 .step-header {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
-    background: #1a1410;
+    padding: 12px 18px;
+    background: #FFFFFF;
     border-radius: 10px;
     margin-bottom: 16px;
-    border: 1px solid #2a2018;
+    border: 1.5px solid #E0E0EE;
+    box-shadow: 0 1px 3px rgba(26,26,46,0.05);
 }
 .step-num {
-    width: 32px; height: 32px;
+    width: 34px; height: 34px;
     border-radius: 50%;
-    background: #c8a96e;
-    color: #0e0e0e;
-    font-weight: 800;
-    font-size: 14px;
+    background: #FFCB05;
+    color: #1A1A2E;
+    font-weight: 900;
+    font-size: 15px;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(255,203,5,0.35);
 }
-.step-num.done { background: #4caf50; }
-.step-num.locked { background: #3a3028; color: #6a5a4a; }
-.step-title { font-size: 15px; font-weight: 700; color: #f0ece4; }
-.step-sub   { font-size: 12px; color: #7a6a5a; }
+.step-num.done   { background: #2D6A4F; color: #FFFFFF; box-shadow: none; }
+.step-num.locked { background: #D8D8EC; color: #AAAACC; box-shadow: none; }
+.step-title { font-size: 15px; font-weight: 700; color: #1A1A2E; }
+.step-sub   { font-size: 12px; color: #7B4F2E; margin-top: 1px; }
 
-/* 프로그레스 바 커스텀 */
+/* ── 프로그레스 바 ── */
 div[data-testid="stProgress"] > div > div {
-    background: linear-gradient(90deg, #c8a96e, #e8c98e) !important;
+    background: linear-gradient(90deg, #FFCB05, #FFE066) !important;
 }
 
-/* 버튼 */
+/* ── 버튼 ── */
 .stButton > button {
-    background: #c8a96e;
-    color: #0e0e0e;
+    background: #FFCB05;
+    color: #1A1A2E;
     border: none;
     font-weight: 700;
     border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(255,203,5,0.30);
 }
-.stButton > button:hover { background: #e8c98e; }
+.stButton > button:hover {
+    background: #FFD740;
+    box-shadow: 0 3px 10px rgba(255,203,5,0.45);
+}
+
+/* ── 푸터 ── */
+.factory-footer {
+    text-align: center;
+    color: #AAAACC;
+    font-size: 12px;
+    padding: 24px 0 8px;
+    border-top: 1px solid #E0E0EE;
+    margin-top: 16px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -639,7 +672,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # 푸터
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="text-align:center; color:#4a3a2a; font-size:12px; padding:20px 0;">
+<div class="factory-footer">
   너도나도아는커피 숏폼 팩토리 · Powered by Claude API · ElevenLabs · Fal.ai Kling
 </div>
 """, unsafe_allow_html=True)
