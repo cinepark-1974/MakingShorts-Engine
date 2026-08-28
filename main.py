@@ -727,58 +727,35 @@ p5_locked = done_cnt < total_cnt or total_cnt == 0 or not state.get("audio_path"
 
 
 def _pipe_step_html(icon, label, count_str, cls):
-    return f"""
-    <div class="pipe-step {cls}">
-      <div class="pipe-icon">{icon}</div>
-      <div class="pipe-label">{label}</div>
-      <div class="pipe-count">{count_str}</div>
-    </div>"""
+    return (
+        f'<div class="pipe-step {cls}">'
+        f'<div class="pipe-icon">{icon}</div>'
+        f'<div class="pipe-label">{label}</div>'
+        f'<div class="pipe-count">{count_str}</div>'
+        f'</div>'
+    )
 
 
 refresh_badge = ""
 if any_generating:
     refresh_badge = '<span class="refresh-badge">⚙️ 생성 중 · 자동 새로고침</span>'
 
-st.markdown(f"""
-<div class="pipeline-panel">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-    <div class="pipeline-title">⚡ 파이프라인 현황</div>
-    {refresh_badge}
-  </div>
-  <div class="pipeline-steps">
-    {_pipe_step_html(
-        _pipe_icon(p1_done, p1_active, p1_locked),
-        "① 대본",
-        "완료" if p1_done else "대기",
-        _pipe_cls(p1_done, p1_active, p1_locked)
-    )}
-    {_pipe_step_html(
-        _pipe_icon(p2_done, p2_active, p2_locked),
-        "② 이미지",
-        f"{img_done_cnt_panel}/{total_cnt}컷" if not p2_locked else "잠금",
-        _pipe_cls(p2_done, p2_active, p2_locked)
-    )}
-    {_pipe_step_html(
-        _pipe_icon(p3_done, p3_active, p3_locked),
-        "③ 음성",
-        "완료" if p3_done else ("대기" if p3_locked else "준비중"),
-        _pipe_cls(p3_done, p3_active, p3_locked)
-    )}
-    {_pipe_step_html(
-        _pipe_icon(p4_done, p4_active, p4_locked),
-        "④ 영상",
-        f"{done_cnt}/{total_cnt}컷" if not p4_locked else "잠금",
-        _pipe_cls(p4_done, p4_active, p4_locked)
-    )}
-    {_pipe_step_html(
-        _pipe_icon(p5_done, p5_active, p5_locked),
-        "⑤ 최종합성",
-        "완료" if p5_done else ("잠금" if p5_locked else "대기"),
-        _pipe_cls(p5_done, p5_active, p5_locked)
-    )}
-  </div>
-</div>
-""", unsafe_allow_html=True)
+s1 = _pipe_step_html(_pipe_icon(p1_done,p1_active,p1_locked), "① 대본",   "완료" if p1_done else "대기",                              _pipe_cls(p1_done,p1_active,p1_locked))
+s2 = _pipe_step_html(_pipe_icon(p2_done,p2_active,p2_locked), "② 이미지", f"{img_done_cnt_panel}/{total_cnt}컷" if not p2_locked else "잠금", _pipe_cls(p2_done,p2_active,p2_locked))
+s3 = _pipe_step_html(_pipe_icon(p3_done,p3_active,p3_locked), "③ 음성",   "완료" if p3_done else ("대기" if p3_locked else "준비중"),         _pipe_cls(p3_done,p3_active,p3_locked))
+s4 = _pipe_step_html(_pipe_icon(p4_done,p4_active,p4_locked), "④ 영상",   f"{done_cnt}/{total_cnt}컷" if not p4_locked else "잠금",           _pipe_cls(p4_done,p4_active,p4_locked))
+s5 = _pipe_step_html(_pipe_icon(p5_done,p5_active,p5_locked), "⑤ 합성",   "완료" if p5_done else ("잠금" if p5_locked else "대기"),           _pipe_cls(p5_done,p5_active,p5_locked))
+
+panel_html = (
+    '<div class="pipeline-panel">'
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+    '<div class="pipeline-title">⚡ 파이프라인 현황</div>'
+    f'{refresh_badge}'
+    '</div>'
+    f'<div class="pipeline-steps">{s1}{s2}{s3}{s4}{s5}</div>'
+    '</div>'
+)
+st.markdown(panel_html, unsafe_allow_html=True)
 
 st.markdown("---")
 
