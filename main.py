@@ -411,42 +411,75 @@ if st.session_state.current_project is None:
     )
     st.markdown("---")
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        chapter = st.text_input(
-            "챕터 (Chapter)",
-            placeholder="예: CH01 커피의 탄생",
-            help="예시: CH01 커피의 탄생 / CH02 에스프레소의 과학"
-        )
-    with col2:
-        topic = st.text_input(
-            "주제 (Topic)",
-            placeholder="예: 에티오피아 예가체프 내추럴 프로세싱의 비밀",
-            help="구체적일수록 좋은 대본이 생성됩니다."
+    # ── 챕터 목록 (드롭다운) ─────────────────────────────────────────────────
+    CHAPTERS = {
+        "CH01 · 커피의 탄생과 역사":    "CH01 커피의 탄생과 역사",
+        "CH02 · 품종과 원산지":         "CH02 품종과 원산지",
+        "CH03 · 가공 방식 (프로세싱)":  "CH03 가공 방식",
+        "CH04 · 로스팅의 과학":         "CH04 로스팅의 과학",
+        "CH05 · 에스프레소의 원리":     "CH05 에스프레소의 원리",
+        "CH06 · 브루잉 방법론":         "CH06 브루잉 방법론",
+        "CH07 · 아이스 & 시그니처 음료":"CH07 아이스 & 시그니처 음료",
+        "CH08 · 카페 문화와 트렌드":    "CH08 카페 문화와 트렌드",
+        "CH09 · 커피와 건강":           "CH09 커피와 건강",
+        "CH10 · 홈카페 장비 가이드":    "CH10 홈카페 장비 가이드",
+        "─────────────":               None,          # 구분선 역할 (선택 불가)
+        "챕터 없이 주제만으로 생성":    "MISC",
+    }
+    CHAPTER_LABELS = list(CHAPTERS.keys())
+
+    # 주제 입력 — 가장 크게, 맨 위
+    topic = st.text_input(
+        "어떤 커피 이야기를 만들까요?",
+        placeholder="예: 아이스아메리카노와 롱블랙의 차이   |   예가체프 내추럴 프로세싱의 비밀",
+        help="구체적인 키워드나 질문 형태로 입력할수록 대본 품질이 높아집니다.",
+    )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # 챕터 선택 — 선택형, 기본값은 "챕터 없이"
+    col_ch, col_gap = st.columns([2, 3])
+    with col_ch:
+        chapter_label = st.selectbox(
+            "챕터 분류 (선택)",
+            options=CHAPTER_LABELS,
+            index=CHAPTER_LABELS.index("챕터 없이 주제만으로 생성"),
+            help="챕터를 선택하면 해당 영역에 맞는 대본이 생성됩니다. 몰라도 괜찮습니다.",
         )
 
-    st.markdown("")
+    # 구분선 선택 방지
+    chapter_val = CHAPTERS.get(chapter_label)
+    if chapter_val is None:
+        st.warning("구분선은 선택할 수 없습니다. 다른 챕터를 선택해 주세요.")
+        chapter_val = "MISC"
+
+    # 최종 챕터 문자열
+    chapter = "" if chapter_val == "MISC" else chapter_val
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
     start_btn = st.button(
         "☕ 대본 생성 시작",
-        disabled=(not chapter or not topic or not api_keys.get("ANTHROPIC_API_KEY")),
+        disabled=(not topic.strip() or not api_keys.get("ANTHROPIC_API_KEY")),
         use_container_width=False,
     )
 
     if start_btn:
-        if not chapter.strip() or not topic.strip():
-            st.error("챕터와 주제를 모두 입력해 주세요.")
+        if not topic.strip():
+            st.error("주제를 입력해 주세요.")
         else:
+            chapter_for_api = chapter.strip() if chapter.strip() else "MISC"
             with st.spinner("Claude AI가 12컷 대본을 작성하고 있습니다… (약 20~40초)"):
                 try:
                     # 프로젝트 디렉터리 생성
                     new_state = manager.create_new_project(
-                        chapter=chapter.strip(),
+                        chapter=chapter_for_api,
                         topic=topic.strip()
                     )
                     # Claude API 호출
                     result = generate_script_and_prompts(
                         api_key=api_keys["ANTHROPIC_API_KEY"],
-                        chapter=chapter.strip(),
+                        chapter=chapter_for_api,
                         topic=topic.strip(),
                     )
                     # state 업데이트
@@ -643,6 +676,7 @@ else:
                             fal_key=fal_key,
                             prompt=scene.get("flow_prompt", ""),
                             output_path=out_path,
+                            image_url=scene.get("reference_image_url", ""),
                         )
                         scene["video_url"] = out_path
                         scene["status"] = "done"
@@ -698,6 +732,20 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
+                # ── 레퍼런스 이미지 URL 입력 (구글 드라이브 공유 링크) ──────
+                current_ref = scene.get("reference_image_url", "")
+                new_ref = st.text_input(
+                    "📎 레퍼런스 이미지 URL (선택)",
+                    value=current_ref,
+                    placeholder="https://drive.google.com/file/d/.../view",
+                    key=f"ref_img_{sno}",
+                    help="구글 드라이브 공유 링크 붙여넣기. 비워두면 텍스트 전용 생성.",
+                )
+                # URL이 바뀌면 state에 저장
+                if new_ref != current_ref:
+                    scene["reference_image_url"] = new_ref.strip()
+                    manager.save_state(state)
+
                 # 영상 미리보기
                 if vid_url and os.path.exists(vid_url):
                     st.video(vid_url)
@@ -736,6 +784,7 @@ else:
                                 fal_key=fal_key,
                                 prompt=target.get("flow_prompt", ""),
                                 output_path=out,
+                                image_url=target.get("reference_image_url", ""),
                             )
                             target["video_url"] = out
                             target["status"] = "done"
