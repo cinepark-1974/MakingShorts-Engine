@@ -300,6 +300,7 @@ div[data-testid="stProgress"] > div > div {
 try:
     from src.state_manager import StateManager
     from src.prompts import generate_script_and_prompts
+    from src.image_fal import generate_images_for_scenes, generate_reference_image
     from src.video_fal import generate_single_clip
     MODULES_OK = True
 except ImportError as e:
@@ -639,10 +640,11 @@ if step1_done:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — 음성 생성 (ElevenLabs) — 스텁
+# STEP 2 — 레퍼런스 이미지 생성 (Flux Pro)
 # ─────────────────────────────────────────────────────────────────────────────
-step2_done = bool(state.get("audio_path"))
 step2_locked = not step1_done
+img_done_cnt  = sum(1 for s in scenes if s.get("image_status") == "done")
+step2_done    = (img_done_cnt == total_cnt and total_cnt > 0)
 
 st.markdown(f"""
 <div class="step-header">
@@ -650,23 +652,89 @@ st.markdown(f"""
     {"✓" if step2_done else "2"}
   </div>
   <div>
-    <div class="step-title">STEP 2 · 나레이션 음성 생성 (ElevenLabs)</div>
-    <div class="step-sub">{"음성 파일 준비 완료" if step2_done else ("STEP 1을 먼저 완료하세요." if step2_locked else "전체 나레이션을 ElevenLabs API로 MP3 변환합니다.")}</div>
+    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (Flux Pro)</div>
+    <div class="step-sub">
+      {"12컷 이미지 완성 — Kling 첫 프레임 준비됨" if step2_done
+        else ("STEP 1 대본 생성 후 진행하세요." if step2_locked
+              else f"씬별 구도 이미지를 Flux Pro로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
+    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-if step2_done:
+if not step2_locked:
+    pending_imgs = [s for s in scenes if s.get("image_status") in ("pending", "error")]
+    col_img, col_img_info = st.columns([2, 5])
+    with col_img:
+        img_gen_btn = st.button(
+            f"🖼 이미지 {len(pending_imgs)}컷 일괄 생성",
+            disabled=(len(pending_imgs) == 0 or st.session_state.gen_running),
+            key="img_gen_all",
+        )
+    with col_img_info:
+        if img_done_cnt > 0:
+            st.caption(f"{img_done_cnt}컷 완료 · 미완료 {len(pending_imgs)}컷 남음")
+
+    if img_gen_btn and not st.session_state.gen_running:
+        st.session_state.gen_running = True
+
+        def run_all_images(state_snapshot, fal_key):
+            from src.state_manager import StateManager
+            from src.image_fal import generate_images_for_scenes
+            mgr = StateManager(storage_dir="projects")
+            current = mgr.load_state(state_snapshot["project_dir"])
+            generate_images_for_scenes(fal_key, current["scenes"], current["project_dir"])
+            mgr.save_state(current)
+
+        t_img = threading.Thread(
+            target=run_all_images,
+            args=(state, api_keys["FAL_KEY"]),
+            daemon=True,
+        )
+        t_img.start()
+        st.session_state.gen_running = False
+        st.info("이미지 생성 시작. 완료 후 새로고침 버튼을 누르세요.")
+
+    # 씬별 이미지 썸네일 미리보기
+    if img_done_cnt > 0:
+        with st.expander(f"생성된 이미지 미리보기 ({img_done_cnt}컷)", expanded=False):
+            thumb_cols = st.columns(4)
+            for i, scene in enumerate(scenes):
+                img_path = scene.get("image_path", "")
+                if img_path and os.path.exists(img_path):
+                    with thumb_cols[i % 4]:
+                        st.image(img_path, caption=f"#{scene['scene_no']:02d} {scene.get('name','')}", use_container_width=True)
+
+st.markdown("---")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — 음성 생성 (ElevenLabs) — 스텁
+# ─────────────────────────────────────────────────────────────────────────────
+step3_audio_done   = bool(state.get("audio_path"))
+step3_audio_locked = not step1_done
+
+st.markdown(f"""
+<div class="step-header">
+  <div class="step-num {"done" if step3_audio_done else ("locked" if step3_audio_locked else "")}">
+    {"✓" if step3_audio_done else "3"}
+  </div>
+  <div>
+    <div class="step-title">STEP 3 · 나레이션 음성 생성 (ElevenLabs)</div>
+    <div class="step-sub">{"음성 파일 준비 완료" if step3_audio_done else ("STEP 1을 먼저 완료하세요." if step3_audio_locked else "전체 나레이션을 ElevenLabs API로 MP3 변환합니다.")}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+if step3_audio_done:
     audio_path = state["audio_path"]
     if os.path.exists(audio_path):
         st.audio(audio_path, format="audio/mp3")
     else:
         st.caption(f"파일 경로: `{audio_path}`")
-elif not step2_locked:
+elif not step3_audio_locked:
     if not api_keys.get("ELEVENLABS_API_KEY"):
         st.info("ELEVENLABS_API_KEY를 Secrets에 등록하면 이 단계를 실행할 수 있습니다.")
     else:
-        # audio.py 구현 완료 후 활성화
         st.info(
             "🔧 **`src/audio.py` 구현 대기 중** — "
             "ElevenLabs 연동 코드가 완성되면 이 버튼이 활성화됩니다.",
@@ -677,18 +745,18 @@ elif not step2_locked:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 3 — 컷별 영상 생성 (Fal.ai Kling)
+# STEP 4 — 컷별 영상 생성 (Fal.ai Kling)
 # ─────────────────────────────────────────────────────────────────────────────
 step3_locked = not step1_done
 
 st.markdown(f"""
 <div class="step-header">
   <div class="step-num {"done" if done_cnt == total_cnt and total_cnt > 0 else ("locked" if step3_locked else "")}">
-    {"✓" if done_cnt == total_cnt and total_cnt > 0 else "3"}
+    {"✓" if done_cnt == total_cnt and total_cnt > 0 else "4"}
   </div>
   <div>
-    <div class="step-title">STEP 3 · 컷별 영상 생성 (Fal.ai Kling v2.6 Pro)</div>
-    <div class="step-sub">9:16 세로 · 5초 · 컷별 개별 생성 및 재생성 가능</div>
+    <div class="step-title">STEP 4 · 컷별 영상 생성 (Fal.ai Kling v2.6 Pro)</div>
+    <div class="step-sub">9:16 세로 · 5초 · Flux 이미지 첫 프레임 자동 사용 · 컷별 재생성 가능</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -786,44 +854,84 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # ── 레퍼런스 이미지 선택 (구글 드라이브 폴더 연동) ──────────
-                gdrive_images = load_gdrive_images(
-                    api_key=api_keys.get("GOOGLE_API_KEY", ""),
-                    folder_id=api_keys.get("GDRIVE_REF_FOLDER_ID", ""),
-                )
+                # ── 레퍼런스 이미지 (Flux 자동생성 우선 / 드라이브 폴백) ──────
+                img_path   = scene.get("image_path", "")
+                img_status = scene.get("image_status", "pending")
                 current_ref = scene.get("reference_image_url", "")
 
-                if gdrive_images:
-                    # 드라이브 연결됨 — 드롭다운으로 선택
-                    img_options = ["(사용 안 함)"] + [img["name"] for img in gdrive_images]
-                    # 현재 저장된 URL → 파일명으로 역매핑
-                    current_name = next(
-                        (img["name"] for img in gdrive_images if img["url"] == current_ref),
-                        "(사용 안 함)"
-                    )
-                    selected_name = st.selectbox(
-                        "📎 레퍼런스 이미지",
-                        options=img_options,
-                        index=img_options.index(current_name) if current_name in img_options else 0,
-                        key=f"ref_img_{sno}",
-                        help="드라이브 폴더의 이미지를 첫 프레임으로 사용합니다.",
-                    )
-                    new_ref = next(
-                        (img["url"] for img in gdrive_images if img["name"] == selected_name),
-                        ""
-                    )
+                # Flux 생성 이미지가 있으면 썸네일 표시
+                if img_path and os.path.exists(img_path):
+                    st.image(img_path, use_container_width=True,
+                             caption=f"Flux 자동생성 · {img_status}")
+                    new_ref = img_path  # Kling 첫 프레임으로 자동 사용
                 else:
-                    # 드라이브 미연결 — 직접 URL 입력 폴백
-                    new_ref = st.text_input(
-                        "📎 레퍼런스 이미지 URL (선택)",
-                        value=current_ref,
-                        placeholder="https://drive.google.com/file/d/.../view",
-                        key=f"ref_img_{sno}",
-                        help="secrets에 GOOGLE_API_KEY + GDRIVE_REF_FOLDER_ID를 등록하면 드롭다운으로 바뀝니다.",
-                    )
-                    new_ref = new_ref.strip()
+                    # 개별 이미지 생성 버튼
+                    img_status_label = {
+                        "pending": "⏳ 미생성", "generating": "⚙️ 생성중",
+                        "done": "✅ 완료", "error": "❌ 오류"
+                    }.get(img_status, "?")
+                    st.caption(f"이미지: {img_status_label}")
 
-                # URL이 바뀌면 state에 저장
+                    if st.button(f"🖼 #{sno:02d} 이미지 생성",
+                                 key=f"img_regen_{sno}",
+                                 disabled=(img_status == "generating"),
+                                 use_container_width=True):
+                        def regen_img(sc, fal_key, proj_dir):
+                            from src.state_manager import StateManager
+                            from src.image_fal import generate_reference_image
+                            out = os.path.join(proj_dir, f"scene_{sc['scene_no']:02d}_ref.png")
+                            sc["image_status"] = "generating"
+                            try:
+                                generate_reference_image(fal_key, sc.get("image_prompt",""), out)
+                                sc["image_path"]   = out
+                                sc["image_status"] = "done"
+                                sc["reference_image_url"] = out
+                            except Exception as ex:
+                                sc["image_status"] = "error"
+                                sc["image_error"]  = str(ex)
+                            mgr3 = StateManager(storage_dir="projects")
+                            cur3 = mgr3.load_state(proj_dir)
+                            for s3 in cur3["scenes"]:
+                                if s3["scene_no"] == sc["scene_no"]:
+                                    s3.update(sc); break
+                            mgr3.save_state(cur3)
+
+                        threading.Thread(
+                            target=regen_img,
+                            args=(scene, api_keys["FAL_KEY"], state["project_dir"]),
+                            daemon=True,
+                        ).start()
+                        st.info(f"#{sno:02d} 이미지 생성 시작.")
+
+                    # 드라이브 또는 URL 수동 입력 폴백
+                    gdrive_images = load_gdrive_images(
+                        api_key=api_keys.get("GOOGLE_API_KEY", ""),
+                        folder_id=api_keys.get("GDRIVE_REF_FOLDER_ID", ""),
+                    )
+                    if gdrive_images:
+                        img_options = ["(사용 안 함)"] + [img["name"] for img in gdrive_images]
+                        current_name = next(
+                            (img["name"] for img in gdrive_images if img["url"] == current_ref),
+                            "(사용 안 함)"
+                        )
+                        selected_name = st.selectbox(
+                            "또는 드라이브 이미지",
+                            options=img_options,
+                            index=img_options.index(current_name) if current_name in img_options else 0,
+                            key=f"ref_img_{sno}",
+                        )
+                        new_ref = next(
+                            (img["url"] for img in gdrive_images if img["name"] == selected_name), ""
+                        )
+                    else:
+                        new_ref = st.text_input(
+                            "또는 이미지 URL 직접 입력",
+                            value=current_ref,
+                            placeholder="https://drive.google.com/file/d/.../view",
+                            key=f"ref_img_{sno}",
+                        ).strip()
+
+                # reference_image_url 저장
                 if new_ref != current_ref:
                     scene["reference_image_url"] = new_ref
                     manager.save_state(state)
@@ -886,7 +994,7 @@ else:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — 최종 합성 (FFmpeg + Whisper) — 스텁
+# STEP 5 — 최종 합성 (FFmpeg + Whisper) — 스텁
 # ─────────────────────────────────────────────────────────────────────────────
 step4_done   = bool(state.get("final_video_path"))
 step4_locked = done_cnt < total_cnt or total_cnt == 0 or not state.get("audio_path")
@@ -894,10 +1002,10 @@ step4_locked = done_cnt < total_cnt or total_cnt == 0 or not state.get("audio_pa
 st.markdown(f"""
 <div class="step-header">
   <div class="step-num {"done" if step4_done else ("locked" if step4_locked else "")}">
-    {"✓" if step4_done else "4"}
+    {"✓" if step4_done else "5"}
   </div>
   <div>
-    <div class="step-title">STEP 4 · 최종 합성 (FFmpeg + Whisper 자막)</div>
+    <div class="step-title">STEP 5 · 최종 합성 (FFmpeg + Whisper 자막)</div>
     <div class="step-sub">
       {"최종 영상 완성!" if step4_done
         else ("STEP 2 음성 + STEP 3 전체 영상 완료 후 실행 가능" if step4_locked
