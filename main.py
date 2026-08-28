@@ -1,4 +1,4 @@
-# app.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
+# main.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
 # Claude API 버전 (Anthropic claude-sonnet-4-6)
 
 import streamlit as st
@@ -312,7 +312,6 @@ def load_api_keys():
     keys = {}
     for k in [
         "ANTHROPIC_API_KEY",
-        "ANTHROPIC_WORKSPACE_ID",  # 워크스페이스 연동 키 사용 시 필요
         "ELEVENLABS_API_KEY",
         "FAL_KEY",
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용
@@ -536,7 +535,6 @@ if st.session_state.current_project is None:
                         api_key=api_keys["ANTHROPIC_API_KEY"],
                         chapter=chapter_for_api,
                         topic=topic.strip(),
-                        workspace_id=api_keys.get("ANTHROPIC_WORKSPACE_ID", ""),
                     )
                     # state 업데이트
                     new_state["full_narration"] = result.get("full_narration", "")
@@ -625,7 +623,6 @@ if step1_done:
                             api_key=api_keys["ANTHROPIC_API_KEY"],
                             chapter=state["chapter"],
                             topic=state["topic"],
-                            workspace_id=api_keys.get("ANTHROPIC_WORKSPACE_ID", ""),
                         )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
