@@ -1,4 +1,4 @@
-# main.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
+# app.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
 # Claude API 버전 (Anthropic claude-sonnet-4-6)
 
 import streamlit as st
@@ -293,6 +293,105 @@ div[data-testid="stProgress"] > div > div {
     border-top: 1px solid #C8D6DD;
     margin-top: 16px;
 }
+
+/* ── 파이프라인 현황 패널 ── */
+.pipeline-panel {
+    background: #FFFFFF;
+    border: 1.5px solid #C8D6DD;
+    border-radius: 12px;
+    padding: 14px 20px 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 10px rgba(20,44,60,0.06);
+}
+.pipeline-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #7A9AAA;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+.pipeline-steps {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+}
+.pipe-step {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #F7FBFC;
+    border: 1.5px solid #C8D6DD;
+    margin-right: 6px;
+    position: relative;
+    min-width: 0;
+}
+.pipe-step:last-child { margin-right: 0; }
+.pipe-step.done {
+    background: #E8F5EE;
+    border-color: #7DC49A;
+}
+.pipe-step.active {
+    background: #FDF5E3;
+    border-color: #DBA12C;
+    box-shadow: 0 0 0 2px rgba(219,161,44,0.20);
+    animation: pulse-border 1.8s ease-in-out infinite;
+}
+.pipe-step.locked {
+    background: #EBF1F5;
+    border-color: #C8D6DD;
+    opacity: 0.65;
+}
+@keyframes pulse-border {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(219,161,44,0.20); }
+    50%       { box-shadow: 0 0 0 4px rgba(219,161,44,0.38); }
+}
+.pipe-icon {
+    font-size: 18px;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.pipe-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1E3A4E;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pipe-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4A7A8A;
+    margin-top: 2px;
+}
+.pipe-step.done .pipe-label  { color: #1A6640; }
+.pipe-step.done .pipe-count  { color: #2E8050; }
+.pipe-step.active .pipe-label { color: #A07020; }
+.pipe-step.active .pipe-count { color: #A07020; }
+.pipe-connector {
+    display: flex;
+    align-items: center;
+    color: #C8D6DD;
+    font-size: 14px;
+    padding: 0 2px;
+    flex-shrink: 0;
+}
+
+/* ── 자동새로고침 배지 ── */
+.refresh-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #FDF5E3;
+    border: 1px solid #DBA12C;
+    border-radius: 16px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #A07020;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -582,6 +681,105 @@ with col_reload:
 if total_cnt > 0:
     st.progress(done_cnt / total_cnt)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 파이프라인 현황 패널 (모든 단계 한눈에)
+# ─────────────────────────────────────────────────────────────────────────────
+img_done_cnt_panel = sum(1 for s in scenes if s.get("image_status") == "done")
+img_generating     = any(s.get("image_status") == "generating" for s in scenes)
+vid_generating     = any(s.get("status") == "generating" for s in scenes)
+
+any_generating = img_generating or vid_generating
+
+
+def _pipe_cls(done: bool, active: bool, locked: bool) -> str:
+    if done:   return "done"
+    if active: return "active"
+    if locked: return "locked"
+    return ""
+
+
+def _pipe_icon(done: bool, active: bool, locked: bool) -> str:
+    if done:   return "✅"
+    if active: return "⚙️"
+    if locked: return "🔒"
+    return "⏳"
+
+
+p1_done   = bool(scenes)
+p1_active = False
+p1_locked = False
+
+p2_done   = (img_done_cnt_panel == total_cnt and total_cnt > 0)
+p2_active = img_generating
+p2_locked = not p1_done
+
+p3_done   = bool(state.get("audio_path"))
+p3_active = False
+p3_locked = not p1_done
+
+p4_done   = (done_cnt == total_cnt and total_cnt > 0)
+p4_active = vid_generating
+p4_locked = not p1_done
+
+p5_done   = bool(state.get("final_video_path"))
+p5_active = False
+p5_locked = done_cnt < total_cnt or total_cnt == 0 or not state.get("audio_path")
+
+
+def _pipe_step_html(icon, label, count_str, cls):
+    return f"""
+    <div class="pipe-step {cls}">
+      <div class="pipe-icon">{icon}</div>
+      <div class="pipe-label">{label}</div>
+      <div class="pipe-count">{count_str}</div>
+    </div>"""
+
+
+refresh_badge = ""
+if any_generating:
+    refresh_badge = '<span class="refresh-badge">⚙️ 생성 중 · 자동 새로고침</span>'
+
+st.markdown(f"""
+<div class="pipeline-panel">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="pipeline-title">⚡ 파이프라인 현황</div>
+    {refresh_badge}
+  </div>
+  <div class="pipeline-steps">
+    {_pipe_step_html(
+        _pipe_icon(p1_done, p1_active, p1_locked),
+        "① 대본",
+        "완료" if p1_done else "대기",
+        _pipe_cls(p1_done, p1_active, p1_locked)
+    )}
+    {_pipe_step_html(
+        _pipe_icon(p2_done, p2_active, p2_locked),
+        "② 이미지",
+        f"{img_done_cnt_panel}/{total_cnt}컷" if not p2_locked else "잠금",
+        _pipe_cls(p2_done, p2_active, p2_locked)
+    )}
+    {_pipe_step_html(
+        _pipe_icon(p3_done, p3_active, p3_locked),
+        "③ 음성",
+        "완료" if p3_done else ("대기" if p3_locked else "준비중"),
+        _pipe_cls(p3_done, p3_active, p3_locked)
+    )}
+    {_pipe_step_html(
+        _pipe_icon(p4_done, p4_active, p4_locked),
+        "④ 영상",
+        f"{done_cnt}/{total_cnt}컷" if not p4_locked else "잠금",
+        _pipe_cls(p4_done, p4_active, p4_locked)
+    )}
+    {_pipe_step_html(
+        _pipe_icon(p5_done, p5_active, p5_locked),
+        "⑤ 최종합성",
+        "완료" if p5_done else ("잠금" if p5_locked else "대기"),
+        _pipe_cls(p5_done, p5_active, p5_locked)
+    )}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -643,8 +841,8 @@ st.markdown("---")
 # STEP 2 — 레퍼런스 이미지 생성 (Flux Pro)
 # ─────────────────────────────────────────────────────────────────────────────
 step2_locked = not step1_done
-img_done_cnt  = sum(1 for s in scenes if s.get("image_status") == "done")
-step2_done    = (img_done_cnt == total_cnt and total_cnt > 0)
+img_done_cnt  = img_done_cnt_panel   # 위에서 계산
+step2_done    = p2_done
 
 st.markdown(f"""
 <div class="step-header">
@@ -1037,6 +1235,19 @@ elif not step4_locked:
     st.button("최종 합성 실행 (준비 중)", disabled=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 자동 새로고침 — 백그라운드 생성 중일 때 10초마다 화면 갱신
+# ─────────────────────────────────────────────────────────────────────────────
+if any_generating:
+    # 상태 파일에서 최신 데이터 다시 로드
+    try:
+        refreshed = manager.load_state(state["project_dir"])
+        st.session_state.current_project = refreshed
+    except Exception:
+        pass
+    time.sleep(10)
+    st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 푸터
