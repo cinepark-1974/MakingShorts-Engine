@@ -15,39 +15,74 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS (라이트 테마 — config.toml 기준) ─────────────────────────────────────
+# ── CSS (Paperlogy 팔레트 — 다크 네이비 사이드바 + 아이스화이트 메인 + 골드앰버) ──
 st.markdown("""
 <style>
-/* ── 기본 팔레트 변수 ──
-   primary  : #FFCB05  (밝은 노랑)
-   bg       : #F7F7F5  (아이보리 화이트)
-   bg2      : #EEEEF6  (연보라 그레이)
-   text     : #1A1A2E  (딥 네이비)
-   coffee   : #7B4F2E  (커피 브라운 — 포인트)
-   success  : #2D6A4F
-   error    : #C0392B
+/*
+  ── Paperlogy 팔레트 ───────────────────────────────────────────
+  navy-dark  : #142C3C  (사이드바 배경 · 강조 텍스트)
+  navy-deep  : #0F3B59  (버튼 호버 · 링크)
+  navy-mid   : #1E3A4E  (카드 보더 · 서브 텍스트)
+  gold       : #DBA12C  (포인트 — 씬 번호 · 버튼 · 보더)
+  ice-white  : #F7FBFC  (메인 배경)
+  steel-gray : #C8D6DD  (서브 배경 · 칩)
+  white      : #FFFFFF  (카드 배경)
+  ─────────────────────────────────────────────────────────────
 */
 
-/* 전체 배경 */
-.stApp { background-color: #F7F7F5; color: #1A1A2E; }
+/* ── 전체 배경 ── */
+.stApp { background-color: #F7FBFC; color: #142C3C; }
 
-/* 사이드바 */
+/* ── 사이드바 — 다크 네이비 ── */
 section[data-testid="stSidebar"] {
-    background-color: #EEEEF6;
-    border-right: 1px solid #D8D8EC;
+    background-color: #142C3C !important;
+    border-right: none;
+}
+section[data-testid="stSidebar"] * { color: rgba(255,255,255,0.88) !important; }
+section[data-testid="stSidebar"] .stMarkdown h1,
+section[data-testid="stSidebar"] .stMarkdown h2,
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.15) !important;
+}
+/* 사이드바 버튼 — 골드 아웃라인 */
+section[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    border: 1px solid rgba(219,161,44,0.6) !important;
+    color: rgba(255,255,255,0.88) !important;
+    box-shadow: none !important;
+    text-align: left;
+    font-weight: 500 !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(219,161,44,0.15) !important;
+    border-color: #DBA12C !important;
+    color: #FFFFFF !important;
+}
+/* 사이드바 새 프로젝트 버튼 — 골드 솔리드 */
+section[data-testid="stSidebar"] .stButton:first-of-type > button {
+    background: #DBA12C !important;
+    border-color: #DBA12C !important;
+    color: #142C3C !important;
+    font-weight: 700 !important;
 }
 
 /* ── 씬 카드 ── */
 .scene-card {
     background: #FFFFFF;
-    border: 1.5px solid #E0E0EE;
+    border: 1.5px solid #C8D6DD;
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 12px;
-    box-shadow: 0 1px 4px rgba(26,26,46,0.06);
-    transition: border-color 0.15s;
+    box-shadow: 0 2px 8px rgba(20,44,60,0.06);
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
-.scene-card:hover { border-color: #FFCB05; }
+.scene-card:hover {
+    border-color: #DBA12C;
+    box-shadow: 0 4px 16px rgba(20,44,60,0.10);
+}
 
 /* ── 상태 배지 ── */
 .badge {
@@ -58,44 +93,50 @@ section[data-testid="stSidebar"] {
     font-weight: 700;
     letter-spacing: 0.4px;
 }
-.badge-pending    { background:#F0F0F8; color:#8888AA; border:1px solid #D0D0E8; }
-.badge-generating { background:#FFFBE6; color:#B8860B; border:1px solid #FFCB05; }
-.badge-done       { background:#E8F5E9; color:#2D6A4F; border:1px solid #81C784; }
-.badge-error      { background:#FDECEA; color:#C0392B; border:1px solid #EF9A9A; }
+.badge-pending    { background:#EBF1F5; color:#6A8A9A; border:1px solid #C8D6DD; }
+.badge-generating { background:#FDF5E3; color:#A07020; border:1px solid #DBA12C; }
+.badge-done       { background:#E6F4EC; color:#1A6640; border:1px solid #7DC49A; }
+.badge-error      { background:#FDECEA; color:#B03020; border:1px solid #EFA090; }
 
 /* ── 씬 번호 / 이름 ── */
 .scene-num {
     font-size: 22px;
     font-weight: 900;
-    color: #FFCB05;
+    color: #DBA12C;
     line-height: 1;
-    text-shadow: 0 1px 0 rgba(0,0,0,0.08);
 }
-.scene-name { font-size: 12px; color: #7B4F2E; margin-top: 2px; font-weight: 600; }
+.scene-name {
+    font-size: 12px;
+    color: #0F3B59;
+    margin-top: 3px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
 
 /* ── 나레이션 박스 ── */
 .narration-text {
     font-size: 13px;
-    color: #1A1A2E;
-    line-height: 1.7;
+    color: #142C3C;
+    line-height: 1.75;
     margin: 8px 0;
-    padding: 8px 12px;
-    background: #FFFEF0;
-    border-left: 3px solid #FFCB05;
+    padding: 9px 14px;
+    background: #F7FBFC;
+    border-left: 3px solid #DBA12C;
     border-radius: 0 6px 6px 0;
 }
 
 /* ── 영문 프롬프트 박스 ── */
 .prompt-text {
     font-size: 11px;
-    color: #5A7A6A;
+    color: #1E3A4E;
     font-family: monospace;
-    background: #F0F4F2;
+    background: #EBF1F5;
     padding: 6px 10px;
     border-radius: 6px;
     word-break: break-all;
     margin-top: 6px;
-    border: 1px solid #D8E8E0;
+    border: 1px solid #C8D6DD;
+    opacity: 0.85;
 }
 
 /* ── 메타 칩 (SFX / 오버레이) ── */
@@ -104,9 +145,9 @@ section[data-testid="stSidebar"] {
     font-size: 11px;
     padding: 2px 9px;
     border-radius: 12px;
-    background: #EEEEF6;
-    color: #7B4F2E;
-    border: 1px solid #D8D8EC;
+    background: #C8D6DD;
+    color: #0F3B59;
+    border: 1px solid #B0C4CE;
     font-weight: 600;
 }
 
@@ -114,56 +155,57 @@ section[data-testid="stSidebar"] {
 .step-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 18px;
+    gap: 14px;
+    padding: 14px 20px;
     background: #FFFFFF;
     border-radius: 10px;
     margin-bottom: 16px;
-    border: 1.5px solid #E0E0EE;
-    box-shadow: 0 1px 3px rgba(26,26,46,0.05);
+    border: 1.5px solid #C8D6DD;
+    box-shadow: 0 2px 10px rgba(20,44,60,0.06);
 }
 .step-num {
     width: 34px; height: 34px;
     border-radius: 50%;
-    background: #FFCB05;
-    color: #1A1A2E;
+    background: #DBA12C;
+    color: #142C3C;
     font-weight: 900;
     font-size: 15px;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 2px 6px rgba(255,203,5,0.35);
+    box-shadow: 0 2px 8px rgba(219,161,44,0.35);
 }
-.step-num.done   { background: #2D6A4F; color: #FFFFFF; box-shadow: none; }
-.step-num.locked { background: #D8D8EC; color: #AAAACC; box-shadow: none; }
-.step-title { font-size: 15px; font-weight: 700; color: #1A1A2E; }
-.step-sub   { font-size: 12px; color: #7B4F2E; margin-top: 1px; }
+.step-num.done   { background: #142C3C; color: #DBA12C; box-shadow: none; }
+.step-num.locked { background: #C8D6DD; color: #7A9AAA; box-shadow: none; }
+.step-title { font-size: 15px; font-weight: 700; color: #142C3C; }
+.step-sub   { font-size: 12px; color: #4A7A8A; margin-top: 2px; }
 
 /* ── 프로그레스 바 ── */
 div[data-testid="stProgress"] > div > div {
-    background: linear-gradient(90deg, #FFCB05, #FFE066) !important;
+    background: linear-gradient(90deg, #DBA12C, #F0C050) !important;
 }
 
-/* ── 버튼 ── */
+/* ── 메인 영역 버튼 — 골드 솔리드 ── */
 .stButton > button {
-    background: #FFCB05;
-    color: #1A1A2E;
+    background: #DBA12C;
+    color: #142C3C;
     border: none;
     font-weight: 700;
     border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(255,203,5,0.30);
+    box-shadow: 0 2px 8px rgba(219,161,44,0.30);
+    transition: background 0.15s, box-shadow 0.15s;
 }
 .stButton > button:hover {
-    background: #FFD740;
-    box-shadow: 0 3px 10px rgba(255,203,5,0.45);
+    background: #C8901A;
+    box-shadow: 0 4px 14px rgba(219,161,44,0.45);
 }
 
 /* ── 푸터 ── */
 .factory-footer {
     text-align: center;
-    color: #AAAACC;
+    color: #7A9AAA;
     font-size: 12px;
     padding: 24px 0 8px;
-    border-top: 1px solid #E0E0EE;
+    border-top: 1px solid #C8D6DD;
     margin-top: 16px;
 }
 </style>
