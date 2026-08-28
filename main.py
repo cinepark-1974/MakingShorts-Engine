@@ -878,11 +878,29 @@ if not step2_locked:
 
         def run_all_images(state_snapshot, fal_key):
             from src.state_manager import StateManager
-            from src.image_fal import generate_images_for_scenes
+            from src.image_fal import generate_reference_image
+            import os as _os
             mgr = StateManager(storage_dir="projects")
             current = mgr.load_state(state_snapshot["project_dir"])
-            generate_images_for_scenes(fal_key, current["scenes"], current["project_dir"])
-            mgr.save_state(current)
+            for scene in current["scenes"]:
+                if not scene.get("image_prompt", "").strip():
+                    continue
+                if scene.get("image_status") == "done":
+                    continue
+                sno = scene["scene_no"]
+                out_path = _os.path.join(current["project_dir"], f"scene_{sno:02d}_ref.png")
+                scene["image_status"] = "generating"
+                mgr.save_state(current)          # ← "생성중" 상태 즉시 저장
+                try:
+                    generate_reference_image(fal_key, scene.get("image_prompt", ""), out_path)
+                    scene["image_path"]            = out_path
+                    scene["image_status"]          = "done"
+                    scene["reference_image_url"]   = out_path
+                    scene.pop("image_error", None)
+                except Exception as ex:
+                    scene["image_status"] = "error"
+                    scene["image_error"]  = str(ex)
+                mgr.save_state(current)          # ← 완료/오류 상태 저장
 
         t_img = threading.Thread(
             target=run_all_images,
@@ -891,7 +909,7 @@ if not step2_locked:
         )
         t_img.start()
         st.session_state.gen_running = False
-        st.info("이미지 생성 시작. 완료 후 새로고침 버튼을 누르세요.")
+        st.info("이미지 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
 
     # 씬별 이미지 썸네일 미리보기
     if img_done_cnt > 0:
@@ -1013,7 +1031,7 @@ else:
         )
         t.start()
         st.session_state.gen_running = False  # UI 언블락 (스레드가 백그라운드 처리)
-        st.info("일괄 생성을 시작했습니다. 완료 후 새로고침 버튼을 누르세요.")
+        st.info("영상 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
 
     st.markdown("")
 
@@ -1099,7 +1117,7 @@ else:
                             args=(scene, api_keys["FAL_KEY"], state["project_dir"]),
                             daemon=True,
                         ).start()
-                        st.info(f"#{sno:02d} 이미지 생성 시작.")
+                        st.info(f"#{sno:02d} 이미지 생성 시작. 자동 갱신됩니다.")
 
                     # 드라이브 또는 URL 수동 입력 폴백
                     gdrive_images = load_gdrive_images(
@@ -1187,7 +1205,7 @@ else:
                         daemon=True,
                     )
                     t2.start()
-                    st.info(f"#{sno:02d} 재생성 시작. 잠시 후 새로고침하세요.")
+                    st.info(f"#{sno:02d} 재생성 시작. 자동 갱신됩니다.")
 
 st.markdown("---")
 
