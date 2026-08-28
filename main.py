@@ -186,17 +186,42 @@ div[data-testid="stProgress"] > div > div {
 
 /* ── 메인 영역 버튼 — 골드 솔리드 ── */
 .stButton > button {
-    background: #DBA12C;
-    color: #142C3C;
-    border: none;
-    font-weight: 700;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(219,161,44,0.30);
+    background: #DBA12C !important;
+    color: #142C3C !important;
+    border: none !important;
+    font-weight: 700 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(219,161,44,0.30) !important;
     transition: background 0.15s, box-shadow 0.15s;
 }
 .stButton > button:hover {
-    background: #C8901A;
-    box-shadow: 0 4px 14px rgba(219,161,44,0.45);
+    background: #C8901A !important;
+    box-shadow: 0 4px 14px rgba(219,161,44,0.45) !important;
+}
+/* ── 비활성(disabled) 버튼 — 명확하게 표시 ── */
+.stButton > button:disabled,
+.stButton > button[disabled] {
+    background: #E8EFF3 !important;
+    color: #8AAABB !important;
+    border: 1.5px solid #C8D6DD !important;
+    box-shadow: none !important;
+    cursor: not-allowed;
+    font-weight: 600 !important;
+}
+
+/* ── 입력 필드 — 라이트 테마 강제 ── */
+.stTextInput > div > div > input {
+    background-color: #FFFFFF !important;
+    color: #142C3C !important;
+    border: 1.5px solid #C8D6DD !important;
+    border-radius: 8px !important;
+}
+.stTextInput > div > div > input:focus {
+    border-color: #DBA12C !important;
+    box-shadow: 0 0 0 2px rgba(219,161,44,0.20) !important;
+}
+.stTextInput > div > div > input::placeholder {
+    color: #9ABBC8 !important;
 }
 
 /* ── 푸터 ── */
