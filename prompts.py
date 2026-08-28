@@ -44,14 +44,20 @@ Kling AI 3D/유체역학/설계도 영문 프롬프트, SFX 태그를 JSON으로
 """
 
 
-def generate_script_and_prompts(api_key: str, chapter: str, topic: str) -> dict:
+def generate_script_and_prompts(
+    api_key: str,
+    chapter: str,
+    topic: str,
+    workspace_id: str = "",
+) -> dict:
     """
     Claude API를 호출하여 12컷 숏폼 대본과 Kling 영문 프롬프트를 JSON으로 반환한다.
 
     Args:
-        api_key : ANTHROPIC_API_KEY
-        chapter : 챕터명  (예: "CH01 커피의 탄생")
-        topic   : 주제명  (예: "에티오피아 예가체프 내추럴 프로세싱의 비밀")
+        api_key      : ANTHROPIC_API_KEY
+        chapter      : 챕터명  (예: "CH01 커피의 탄생")
+        topic        : 주제명  (예: "에티오피아 예가체프 내추럴 프로세싱의 비밀")
+        workspace_id : ANTHROPIC_WORKSPACE_ID (워크스페이스 연동 키 사용 시 필요)
 
     Returns:
         dict : 위 JSON 스키마 형태의 파이썬 딕셔너리
@@ -60,7 +66,14 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str) -> dict:
         json.JSONDecodeError : Claude 응답이 유효한 JSON이 아닐 때
         anthropic.APIError   : API 호출 자체가 실패했을 때
     """
-    client = anthropic.Anthropic(api_key=api_key)
+    extra_headers = {}
+    if workspace_id:
+        extra_headers["anthropic-workspace-id"] = workspace_id
+
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        default_headers=extra_headers,
+    )
 
     user_prompt = (
         f"챕터: '{chapter}', 주제: '{topic}'.\n"

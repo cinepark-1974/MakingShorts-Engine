@@ -6,6 +6,7 @@ import os
 import time
 import threading
 import base64
+import requests
 from pathlib import Path
 
 
@@ -19,6 +20,52 @@ def _load_logo_b64() -> str:
     return ""
 
 LOGO_B64 = _load_logo_b64()
+
+
+# ── 구글 드라이브 레퍼런스 이미지 목록 로드 ──────────────────────────────────
+@st.cache_data(ttl=300)  # 5분 캐시 — 새 이미지 추가 후 새로고침하면 반영
+def load_gdrive_images(api_key: str, folder_id: str) -> list[dict]:
+    """
+    공개 구글 드라이브 폴더에서 이미지 파일 목록을 가져온다.
+
+    Args:
+        api_key   : Google API Key (Drive API v3 접근용)
+        folder_id : 드라이브 폴더 ID (URL의 /folders/ 뒤 문자열)
+
+    Returns:
+        [{"name": "파일명.jpg", "url": "공개다운로드URL"}, ...]
+        API 키 / 폴더 ID가 없거나 오류 시 빈 리스트 반환
+    """
+    if not api_key or not folder_id:
+        return []
+
+    try:
+        endpoint = "https://www.googleapis.com/drive/v3/files"
+        params = {
+            "q": (
+                f"'{folder_id}' in parents "
+                "and mimeType contains 'image/' "
+                "and trashed = false"
+            ),
+            "fields": "files(id, name)",
+            "orderBy": "name",
+            "pageSize": 100,
+            "key": api_key,
+        }
+        resp = requests.get(endpoint, params=params, timeout=10)
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+
+        return [
+            {
+                "name": f["name"],
+                "url": f"https://drive.google.com/uc?export=download&id={f['id']}",
+                "view_url": f"https://drive.google.com/file/d/{f['id']}/view",
+            }
+            for f in files
+        ]
+    except Exception:
+        return []
 
 # ── 페이지 설정 (반드시 첫 번째 st 호출) ─────────────────────────────────────
 st.set_page_config(
@@ -263,7 +310,14 @@ except ImportError as e:
 def load_api_keys():
     """secrets.toml → 환경변수 순으로 API 키 로드"""
     keys = {}
-    for k in ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY"]:
+    for k in [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_WORKSPACE_ID",  # 워크스페이스 연동 키 사용 시 필요
+        "ELEVENLABS_API_KEY",
+        "FAL_KEY",
+        "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용
+        "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID
+    ]:
         try:
             keys[k] = st.secrets[k]
         except Exception:
@@ -375,7 +429,8 @@ with st.sidebar:
 # API 키 체크
 # ─────────────────────────────────────────────────────────────────────────────
 api_keys = load_api_keys()
-missing = [k for k, v in api_keys.items() if not v]
+REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY"]
+missing = [k for k in REQUIRED_KEYS if not api_keys.get(k)]
 if missing:
     st.warning(
         f"API 키가 설정되지 않았습니다: **{', '.join(missing)}**\n\n"
@@ -481,6 +536,7 @@ if st.session_state.current_project is None:
                         api_key=api_keys["ANTHROPIC_API_KEY"],
                         chapter=chapter_for_api,
                         topic=topic.strip(),
+                        workspace_id=api_keys.get("ANTHROPIC_WORKSPACE_ID", ""),
                     )
                     # state 업데이트
                     new_state["full_narration"] = result.get("full_narration", "")
@@ -569,6 +625,7 @@ if step1_done:
                             api_key=api_keys["ANTHROPIC_API_KEY"],
                             chapter=state["chapter"],
                             topic=state["topic"],
+                            workspace_id=api_keys.get("ANTHROPIC_WORKSPACE_ID", ""),
                         )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
@@ -732,18 +789,46 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # ── 레퍼런스 이미지 URL 입력 (구글 드라이브 공유 링크) ──────
-                current_ref = scene.get("reference_image_url", "")
-                new_ref = st.text_input(
-                    "📎 레퍼런스 이미지 URL (선택)",
-                    value=current_ref,
-                    placeholder="https://drive.google.com/file/d/.../view",
-                    key=f"ref_img_{sno}",
-                    help="구글 드라이브 공유 링크 붙여넣기. 비워두면 텍스트 전용 생성.",
+                # ── 레퍼런스 이미지 선택 (구글 드라이브 폴더 연동) ──────────
+                gdrive_images = load_gdrive_images(
+                    api_key=api_keys.get("GOOGLE_API_KEY", ""),
+                    folder_id=api_keys.get("GDRIVE_REF_FOLDER_ID", ""),
                 )
+                current_ref = scene.get("reference_image_url", "")
+
+                if gdrive_images:
+                    # 드라이브 연결됨 — 드롭다운으로 선택
+                    img_options = ["(사용 안 함)"] + [img["name"] for img in gdrive_images]
+                    # 현재 저장된 URL → 파일명으로 역매핑
+                    current_name = next(
+                        (img["name"] for img in gdrive_images if img["url"] == current_ref),
+                        "(사용 안 함)"
+                    )
+                    selected_name = st.selectbox(
+                        "📎 레퍼런스 이미지",
+                        options=img_options,
+                        index=img_options.index(current_name) if current_name in img_options else 0,
+                        key=f"ref_img_{sno}",
+                        help="드라이브 폴더의 이미지를 첫 프레임으로 사용합니다.",
+                    )
+                    new_ref = next(
+                        (img["url"] for img in gdrive_images if img["name"] == selected_name),
+                        ""
+                    )
+                else:
+                    # 드라이브 미연결 — 직접 URL 입력 폴백
+                    new_ref = st.text_input(
+                        "📎 레퍼런스 이미지 URL (선택)",
+                        value=current_ref,
+                        placeholder="https://drive.google.com/file/d/.../view",
+                        key=f"ref_img_{sno}",
+                        help="secrets에 GOOGLE_API_KEY + GDRIVE_REF_FOLDER_ID를 등록하면 드롭다운으로 바뀝니다.",
+                    )
+                    new_ref = new_ref.strip()
+
                 # URL이 바뀌면 state에 저장
                 if new_ref != current_ref:
-                    scene["reference_image_url"] = new_ref.strip()
+                    scene["reference_image_url"] = new_ref
                     manager.save_state(state)
 
                 # 영상 미리보기
