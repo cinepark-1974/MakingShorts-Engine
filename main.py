@@ -850,13 +850,21 @@ if not step2_locked:
         if img_done_cnt > 0:
             st.caption(f"{img_done_cnt}컷 완료 · 미완료 {len(pending_imgs)}컷 남음")
 
+    # ── URL 상태 강제 새로고침 버튼 ─────────────────────────────────────────
+    if st.button("🔄 상태 새로고침", key="img_state_refresh"):
+        try:
+            refreshed = manager.load_state(state["project_dir"])
+            st.session_state.current_project = refreshed
+            st.rerun()
+        except Exception:
+            st.warning("상태 파일을 불러오지 못했습니다.")
+
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
 
         def run_all_images(state_snapshot, fal_key):
             from src.state_manager import StateManager
             from src.image_fal import generate_reference_image
-            import os as _os
             mgr = StateManager(storage_dir="projects")
             current = mgr.load_state(state_snapshot["project_dir"])
             for scene in current["scenes"]:
@@ -864,15 +872,13 @@ if not step2_locked:
                     continue
                 if scene.get("image_status") == "done":
                     continue
-                sno = scene["scene_no"]
-                out_path = _os.path.join(current["project_dir"], f"scene_{sno:02d}_ref.png")
                 scene["image_status"] = "generating"
                 mgr.save_state(current)          # ← "생성중" 상태 즉시 저장
                 try:
-                    generate_reference_image(fal_key, scene.get("image_prompt", ""), out_path)
-                    scene["image_path"]            = out_path
+                    url = generate_reference_image(fal_key, scene.get("image_prompt", ""))
+                    scene["image_path"]            = url   # fal CDN URL
                     scene["image_status"]          = "done"
-                    scene["reference_image_url"]   = out_path
+                    scene["reference_image_url"]   = url
                     scene.pop("image_error", None)
                 except Exception as ex:
                     scene["image_status"] = "error"
@@ -888,13 +894,16 @@ if not step2_locked:
         st.session_state.gen_running = False
         st.info("이미지 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
 
-    # 씬별 이미지 썸네일 미리보기
+    # 씬별 이미지 썸네일 미리보기 (fal CDN URL 또는 로컬 경로 모두 지원)
     if img_done_cnt > 0:
         with st.expander(f"생성된 이미지 미리보기 ({img_done_cnt}컷)", expanded=False):
             thumb_cols = st.columns(4)
             for i, scene in enumerate(scenes):
                 img_path = scene.get("image_path", "")
-                if img_path and os.path.exists(img_path):
+                if not img_path:
+                    continue
+                is_url = img_path.startswith("http")
+                if is_url or os.path.exists(img_path):
                     with thumb_cols[i % 4]:
                         st.image(img_path, caption=f"#{scene['scene_no']:02d} {scene.get('name','')}", use_container_width=True)
 
