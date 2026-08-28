@@ -1,7 +1,6 @@
 # src/image_fal.py
-# 너도나도아는커피 숏폼 팩토리 — Fal.ai Flux Schnell 레퍼런스 이미지 생성기
+# 너도나도아는커피 숏폼 팩토리 — Fal.ai Nano Banana 2 레퍼런스 이미지 생성기
 # Kling image-to-video의 첫 프레임용 이미지를 자동 생성한다.
-# Flux Pro → Flux Schnell 교체 (속도 12배↑, 비용 1/15)
 
 import os
 import requests
@@ -9,14 +8,14 @@ import fal_client
 
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
-FLUX_MODEL = "fal-ai/flux/schnell"   # Pro 대비 12배 빠름, 첫 프레임 용도로 충분
+FLUX_MODEL = "fal-ai/nano-banana-2"
 
-# ── 공통 NEGATIVE 조건 ────────────────────────────────────────────────────────
-# Schnell은 negative_prompt를 지원하지 않으므로 positive prompt에 반영한다.
-# image_fal.py 외부(prompts.py)에서 image_prompt에 "no text, no people" 지시 포함.
-SUFFIX = (
-    ", no text, no letters, no watermark, no human face, no portrait, "
-    "no CGI, no 3d render, high quality, sharp focus"
+# ── NEGATIVE 프롬프트 (Nano Banana 2는 negative_prompt 지원) ──────────────────
+NEGATIVE_PROMPT = (
+    "text, letters, korean characters, words, watermark, logo, "
+    "human face, portrait, person, people, CGI, 3d render, plastic, "
+    "blurry, ugly, deformed, gross, slimy, uncanny valley, "
+    "low quality, bad anatomy, extra limbs"
 )
 
 
@@ -28,7 +27,7 @@ def generate_reference_image(
     height: int = 1280,
 ) -> str:
     """
-    Fal.ai Flux Schnell로 레퍼런스 이미지(PNG)를 생성하여 로컬에 저장한다.
+    Fal.ai Nano Banana 2로 레퍼런스 이미지(PNG)를 생성하여 로컬에 저장한다.
 
     Args:
         fal_key      : FAL_KEY (Fal.ai API 키)
@@ -39,22 +38,17 @@ def generate_reference_image(
 
     Returns:
         str : 저장된 로컬 파일 경로 (= output_path)
-
-    Raises:
-        KeyError          : Fal.ai 응답에 images[0].url 필드가 없을 때
-        requests.HTTPError: 이미지 파일 다운로드 실패 시
     """
     os.environ["FAL_KEY"] = fal_key
 
-    # Schnell은 negative_prompt 미지원 — suffix로 품질 가이드 포함
-    enriched_prompt = image_prompt.rstrip() + SUFFIX
-
     arguments = {
-        "prompt":               enriched_prompt,
-        "image_size":           {"width": width, "height": height},
-        "num_inference_steps":  4,      # Schnell 권장값 (1~4)
-        "num_images":           1,
-        "output_format":        "png",
+        "prompt":                image_prompt,
+        "negative_prompt":       NEGATIVE_PROMPT,
+        "image_size":            {"width": width, "height": height},
+        "num_inference_steps":   25,
+        "guidance_scale":        7.0,
+        "num_images":            1,
+        "output_format":         "png",
         "enable_safety_checker": True,
     }
 
@@ -63,7 +57,6 @@ def generate_reference_image(
 
     image_url = result["images"][0]["url"]
 
-    # 이미지 다운로드 → 로컬 저장
     resp = requests.get(image_url, timeout=60)
     resp.raise_for_status()
 
@@ -79,16 +72,8 @@ def generate_reference_image(
 
 def generate_images_for_scenes(fal_key: str, scenes: list, project_dir: str) -> list:
     """
-    여러 씬의 image_prompt를 순차적으로 Flux Schnell로 생성한다.
+    여러 씬의 image_prompt를 순차적으로 Nano Banana 2로 생성한다.
     이미 image_path가 있는 씬은 건너뛴다.
-
-    Args:
-        fal_key     : FAL_KEY
-        scenes      : state["scenes"] 리스트
-        project_dir : 프로젝트 디렉터리 경로
-
-    Returns:
-        list : 업데이트된 scenes 리스트 (image_path, image_status 필드 추가)
     """
     for scene in scenes:
         if not scene.get("image_prompt", "").strip():
