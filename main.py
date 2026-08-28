@@ -815,7 +815,7 @@ if step1_done:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — 레퍼런스 이미지 생성 (Flux Pro)
+# STEP 2 — 레퍼런스 이미지 생성 (Nano Banana 2)
 # ─────────────────────────────────────────────────────────────────────────────
 step2_locked = not step1_done
 img_done_cnt  = img_done_cnt_panel   # 위에서 계산
@@ -827,11 +827,11 @@ st.markdown(f"""
     {"✓" if step2_done else "2"}
   </div>
   <div>
-    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (Flux Pro)</div>
+    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (Nano Banana 2)</div>
     <div class="step-sub">
       {"12컷 이미지 완성 — Kling 첫 프레임 준비됨" if step2_done
         else ("STEP 1 대본 생성 후 진행하세요." if step2_locked
-              else f"씬별 구도 이미지를 Flux Pro로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
+              else f"씬별 구도 이미지를 Nano Banana 2로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
     </div>
   </div>
 </div>
@@ -926,7 +926,7 @@ if step3_audio_done:
         st.caption(f"파일 경로: `{audio_path}`")
 elif not step3_audio_locked:
     if not api_keys.get("ELEVENLABS_API_KEY"):
-        st.info("ELEVENLABS_API_KEY를 Secrets에 등록하면 이 단계를 실행할 수 있습니다.")
+        st.info("ELEVENLABS_API_KEY를 Streamlit Cloud Secrets에 등록하면 이 단계를 실행할 수 있습니다.")
     else:
         st.info(
             "🔧 **`src/audio.py` 구현 대기 중** — "
