@@ -1,11 +1,24 @@
 # app.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
-# Claude API 버전 (Anthropic claude-sonnet-4-5)
+# Claude API 버전 (Anthropic claude-sonnet-4-6)
 
 import streamlit as st
 import os
 import time
 import threading
+import base64
 from pathlib import Path
+
+
+# ── 로고 로드 (base64 임베드) ─────────────────────────────────────────────────
+def _load_logo_b64() -> str:
+    """assets/images/logo.png를 base64로 인코딩해 반환. 없으면 빈 문자열."""
+    logo_path = Path(__file__).parent / "assets" / "images" / "logo.png"
+    if logo_path.exists():
+        with open(logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return ""
+
+LOGO_B64 = _load_logo_b64()
 
 # ── 페이지 설정 (반드시 첫 번째 st 호출) ─────────────────────────────────────
 st.set_page_config(
@@ -298,7 +311,31 @@ def calc_progress(scenes: list) -> tuple[int, int]:
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ☕ 숏폼 팩토리")
+    # ── 브랜드 로고 ──────────────────────────────────────────────────────────
+    if LOGO_B64:
+        st.markdown(
+            f"""
+            <div style="
+                padding: 20px 16px 12px;
+                text-align: center;
+            ">
+                <img src="data:image/png;base64,{LOGO_B64}"
+                     style="width: 100%; max-width: 200px;
+                            filter: brightness(0) invert(1);
+                            opacity: 0.92;" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("## ☕ 숏폼 팩토리")
+
+    st.markdown(
+        '<div style="text-align:center; color:rgba(255,255,255,0.5); '
+        'font-size:11px; letter-spacing:0.08em; margin-bottom:12px;">'
+        'SHORTS FACTORY</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown("---")
 
     if not MODULES_OK:
@@ -325,7 +362,14 @@ with st.sidebar:
                 st.rerun()
 
     st.markdown("---")
-    st.caption("Claude API · ElevenLabs · Fal.ai Kling")
+    st.markdown(
+        '<div style="text-align:center; color:rgba(255,255,255,0.4); '
+        'font-size:10px; line-height:1.7; padding:4px 0 8px;">'
+        'Claude API · ElevenLabs · Fal.ai Kling<br>'
+        '<span style="color:rgba(219,161,44,0.6);">You & I Know Coffee</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API 키 체크
@@ -343,8 +387,28 @@ if missing:
 # 새 프로젝트 생성 폼 (프로젝트 미선택 시)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.current_project is None:
-    st.markdown("## 새 숏폼 프로젝트 시작")
-    st.markdown("챕터와 주제를 입력하면 Claude AI가 12컷 대본을 자동 생성합니다.")
+    # 웰컴 헤더
+    if LOGO_B64:
+        st.markdown(
+            f"""
+            <div style="text-align:center; padding: 32px 0 8px;">
+                <img src="data:image/png;base64,{LOGO_B64}"
+                     style="height: 96px; opacity: 0.9;" />
+                <div style="margin-top:12px; font-size:13px; color:#4A7A8A;
+                            letter-spacing:0.06em;">SHORTS FACTORY</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("## ☕ 너도나도아는커피 숏폼 팩토리")
+
+    st.markdown(
+        '<p style="text-align:center; color:#1E3A4E; font-size:14px; margin:4px 0 24px;">'
+        '챕터와 주제를 입력하면 Claude AI가 12컷 대본을 자동 생성합니다.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
     st.markdown("---")
 
     col1, col2 = st.columns([1, 2])
