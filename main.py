@@ -921,54 +921,39 @@ if not step2_locked:
 
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
-        st.session_state.force_refresh = True   # 스레드가 JSON 저장 전에 페이지가 렌더돼도 최소 1회 갱신 보장
-        target_nos = [s["scene_no"] for s in next_batch]
-
-        def run_batch_images(state_snapshot, fal_key, scene_nos):
-            from src.state_manager import StateManager
-            from src.image_fal import generate_reference_image
+        prog = st.empty()
+        all_ok = True
+        for i, scene in enumerate(next_batch):
+            prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+            if not prompt:
+                continue
+            sno = scene["scene_no"]
+            prog.info(f"🖼 {sno}컷 이미지 생성 중… ({i+1}/{len(next_batch)}컷)")
             try:
-                mgr = StateManager(storage_dir="projects")
-                current = mgr.load_state(state_snapshot["project_dir"])
-                for scene in current["scenes"]:
-                    if scene["scene_no"] not in scene_nos:
-                        continue
-                    # image_prompt 우선, 없으면 flow_prompt 사용 (Claude API 스키마는 flow_prompt만 생성)
-                    prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-                    if not prompt:
-                        continue
-                    if scene.get("image_status") == "done":
-                        continue
-                    scene["image_status"] = "generating"
-                    mgr.save_state(current)
-                    try:
-                        url = generate_reference_image(fal_key, prompt)
-                        scene["image_path"]          = url
-                        scene["image_status"]        = "done"
-                        scene["reference_image_url"] = url
-                        scene.pop("image_error", None)
-                    except Exception as ex:
-                        scene["image_status"] = "error"
-                        scene["image_error"]  = str(ex)
-                    mgr.save_state(current)
-            except Exception as thread_ex:
-                # 스레드 전체 오류를 state에 기록 (UI에서 확인 가능)
-                try:
-                    mgr2 = StateManager(storage_dir="projects")
-                    cur2 = mgr2.load_state(state_snapshot["project_dir"])
-                    cur2["batch_image_error"] = str(thread_ex)
-                    mgr2.save_state(cur2)
-                except Exception:
-                    pass
-
-        t_img = threading.Thread(
-            target=run_batch_images,
-            args=(state, api_keys["FAL_KEY"], target_nos),
-            daemon=True,
-        )
-        t_img.start()
+                url = generate_reference_image(api_keys["FAL_KEY"], prompt)
+                for s in state["scenes"]:
+                    if s["scene_no"] == sno:
+                        s["image_path"]          = url
+                        s["image_status"]        = "done"
+                        s["reference_image_url"] = url
+                        s.pop("image_error", None)
+                        break
+            except Exception as ex:
+                all_ok = False
+                for s in state["scenes"]:
+                    if s["scene_no"] == sno:
+                        s["image_status"] = "error"
+                        s["image_error"]  = str(ex)
+                        break
+            manager.save_state(state)
+            st.session_state.current_project = state
+        prog.empty()
         st.session_state.gen_running = False
-        st.info(f"{batch_label} 이미지 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
+        if all_ok:
+            st.success(f"{batch_label} 이미지 생성 완료!")
+        else:
+            st.warning("일부 컷에서 오류가 발생했습니다. 씬 카드에서 오류 내용을 확인하세요.")
+        st.rerun()
 
     # 씬별 이미지 썸네일 미리보기 (fal CDN URL 또는 로컬 경로 모두 지원)
     if img_done_cnt > 0:
