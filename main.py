@@ -990,7 +990,8 @@ st.markdown(f"""
 
 if step3_audio_done:
     audio_path = state["audio_path"]
-    if os.path.exists(audio_path):
+    _audio_is_url = audio_path.startswith("http")
+    if _audio_is_url or os.path.exists(audio_path):
         st.audio(audio_path, format="audio/mp3")
     else:
         st.warning("음성 파일이 세션 초기화로 사라졌습니다. 아래 버튼으로 재생성하세요.")
@@ -1007,17 +1008,17 @@ elif not step3_audio_locked:
             st.caption(f"음성 ID: `{voice_id}` · 모델: `eleven_multilingual_v2`")
             audio_btn = st.button("🎙 나레이션 음성 생성", key="audio_gen")
             if audio_btn:
-                with st.spinner("ElevenLabs 음성 생성 중..."):
+                with st.spinner("ElevenLabs 음성 생성 중… (약 20~40초)"):
                     try:
-                        from src.audio import generate_narration
-                        audio_out = os.path.join(state["project_dir"], "narration.mp3")
-                        generate_narration(
+                        from src.audio import generate_narration_cdn
+                        # fal CDN에 업로드 → URL 저장 (리부트 후에도 유지)
+                        cdn_url = generate_narration_cdn(
                             api_key=api_keys["ELEVENLABS_API_KEY"],
                             text=narration_text,
-                            output_path=audio_out,
+                            fal_key=api_keys["FAL_KEY"],
                             voice_id=voice_id,
                         )
-                        state["audio_path"] = audio_out
+                        state["audio_path"] = cdn_url
                         manager.save_state(state)
                         st.session_state.current_project = state
                         st.success("음성 생성 완료!")
@@ -1061,44 +1062,47 @@ else:
         if st.session_state.gen_running:
             st.info("영상 생성 중… 완료되면 새로고침 버튼을 눌러 상태를 확인하세요.")
 
-    # 일괄 생성: 백그라운드 스레드로 순차 실행
+    # 일괄 생성 — 동기식 순차 실행 (CDN URL 저장, 리부트 후에도 유지)
     if all_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
+        prog = st.empty()
+        all_ok = True
+        for i, scene in enumerate(pending_scenes):
+            sno       = scene["scene_no"]
+            prompt    = scene.get("flow_prompt", "")
+            image_url = scene.get("reference_image_url", "")
 
-        def run_all_pending(state_snapshot, fal_key):
-            mgr = StateManager(storage_dir="projects")
-            current = mgr.load_state(state_snapshot["project_dir"])
-            for scene in current["scenes"]:
-                if scene.get("status") in ("pending", "error"):
-                    sno = scene["scene_no"]
-                    out_path = os.path.join(
-                        current["project_dir"], f"scene_{sno:02d}.mp4"
-                    )
-                    scene["status"] = "generating"
-                    mgr.save_state(current)
-                    try:
-                        generate_single_clip(
-                            fal_key=fal_key,
-                            prompt=scene.get("flow_prompt", ""),
-                            output_path=out_path,
-                            image_url=scene.get("reference_image_url", ""),
-                        )
-                        scene["video_url"] = out_path
-                        scene["status"] = "done"
-                    except Exception as ex:
-                        scene["status"] = "error"
-                        scene["error_msg"] = str(ex)
-                    mgr.save_state(current)
-            # 완료 플래그 (session_state는 스레드에서 직접 못 씀 — 상태 파일로 전달)
+            prog.info(f"🎬 {sno}컷 영상 생성 중… ({i+1}/{len(pending_scenes)}컷 · 약 2~3분)")
+            try:
+                from src.video_fal import generate_single_clip_url
+                cdn_url = generate_single_clip_url(
+                    fal_key=api_keys["FAL_KEY"],
+                    prompt=prompt,
+                    image_url=image_url,
+                )
+                for s in state["scenes"]:
+                    if s["scene_no"] == sno:
+                        s["video_url"] = cdn_url   # CDN URL 저장
+                        s["status"]    = "done"
+                        s.pop("error_msg", None)
+                        break
+            except Exception as ex:
+                all_ok = False
+                for s in state["scenes"]:
+                    if s["scene_no"] == sno:
+                        s["status"]    = "error"
+                        s["error_msg"] = str(ex)
+                        break
+            manager.save_state(state)
+            st.session_state.current_project = state
 
-        t = threading.Thread(
-            target=run_all_pending,
-            args=(state, api_keys["FAL_KEY"]),
-            daemon=True,
-        )
-        t.start()
-        st.session_state.gen_running = False  # UI 언블락 (스레드가 백그라운드 처리)
-        st.info("영상 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
+        prog.empty()
+        st.session_state.gen_running = False
+        if all_ok:
+            st.success(f"{len(pending_scenes)}컷 영상 생성 완료!")
+        else:
+            st.warning("일부 컷에서 오류가 발생했습니다. 씬 카드에서 오류를 확인하세요.")
+        st.rerun()
 
     st.markdown("")
 
@@ -1222,60 +1226,47 @@ else:
                     scene["reference_image_url"] = new_ref
                     manager.save_state(state)
 
-                # 영상 미리보기
-                if vid_url and os.path.exists(vid_url):
+                # 영상 미리보기 (CDN URL 또는 로컬 경로 모두 지원)
+                _vid_is_url = vid_url.startswith("http") if vid_url else False
+                if vid_url and (_vid_is_url or os.path.exists(vid_url)):
                     st.video(vid_url)
                 elif status == "error":
                     st.error(scene.get("error_msg", "알 수 없는 오류"))
 
-                # 개별 재생성 버튼
-                btn_disabled = (status == "generating")
+                # 개별 재생성 버튼 — 동기식 (CDN URL 저장)
+                btn_disabled = (status == "generating" or st.session_state.gen_running)
                 if st.button(
                     f"🔄 #{sno:02d} 재생성",
                     key=f"regen_scene_{sno}",
                     disabled=btn_disabled,
                     use_container_width=True,
                 ):
-                    out_path = os.path.join(
-                        state["project_dir"], f"scene_{sno:02d}.mp4"
-                    )
-                    # 상태 즉시 업데이트
-                    for s in state["scenes"]:
-                        if s["scene_no"] == sno:
-                            s["status"] = "generating"
-                            break
-                    manager.save_state(state)
-
-                    def regen_one(scene_ref, fal_key, out, st_ref, proj_dir):
-                        mgr2 = StateManager(storage_dir="projects")
-                        cur2 = mgr2.load_state(proj_dir)
-                        target = next(
-                            (sc for sc in cur2["scenes"]
-                             if sc["scene_no"] == scene_ref["scene_no"]), None
-                        )
-                        if not target:
-                            return
+                    with st.spinner(f"#{sno:02d} 재생성 중… (약 2~3분)"):
                         try:
-                            generate_single_clip(
-                                fal_key=fal_key,
-                                prompt=target.get("flow_prompt", ""),
-                                output_path=out,
-                                image_url=target.get("reference_image_url", ""),
+                            from src.video_fal import generate_single_clip_url
+                            cdn_url = generate_single_clip_url(
+                                fal_key=api_keys["FAL_KEY"],
+                                prompt=scene.get("flow_prompt", ""),
+                                image_url=scene.get("reference_image_url", ""),
                             )
-                            target["video_url"] = out
-                            target["status"] = "done"
+                            for s in state["scenes"]:
+                                if s["scene_no"] == sno:
+                                    s["video_url"] = cdn_url
+                                    s["status"]    = "done"
+                                    s.pop("error_msg", None)
+                                    break
+                            manager.save_state(state)
+                            st.session_state.current_project = state
+                            st.success(f"#{sno:02d} 재생성 완료!")
+                            st.rerun()
                         except Exception as ex:
-                            target["status"] = "error"
-                            target["error_msg"] = str(ex)
-                        mgr2.save_state(cur2)
-
-                    t2 = threading.Thread(
-                        target=regen_one,
-                        args=(scene, api_keys["FAL_KEY"], out_path, state, state["project_dir"]),
-                        daemon=True,
-                    )
-                    t2.start()
-                    st.info(f"#{sno:02d} 재생성 시작. 자동 갱신됩니다.")
+                            for s in state["scenes"]:
+                                if s["scene_no"] == sno:
+                                    s["status"]    = "error"
+                                    s["error_msg"] = str(ex)
+                                    break
+                            manager.save_state(state)
+                            st.error(f"#{sno:02d} 오류: {ex}")
 
 st.markdown("---")
 
@@ -1303,24 +1294,36 @@ st.markdown(f"""
 
 if step4_done:
     final_path = state["final_video_path"]
-    if os.path.exists(final_path):
+    _final_is_url = final_path.startswith("http") if final_path else False
+    if _final_is_url or os.path.exists(final_path):
         st.video(final_path)
-        with open(final_path, "rb") as fv:
-            st.download_button(
-                label="⬇️ 최종 영상 다운로드",
-                data=fv,
-                file_name=f"{state.get('project_id','final')}.mp4",
-                mime="video/mp4",
-            )
+        if _final_is_url:
+            st.markdown(f"[⬇️ 최종 영상 다운로드]({final_path})")
+        else:
+            with open(final_path, "rb") as fv:
+                st.download_button(
+                    label="⬇️ 최종 영상 다운로드",
+                    data=fv,
+                    file_name=f"{state.get('project_id','final')}.mp4",
+                    mime="video/mp4",
+                )
     else:
         st.caption(f"파일 경로: `{final_path}`")
 elif not step4_locked:
-    st.info(
-        "🔧 **`src/assembler.py` 구현 대기 중** — "
-        "FFmpeg·Whisper 합성 코드가 완성되면 이 버튼이 활성화됩니다.",
-        icon="ℹ️",
-    )
-    st.button("최종 합성 실행 (준비 중)", disabled=True)
+    st.info("영상 클립과 나레이션 음성이 준비되면 아래 버튼으로 최종 영상을 합성합니다.")
+    if st.button("🎬 최종 합성 실행", key="assemble_btn"):
+        with st.spinner("FFmpeg로 합성 중… 클립 다운로드 포함 약 2~5분 소요됩니다."):
+            try:
+                from src.assembler import assemble_final_video
+                cdn_url = assemble_final_video(state, api_keys["FAL_KEY"])
+                state["final_video_path"] = cdn_url
+                state["status"] = "done"
+                manager.save_state(state)
+                st.session_state.current_project = state
+                st.success("최종 합성 완료!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"합성 실패: {e}")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
