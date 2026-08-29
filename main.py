@@ -884,20 +884,28 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+BATCH_SIZE = 4   # 한 번에 생성할 컷 수
+
 if not step2_locked:
-    pending_imgs = [s for s in scenes if s.get("image_status") in ("pending", "error")]
+    pending_imgs  = [s for s in scenes if s.get("image_status") in ("pending", "error")]
+    next_batch    = pending_imgs[:BATCH_SIZE]
+    batch_nos     = [s["scene_no"] for s in next_batch]
+    batch_label   = f"{batch_nos[0]}~{batch_nos[-1]}컷" if batch_nos else ""
+
     col_img, col_img_info = st.columns([2, 5])
     with col_img:
         img_gen_btn = st.button(
-            f"🖼 이미지 {len(pending_imgs)}컷 일괄 생성",
-            disabled=(len(pending_imgs) == 0 or st.session_state.gen_running),
+            f"🖼 다음 {len(next_batch)}컷 생성 ({batch_label})" if next_batch else "✅ 이미지 완료",
+            disabled=(len(next_batch) == 0 or st.session_state.gen_running),
             key="img_gen_all",
         )
     with col_img_info:
-        if img_done_cnt > 0:
-            st.caption(f"{img_done_cnt}컷 완료 · 미완료 {len(pending_imgs)}컷 남음")
+        st.caption(
+            f"{img_done_cnt}/{total_cnt}컷 완료"
+            + (f" · 남은 {len(pending_imgs)}컷" if pending_imgs else " — 모두 완료")
+        )
 
-    # ── URL 상태 강제 새로고침 버튼 ─────────────────────────────────────────
+    # ── 상태 새로고침 버튼 ────────────────────────────────────────────────────
     if st.button("🔄 상태 새로고침", key="img_state_refresh"):
         try:
             refreshed = manager.load_state(state["project_dir"])
@@ -908,38 +916,41 @@ if not step2_locked:
 
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
+        target_nos = [s["scene_no"] for s in next_batch]
 
-        def run_all_images(state_snapshot, fal_key):
+        def run_batch_images(state_snapshot, fal_key, scene_nos):
             from src.state_manager import StateManager
             from src.image_fal import generate_reference_image
             mgr = StateManager(storage_dir="projects")
             current = mgr.load_state(state_snapshot["project_dir"])
             for scene in current["scenes"]:
+                if scene["scene_no"] not in scene_nos:
+                    continue
                 if not scene.get("image_prompt", "").strip():
                     continue
                 if scene.get("image_status") == "done":
                     continue
                 scene["image_status"] = "generating"
-                mgr.save_state(current)          # ← "생성중" 상태 즉시 저장
+                mgr.save_state(current)
                 try:
                     url = generate_reference_image(fal_key, scene.get("image_prompt", ""))
-                    scene["image_path"]            = url   # fal CDN URL
-                    scene["image_status"]          = "done"
-                    scene["reference_image_url"]   = url
+                    scene["image_path"]          = url
+                    scene["image_status"]        = "done"
+                    scene["reference_image_url"] = url
                     scene.pop("image_error", None)
                 except Exception as ex:
                     scene["image_status"] = "error"
                     scene["image_error"]  = str(ex)
-                mgr.save_state(current)          # ← 완료/오류 상태 저장
+                mgr.save_state(current)
 
         t_img = threading.Thread(
-            target=run_all_images,
-            args=(state, api_keys["FAL_KEY"]),
+            target=run_batch_images,
+            args=(state, api_keys["FAL_KEY"], target_nos),
             daemon=True,
         )
         t_img.start()
         st.session_state.gen_running = False
-        st.info("이미지 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
+        st.info(f"{batch_label} 이미지 생성을 시작했습니다. 화면이 자동으로 갱신됩니다.")
 
     # 씬별 이미지 썸네일 미리보기 (fal CDN URL 또는 로컬 경로 모두 지원)
     if img_done_cnt > 0:
