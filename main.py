@@ -906,6 +906,10 @@ if not step2_locked:
             + (f" · 남은 {len(pending_imgs)}컷" if pending_imgs else " — 모두 완료")
         )
 
+    # ── 배치 오류 표시 (스레드에서 잡힌 전체 오류) ──────────────────────────
+    if state.get("batch_image_error"):
+        st.error(f"이미지 생성 오류: {state['batch_image_error']}")
+
     # ── 상태 새로고침 버튼 ────────────────────────────────────────────────────
     if st.button("🔄 상태 새로고침", key="img_state_refresh"):
         try:
@@ -923,27 +927,39 @@ if not step2_locked:
         def run_batch_images(state_snapshot, fal_key, scene_nos):
             from src.state_manager import StateManager
             from src.image_fal import generate_reference_image
-            mgr = StateManager(storage_dir="projects")
-            current = mgr.load_state(state_snapshot["project_dir"])
-            for scene in current["scenes"]:
-                if scene["scene_no"] not in scene_nos:
-                    continue
-                if not scene.get("image_prompt", "").strip():
-                    continue
-                if scene.get("image_status") == "done":
-                    continue
-                scene["image_status"] = "generating"
-                mgr.save_state(current)
+            try:
+                mgr = StateManager(storage_dir="projects")
+                current = mgr.load_state(state_snapshot["project_dir"])
+                for scene in current["scenes"]:
+                    if scene["scene_no"] not in scene_nos:
+                        continue
+                    # image_prompt 우선, 없으면 flow_prompt 사용 (Claude API 스키마는 flow_prompt만 생성)
+                    prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+                    if not prompt:
+                        continue
+                    if scene.get("image_status") == "done":
+                        continue
+                    scene["image_status"] = "generating"
+                    mgr.save_state(current)
+                    try:
+                        url = generate_reference_image(fal_key, prompt)
+                        scene["image_path"]          = url
+                        scene["image_status"]        = "done"
+                        scene["reference_image_url"] = url
+                        scene.pop("image_error", None)
+                    except Exception as ex:
+                        scene["image_status"] = "error"
+                        scene["image_error"]  = str(ex)
+                    mgr.save_state(current)
+            except Exception as thread_ex:
+                # 스레드 전체 오류를 state에 기록 (UI에서 확인 가능)
                 try:
-                    url = generate_reference_image(fal_key, scene.get("image_prompt", ""))
-                    scene["image_path"]          = url
-                    scene["image_status"]        = "done"
-                    scene["reference_image_url"] = url
-                    scene.pop("image_error", None)
-                except Exception as ex:
-                    scene["image_status"] = "error"
-                    scene["image_error"]  = str(ex)
-                mgr.save_state(current)
+                    mgr2 = StateManager(storage_dir="projects")
+                    cur2 = mgr2.load_state(state_snapshot["project_dir"])
+                    cur2["batch_image_error"] = str(thread_ex)
+                    mgr2.save_state(cur2)
+                except Exception:
+                    pass
 
         t_img = threading.Thread(
             target=run_batch_images,
@@ -1164,8 +1180,9 @@ else:
                             from src.image_fal import generate_reference_image
                             sc["image_status"] = "generating"
                             try:
-                                # generate_reference_image는 fal CDN URL을 반환
-                                url = generate_reference_image(fal_key, sc.get("image_prompt", ""))
+                                # image_prompt 우선, 없으면 flow_prompt 사용
+                                _prompt = (sc.get("image_prompt") or sc.get("flow_prompt") or "").strip()
+                                url = generate_reference_image(fal_key, _prompt)
                                 sc["image_path"]          = url
                                 sc["image_status"]        = "done"
                                 sc["reference_image_url"] = url
