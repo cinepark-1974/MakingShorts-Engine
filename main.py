@@ -921,38 +921,55 @@ if not step2_locked:
 
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
-        prog = st.empty()
+        prog      = st.empty()
+        err_box   = st.empty()
+        done_cnt_local = 0
         all_ok = True
+
         for i, scene in enumerate(next_batch):
             prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
             if not prompt:
                 continue
             sno = scene["scene_no"]
-            prog.info(f"🖼 {sno}컷 이미지 생성 중… ({i+1}/{len(next_batch)}컷)")
+            prog.info(f"🖼 {sno}컷 생성 중… ({i+1}/{len(next_batch)}컷)")
+
             try:
                 url = generate_reference_image(api_keys["FAL_KEY"], prompt)
-                for s in state["scenes"]:
-                    if s["scene_no"] == sno:
-                        s["image_path"]          = url
-                        s["image_status"]        = "done"
-                        s["reference_image_url"] = url
-                        s.pop("image_error", None)
-                        break
+
+                # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
+                scene["image_path"]          = url
+                scene["image_status"]        = "done"
+                scene["reference_image_url"] = url
+                scene.pop("image_error", None)
+                done_cnt_local += 1
+
             except Exception as ex:
                 all_ok = False
-                for s in state["scenes"]:
-                    if s["scene_no"] == sno:
-                        s["image_status"] = "error"
-                        s["image_error"]  = str(ex)
-                        break
-            manager.save_state(state)
-            st.session_state.current_project = state
+                scene["image_status"] = "error"
+                scene["image_error"]  = str(ex)
+                err_box.error(f"#{sno:02d} 생성 실패: {ex}")
+
+            # 씬마다 즉시 저장 — 에러는 화면에 표시
+            try:
+                manager.save_state(state)
+            except Exception as save_ex:
+                err_box.error(f"상태 저장 실패: {save_ex}")
+                all_ok = False
+
         prog.empty()
         st.session_state.gen_running = False
+
+        # JSON에서 재로드해 세션 상태 갱신 (저장된 실제 값을 반영)
+        try:
+            refreshed = manager.load_state(state["project_dir"])
+            st.session_state.current_project = refreshed
+        except Exception:
+            st.session_state.current_project = state
+
         if all_ok:
-            st.success(f"{batch_label} 이미지 생성 완료!")
+            st.success(f"{batch_label} {done_cnt_local}컷 이미지 생성 완료!")
         else:
-            st.warning("일부 컷에서 오류가 발생했습니다. 씬 카드에서 오류 내용을 확인하세요.")
+            st.warning("일부 컷에서 오류가 발생했습니다. 위 오류 메시지를 확인하세요.")
         st.rerun()
 
     # 씬별 이미지 썸네일 미리보기 (fal CDN URL 또는 로컬 경로 모두 지원)
