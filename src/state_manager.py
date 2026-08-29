@@ -53,7 +53,9 @@ class StateManager:
 
     # ── 저장 ──────────────────────────────────────────────────────────────────
     def save_state(self, state: dict) -> str:
-        state_path = os.path.join(state["project_dir"], "state.json")
+        project_dir = state["project_dir"]
+        os.makedirs(project_dir, exist_ok=True)   # 리부트 후 디렉터리 없어도 자동 생성
+        state_path = os.path.join(project_dir, "state.json")
         with open(state_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
         return state_path
