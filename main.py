@@ -431,6 +431,7 @@ def init_session():
         "manager": None,           # StateManager 인스턴스
         "gen_running": False,       # 생성 중 락
         "video_threads": {},        # scene_no → Thread
+        "force_refresh": False,    # 버튼 직후 최소 1회 자동갱신 강제
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -735,7 +736,7 @@ img_done_cnt_panel = sum(1 for s in scenes if s.get("image_status") == "done")
 img_generating     = any(s.get("image_status") == "generating" for s in scenes)
 vid_generating     = any(s.get("status") == "generating" for s in scenes)
 
-any_generating = img_generating or vid_generating
+any_generating = img_generating or vid_generating or st.session_state.get("force_refresh", False)
 
 
 def _pipe_cls(done: bool, active: bool, locked: bool) -> str:
@@ -916,6 +917,7 @@ if not step2_locked:
 
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
+        st.session_state.force_refresh = True   # 스레드가 JSON 저장 전에 페이지가 렌더돼도 최소 1회 갱신 보장
         target_nos = [s["scene_no"] for s in next_batch]
 
         def run_batch_images(state_snapshot, fal_key, scene_nos):
@@ -1139,10 +1141,11 @@ else:
                 img_status = scene.get("image_status", "pending")
                 current_ref = scene.get("reference_image_url", "")
 
-                # Flux 생성 이미지가 있으면 썸네일 표시
-                if img_path and os.path.exists(img_path):
+                # Flux 생성 이미지가 있으면 썸네일 표시 (fal CDN URL 또는 로컬 경로 모두 지원)
+                _img_is_url = img_path.startswith("http")
+                if img_path and (_img_is_url or os.path.exists(img_path)):
                     st.image(img_path, use_container_width=True,
-                             caption=f"Flux 자동생성 · {img_status}")
+                             caption=f"Nano Banana 2 · {img_status}")
                     new_ref = img_path  # Kling 첫 프레임으로 자동 사용
                 else:
                     # 개별 이미지 생성 버튼
@@ -1159,13 +1162,14 @@ else:
                         def regen_img(sc, fal_key, proj_dir):
                             from src.state_manager import StateManager
                             from src.image_fal import generate_reference_image
-                            out = os.path.join(proj_dir, f"scene_{sc['scene_no']:02d}_ref.png")
                             sc["image_status"] = "generating"
                             try:
-                                generate_reference_image(fal_key, sc.get("image_prompt",""), out)
-                                sc["image_path"]   = out
-                                sc["image_status"] = "done"
-                                sc["reference_image_url"] = out
+                                # generate_reference_image는 fal CDN URL을 반환
+                                url = generate_reference_image(fal_key, sc.get("image_prompt", ""))
+                                sc["image_path"]          = url
+                                sc["image_status"]        = "done"
+                                sc["reference_image_url"] = url
+                                sc.pop("image_error", None)
                             except Exception as ex:
                                 sc["image_status"] = "error"
                                 sc["image_error"]  = str(ex)
@@ -1322,13 +1326,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 # 자동 새로고침 — 백그라운드 생성 중일 때 10초마다 화면 갱신
 # ─────────────────────────────────────────────────────────────────────────────
 if any_generating:
+    # force_refresh는 한 번만 — 다음 사이클부터는 실제 generating 상태로 판단
+    st.session_state.force_refresh = False
     # 상태 파일에서 최신 데이터 다시 로드
     try:
         refreshed = manager.load_state(state["project_dir"])
         st.session_state.current_project = refreshed
     except Exception:
         pass
-    time.sleep(10)
+    time.sleep(8)
     st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
