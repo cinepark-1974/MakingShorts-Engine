@@ -1,119 +1,150 @@
 # src/assembler.py
-# 너도나도아는커피 숏폼 팩토리 — FFmpeg + Whisper 최종 합성기
+# 너도나도아는커피 숏폼 팩토리 — FFmpeg 최종 합성기
 #
-# ──────────────────────────────────────────────────────────────────────────────
-# [구현 대기 중]
+# 동작 순서:
+#   1. 씬별 video_url(CDN or 로컬) → /tmp 다운로드
+#   2. FFmpeg concat → 하나의 MP4로 이어붙이기
+#   3. 나레이션 MP3(CDN or 로컬) 오버레이
+#   4. 최종 MP4 → fal.ai CDN 업로드 → URL 반환
 #
-# STEP 3 영상 컷 전체 + STEP 2 나레이션 음성이 완료된 뒤 실행한다.
-# Streamlit Cloud 환경에서 FFmpeg 실행 가능 여부와
-# openai-whisper 의 Streamlit Cloud 메모리 한도(1GB) 적합성을
-# 실제 테스트로 먼저 확인한 뒤 아래 TODO 구간을 채워야 합니다.
-#
-# 합성 순서 (예상):
-#   1. 12개 scene_XX.mp4 를 FFmpeg concat 으로 하나의 무음 영상으로 이어 붙임
-#   2. narration.mp3 를 오버레이 (aac 인코딩)
-#   3. assets/sfx/ 효과음을 씬별 타임코드에 믹싱
-#   4. Whisper 로 narration.mp3 → SRT 자막 생성
-#   5. FFmpeg subtitles 필터로 자막 번인
-#   6. 최종 final.mp4 저장
-#
-# 확인이 필요한 항목:
-#   1. Streamlit Cloud 에서 subprocess / ffmpeg-python 실행 허용 여부
-#   2. Whisper 모델 크기 (tiny / base) — Cloud 메모리 제약 고려
-#   3. SFX 타임코드 계산 방식 (씬 번호 × 5초 고정 vs 음성 길이 기반 동적)
-#   4. 자막 스타일 (폰트, 크기, 위치, 다이나믹 하이라이트 여부)
-# ──────────────────────────────────────────────────────────────────────────────
+# Whisper 자막은 향후 확장 예정 (현재 버전: 비디오 + 오디오 합성)
 
 import os
+import shutil
+import subprocess
+import tempfile
+import requests
+import fal_client
 
 
-def assemble_final_video(
-    state: dict,
-    bgm_path: str = "",
-    subtitle_style: str = "default",
-) -> str:
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부 헬퍼
+# ─────────────────────────────────────────────────────────────────────────────
+def _download_to(url: str, dest_path: str, timeout: int = 180) -> bool:
+    """URL에서 파일을 다운로드한다. 성공 시 True, 실패 시 False."""
+    try:
+        resp = requests.get(url, stream=True, timeout=timeout)
+        resp.raise_for_status()
+        with open(dest_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=65536):
+                f.write(chunk)
+        return os.path.getsize(dest_path) > 0
+    except Exception:
+        return False
+
+
+def _copy_or_download(src: str, dest_path: str) -> bool:
     """
-    모든 컷 영상 + 나레이션 음성 + SFX + BGM을 합쳐 최종 숏폼 MP4를 생성한다.
+    src가 URL이면 다운로드, 로컬 파일이면 복사한다.
+    성공 시 True 반환.
+    """
+    if src.startswith("http"):
+        return _download_to(src, dest_path)
+    if os.path.exists(src):
+        shutil.copy2(src, dest_path)
+        return True
+    return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API
+# ─────────────────────────────────────────────────────────────────────────────
+def assemble_final_video(state: dict, fal_key: str) -> str:
+    """
+    state의 모든 씬 video_url과 audio_path를 합쳐 최종 숏폼을 만들고
+    fal.ai CDN URL을 반환한다.
 
     Args:
-        state          : StateManager 가 관리하는 프로젝트 상태 딕셔너리
-        bgm_path       : 배경음악 파일 경로 (없으면 빈 문자열)
-        subtitle_style : 자막 스타일 식별자 ("default" | "dynamic")
+        state   : 프로젝트 상태 dict (scenes, audio_path 포함)
+        fal_key : FAL_KEY (fal.ai 업로드용)
 
     Returns:
-        str : 저장된 final.mp4 의 로컬 경로
+        str : 최종 영상 fal CDN URL (state["final_video_path"]에 저장)
 
     Raises:
-        NotImplementedError : 아직 구현되지 않은 상태
-        FileNotFoundError   : 음성 파일 또는 영상 컷 파일 누락 시
+        ValueError : 합성할 클립이 없거나 FFmpeg 실패 시
     """
-    # ── 사전 조건 검증 ────────────────────────────────────────────────────────
-    audio_path  = state.get("audio_path", "")
-    project_dir = state.get("project_dir", "")
-    scenes      = state.get("scenes", [])
+    os.environ["FAL_KEY"] = fal_key
 
-    if not audio_path or not os.path.exists(audio_path):
-        raise FileNotFoundError(f"나레이션 음성 파일 없음: {audio_path}")
+    scenes    = state.get("scenes", [])
+    audio_src = state.get("audio_path", "").strip()
 
-    missing_clips = [
-        s["scene_no"]
-        for s in scenes
-        if s.get("status") != "done" or not os.path.exists(s.get("video_url", ""))
-    ]
-    if missing_clips:
-        raise FileNotFoundError(f"영상 미완료 씬: {missing_clips}")
+    with tempfile.TemporaryDirectory() as tmpdir:
 
-    # ── 구현 전 가드 ──────────────────────────────────────────────────────────
-    raise NotImplementedError(
-        "src/assembler.py 는 아직 구현되지 않았습니다.\n"
-        "FFmpeg·Whisper 실행 환경 테스트 후 이 함수를 완성하세요."
-    )
+        # ── 1. 비디오 클립 다운로드 ─────────────────────────────────────────
+        clip_paths = []
+        for scene in sorted(scenes, key=lambda s: s.get("scene_no", 0)):
+            video_src = scene.get("video_url", "").strip()
+            if not video_src:
+                continue
+            sno       = scene.get("scene_no", 0)
+            clip_path = os.path.join(tmpdir, f"clip_{sno:02d}.mp4")
+            if _copy_or_download(video_src, clip_path):
+                clip_paths.append(clip_path)
 
-    # ── TODO: 아래 단계를 순서대로 구현 ──────────────────────────────────────
-    #
-    # [1] 씬 영상 concat 리스트 파일 생성
-    # concat_list_path = os.path.join(project_dir, "concat.txt")
-    # with open(concat_list_path, "w") as f:
-    #     for scene in sorted(scenes, key=lambda s: s["scene_no"]):
-    #         f.write(f"file '{os.path.abspath(scene['video_url'])}'\n")
-    #
-    # [2] FFmpeg concat → 무음 합본
-    # import ffmpeg
-    # raw_video = os.path.join(project_dir, "raw_concat.mp4")
-    # (
-    #     ffmpeg
-    #     .input(concat_list_path, format="concat", safe=0)
-    #     .output(raw_video, c="copy")
-    #     .overwrite_output()
-    #     .run()
-    # )
-    #
-    # [3] 나레이션 오버레이
-    # with_audio = os.path.join(project_dir, "with_audio.mp4")
-    # video_in = ffmpeg.input(raw_video)
-    # audio_in = ffmpeg.input(audio_path)
-    # (
-    #     ffmpeg
-    #     .output(video_in, audio_in, with_audio, vcodec="copy", acodec="aac", shortest=None)
-    #     .overwrite_output()
-    #     .run()
-    # )
-    #
-    # [4] Whisper → SRT 자막 생성
-    # import whisper
-    # whisper_model = whisper.load_model("base")
-    # result = whisper_model.transcribe(audio_path, language="ko")
-    # srt_path = os.path.join(project_dir, "narration.srt")
-    # # SRT 포맷 변환 함수 작성 필요
-    #
-    # [5] FFmpeg 자막 번인
-    # final_path = os.path.join(project_dir, "final.mp4")
-    # (
-    #     ffmpeg
-    #     .input(with_audio)
-    #     .output(final_path, vf=f"subtitles={srt_path}")
-    #     .overwrite_output()
-    #     .run()
-    # )
-    #
-    # return final_path
+        if not clip_paths:
+            raise ValueError(
+                "합성할 영상 클립이 없습니다. "
+                "STEP 4에서 모든 컷 영상을 먼저 생성해 주세요."
+            )
+
+        # ── 2. FFmpeg 클립 리스트 파일 ──────────────────────────────────────
+        list_file = os.path.join(tmpdir, "clips.txt")
+        with open(list_file, "w", encoding="utf-8") as f:
+            for p in clip_paths:
+                escaped = p.replace("\\", "\\\\").replace("'", "\\'")
+                f.write(f"file '{escaped}'\n")
+
+        # ── 3. 클립 이어붙이기 ──────────────────────────────────────────────
+        concat_path = os.path.join(tmpdir, "concat.mp4")
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", list_file,
+                "-c", "copy",
+                concat_path,
+            ],
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            err = proc.stderr.decode(errors="replace")[-1000:]
+            raise ValueError(f"FFmpeg concat 실패:\n{err}")
+
+        # ── 4. 나레이션 오디오 준비 ─────────────────────────────────────────
+        audio_path = ""
+        if audio_src:
+            audio_path = os.path.join(tmpdir, "narration.mp3")
+            if not _copy_or_download(audio_src, audio_path):
+                audio_path = ""   # 오디오 실패해도 영상 합성 계속
+
+        # ── 5. 오디오 합성 ──────────────────────────────────────────────────
+        final_path = os.path.join(tmpdir, "final.mp4")
+
+        if audio_path and os.path.exists(audio_path):
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", concat_path,
+                    "-i", audio_path,
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-shortest",
+                    final_path,
+                ],
+                capture_output=True,
+            )
+            if proc.returncode != 0:
+                err = proc.stderr.decode(errors="replace")[-1000:]
+                raise ValueError(f"FFmpeg 오디오 합성 실패:\n{err}")
+        else:
+            shutil.copy2(concat_path, final_path)
+
+        # ── 6. fal.ai CDN 업로드 ────────────────────────────────────────────
+        with open(final_path, "rb") as f:
+            video_bytes = f.read()
+
+        cdn_url = fal_client.upload(video_bytes, content_type="video/mp4")
+        return cdn_url

@@ -115,7 +115,65 @@ def _gdrive_to_fal_url(gdrive_url: str, timeout: int = 60) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 공개 API: 단일 클립 생성
+# 내부 헬퍼: 이미지 URL → Kling 제출용 fal URL 변환
+# ─────────────────────────────────────────────────────────────────────────────
+def _resolve_image_url(image_url: str) -> str:
+    """
+    로컬 파일 / 구글 드라이브 URL / 공개 URL을 Kling이 사용할 수 있는
+    fal CDN URL로 변환한다. 이미 공개 URL이면 그대로 반환.
+    """
+    if os.path.isfile(image_url):
+        return _local_to_fal_url(image_url)
+    if "drive.google.com" in image_url:
+        return _gdrive_to_fal_url(image_url)
+    return image_url  # fal CDN URL, http(s) 직접 URL 등
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 단일 클립 생성 — CDN URL 반환 (로컬 저장 없음, 권장)
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_single_clip_url(
+    fal_key: str,
+    prompt: str,
+    image_url: str = "",
+) -> str:
+    """
+    Fal.ai Kling v2.6 Pro로 MP4를 생성하고 Kling CDN URL을 반환한다.
+    로컬에 저장하지 않으므로 Streamlit Cloud 리부트 후에도 URL이 유효하다.
+
+    image_url이 있으면 image-to-video, 없으면 text-to-video 모드.
+
+    Returns:
+        str : Kling CDN 공개 URL
+    """
+    os.environ["FAL_KEY"] = fal_key
+
+    use_image_mode = bool(image_url and image_url.strip())
+
+    if use_image_mode:
+        fal_image_url = _resolve_image_url(image_url)
+        model     = KLING_IMAGE_MODEL
+        arguments = {
+            "prompt":       prompt,
+            "image_url":    fal_image_url,
+            "duration":     DEFAULT_DURATION,
+            "aspect_ratio": DEFAULT_ASPECT,
+        }
+    else:
+        model     = KLING_TEXT_MODEL
+        arguments = {
+            "prompt":       prompt,
+            "duration":     DEFAULT_DURATION,
+            "aspect_ratio": DEFAULT_ASPECT,
+        }
+
+    handler = fal_client.submit(model, arguments=arguments)
+    result  = handler.get()
+    return result["video"]["url"]   # CDN URL 바로 반환
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 단일 클립 생성 — 로컬 저장 (하위 호환 유지용)
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_single_clip(
     fal_key: str,
@@ -125,40 +183,18 @@ def generate_single_clip(
 ) -> str:
     """
     Fal.ai Kling v2.6 Pro로 MP4 영상을 생성하여 로컬에 저장한다.
-
-    image_url이 있으면 image-to-video 모드(첫 프레임 지정),
-    없으면 text-to-video 모드로 동작한다.
-
-    Args:
-        fal_key     : FAL_KEY (Fal.ai API 키)
-        prompt      : Kling 영문 비디오 프롬프트
-        output_path : 저장할 .mp4 파일 경로
-        image_url   : (선택) 구글 드라이브 공유 URL 또는 일반 이미지 URL.
-                      비워두면 텍스트 전용 모드.
+    (하위 호환 유지용 — 신규 코드는 generate_single_clip_url 사용 권장)
 
     Returns:
         str : 저장된 로컬 파일 경로 (= output_path)
-
-    Raises:
-        KeyError          : Fal.ai 응답에 video.url 필드가 없을 때
-        requests.HTTPError: 영상 파일 다운로드 실패 시
-        ValueError        : 구글 드라이브 URL 파싱 실패 시
     """
     os.environ["FAL_KEY"] = fal_key
 
-    # ── 모드 결정 ──────────────────────────────────────────────────────────
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # 이미지 소스 판별: 로컬 파일 → fal 업로드 / 드라이브 → 변환 / 공개 URL → 그대로
-        if os.path.isfile(image_url):
-            fal_image_url = _local_to_fal_url(image_url)
-        elif "drive.google.com" in image_url:
-            fal_image_url = _gdrive_to_fal_url(image_url)
-        else:
-            fal_image_url = image_url  # 이미 공개 URL
-
-        model = KLING_IMAGE_MODEL
+        fal_image_url = _resolve_image_url(image_url)
+        model     = KLING_IMAGE_MODEL
         arguments = {
             "prompt":       prompt,
             "image_url":    fal_image_url,
@@ -166,21 +202,17 @@ def generate_single_clip(
             "aspect_ratio": DEFAULT_ASPECT,
         }
     else:
-        model = KLING_TEXT_MODEL
+        model     = KLING_TEXT_MODEL
         arguments = {
             "prompt":       prompt,
             "duration":     DEFAULT_DURATION,
             "aspect_ratio": DEFAULT_ASPECT,
         }
 
-    # ── Fal.ai 비동기 큐 제출 → 완료 대기 ──────────────────────────────────
-    handler = fal_client.submit(model, arguments=arguments)
-    result  = handler.get()
-
-    # ── 응답에서 영상 URL 추출 ───────────────────────────────────────────────
+    handler   = fal_client.submit(model, arguments=arguments)
+    result    = handler.get()
     video_url = result["video"]["url"]
 
-    # ── 영상 다운로드 → 로컬 저장 ──────────────────────────────────────────
     resp = requests.get(video_url, stream=True, timeout=120)
     resp.raise_for_status()
 
