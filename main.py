@@ -863,7 +863,7 @@ if step1_done:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — 레퍼런스 이미지 생성 (Nano Banana 2)
+# STEP 2 — 레퍼런스 이미지 생성 (FLUX Schnell)
 # ─────────────────────────────────────────────────────────────────────────────
 step2_locked = not step1_done
 img_done_cnt  = img_done_cnt_panel   # 위에서 계산
@@ -875,11 +875,11 @@ st.markdown(f"""
     {"✓" if step2_done else "2"}
   </div>
   <div>
-    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (Nano Banana 2)</div>
+    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (FLUX Schnell)</div>
     <div class="step-sub">
       {"12컷 이미지 완성 — Kling 첫 프레임 준비됨" if step2_done
         else ("STEP 1 대본 생성 후 진행하세요." if step2_locked
-              else f"씬별 구도 이미지를 Nano Banana 2로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
+              else f"씬별 구도 이미지를 FLUX Schnell로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
     </div>
   </div>
 </div>
@@ -1161,7 +1161,7 @@ else:
                 _img_is_url = img_path.startswith("http")
                 if img_path and (_img_is_url or os.path.exists(img_path)):
                     st.image(img_path, use_container_width=True,
-                             caption=f"Nano Banana 2 · {img_status}")
+                             caption=f"FLUX Schnell · {img_status}")
                     new_ref = img_path  # Kling 첫 프레임으로 자동 사용
                 else:
                     # 개별 이미지 생성 버튼
