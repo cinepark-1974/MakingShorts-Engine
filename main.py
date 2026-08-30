@@ -4,7 +4,6 @@
 import streamlit as st
 import os
 import time
-import threading
 import base64
 import requests
 from pathlib import Path
@@ -415,8 +414,9 @@ def load_api_keys():
         "ELEVENLABS_API_KEY",
         "ELEVENLABS_VOICE_ID",
         "FAL_KEY",
-        "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용
-        "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID
+        "UNSPLASH_ACCESS_KEY",     # Unsplash 라이센스 프리 사진 검색용
+        "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용 (폴백)
+        "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID (폴백)
     ]:
         try:
             keys[k] = st.secrets[k]
@@ -869,23 +869,26 @@ step2_locked = not step1_done
 img_done_cnt  = img_done_cnt_panel   # 위에서 계산
 step2_done    = p2_done
 
+_unsplash_key = api_keys.get("UNSPLASH_ACCESS_KEY", "")
+_img_src_label = "Unsplash 실사 검색" if _unsplash_key else "FLUX Schnell (AI 생성)"
+
 st.markdown(f"""
 <div class="step-header">
   <div class="step-num {"done" if step2_done else ("locked" if step2_locked else "")}">
     {"✓" if step2_done else "2"}
   </div>
   <div>
-    <div class="step-title">STEP 2 · 레퍼런스 이미지 생성 (FLUX Schnell)</div>
+    <div class="step-title">STEP 2 · 레퍼런스 이미지 ({_img_src_label})</div>
     <div class="step-sub">
       {"12컷 이미지 완성 — Kling 첫 프레임 준비됨" if step2_done
         else ("STEP 1 대본 생성 후 진행하세요." if step2_locked
-              else f"씬별 구도 이미지를 FLUX Schnell로 자동 생성합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
+              else f"씬별 구도 이미지를 자동 수집합니다. ({img_done_cnt}/{total_cnt}컷 완료)")}
     </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-BATCH_SIZE = 4   # 한 번에 생성할 컷 수
+BATCH_SIZE = 4   # 이미지: 4장 × 3회 = 12컷
 
 if not step2_locked:
     pending_imgs  = [s for s in scenes if s.get("image_status") in ("pending", "error")]
@@ -895,8 +898,9 @@ if not step2_locked:
 
     col_img, col_img_info = st.columns([2, 5])
     with col_img:
+        _src_icon = "📷" if _unsplash_key else "🖼"
         img_gen_btn = st.button(
-            f"🖼 다음 {len(next_batch)}컷 생성 ({batch_label})" if next_batch else "✅ 이미지 완료",
+            f"{_src_icon} 다음 {len(next_batch)}컷 수집 ({batch_label})" if next_batch else "✅ 이미지 완료",
             disabled=(len(next_batch) == 0 or st.session_state.gen_running),
             key="img_gen_all",
         )
@@ -934,7 +938,13 @@ if not step2_locked:
             prog.info(f"🖼 {sno}컷 생성 중… ({i+1}/{len(next_batch)}컷)")
 
             try:
-                url = generate_reference_image(api_keys["FAL_KEY"], prompt)
+                if _unsplash_key:
+                    # Unsplash 라이센스 프리 실사 사진
+                    from src.image_search import search_unsplash, scene_to_query
+                    url = search_unsplash(scene_to_query(scene), _unsplash_key)
+                else:
+                    # 폴백: FLUX Schnell AI 생성 (UNSPLASH_ACCESS_KEY 미등록 시)
+                    url = generate_reference_image(api_keys["FAL_KEY"], prompt)
 
                 # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
                 scene["image_path"]          = url
@@ -947,7 +957,7 @@ if not step2_locked:
                 all_ok = False
                 scene["image_status"] = "error"
                 scene["image_error"]  = str(ex)
-                err_box.error(f"#{sno:02d} 생성 실패: {ex}")
+                err_box.error(f"#{sno:02d} 수집 실패: {ex}")
 
             # 씬마다 즉시 저장 — 에러는 화면에 표시
             try:
@@ -967,7 +977,7 @@ if not step2_locked:
             st.session_state.current_project = state
 
         if all_ok:
-            st.success(f"{batch_label} {done_cnt_local}컷 이미지 생성 완료!")
+            st.success(f"{batch_label} {done_cnt_local}컷 이미지 수집 완료!")
         else:
             st.warning("일부 컷에서 오류가 발생했습니다. 위 오류 메시지를 확인하세요.")
         st.rerun()
@@ -1067,29 +1077,41 @@ if step3_locked:
 elif not api_keys.get("FAL_KEY"):
     st.warning("FAL_KEY를 Secrets에 등록하면 영상을 생성할 수 있습니다.")
 else:
-    # 전체 일괄 생성 버튼
-    pending_scenes = [s for s in scenes if s.get("status") in ("pending", "error")]
+    # 영상: 3컷 × 4회 배치 생성
+    VIDEO_BATCH_SIZE  = 3
+    pending_scenes    = [s for s in scenes if s.get("status") in ("pending", "error")]
+    next_vid_batch    = pending_scenes[:VIDEO_BATCH_SIZE]
+    vid_batch_nos     = [s["scene_no"] for s in next_vid_batch]
+    vid_batch_label   = f"{vid_batch_nos[0]}~{vid_batch_nos[-1]}컷" if vid_batch_nos else ""
+
     col_gen, col_info2 = st.columns([2, 5])
     with col_gen:
         all_gen_btn = st.button(
-            f"▶ 미완료 {len(pending_scenes)}컷 일괄 생성",
-            disabled=(len(pending_scenes) == 0 or st.session_state.gen_running),
+            f"▶ 다음 {len(next_vid_batch)}컷 생성 ({vid_batch_label})" if next_vid_batch else "✅ 영상 완료",
+            disabled=(len(next_vid_batch) == 0 or st.session_state.gen_running),
         )
     with col_info2:
         if st.session_state.gen_running:
-            st.info("영상 생성 중… 완료되면 새로고침 버튼을 눌러 상태를 확인하세요.")
+            st.info("영상 생성 중…")
+        else:
+            st.caption(
+                f"{done_cnt}/{total_cnt}컷 완료"
+                + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
+            )
 
-    # 일괄 생성 — 동기식 순차 실행 (CDN URL 저장, 리부트 후에도 유지)
+    # 배치 생성 — 동기식 순차 실행 (CDN URL 저장, 리부트 후에도 유지)
     if all_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
-        prog = st.empty()
+        prog   = st.empty()
+        err_v  = st.empty()
         all_ok = True
-        for i, scene in enumerate(pending_scenes):
+
+        for i, scene in enumerate(next_vid_batch):
             sno       = scene["scene_no"]
             prompt    = scene.get("flow_prompt", "")
             image_url = scene.get("reference_image_url", "")
 
-            prog.info(f"🎬 {sno}컷 영상 생성 중… ({i+1}/{len(pending_scenes)}컷 · 약 2~3분)")
+            prog.info(f"🎬 {sno}컷 영상 생성 중… ({i+1}/{len(next_vid_batch)}컷 · 약 2~3분)")
             try:
                 from src.video_fal import generate_single_clip_url
                 cdn_url = generate_single_clip_url(
@@ -1097,26 +1119,32 @@ else:
                     prompt=prompt,
                     image_url=image_url,
                 )
-                for s in state["scenes"]:
-                    if s["scene_no"] == sno:
-                        s["video_url"] = cdn_url   # CDN URL 저장
-                        s["status"]    = "done"
-                        s.pop("error_msg", None)
-                        break
+                scene["video_url"] = cdn_url   # scene은 state["scenes"] 참조
+                scene["status"]    = "done"
+                scene.pop("error_msg", None)
             except Exception as ex:
                 all_ok = False
-                for s in state["scenes"]:
-                    if s["scene_no"] == sno:
-                        s["status"]    = "error"
-                        s["error_msg"] = str(ex)
-                        break
-            manager.save_state(state)
-            st.session_state.current_project = state
+                scene["status"]    = "error"
+                scene["error_msg"] = str(ex)
+                err_v.error(f"#{sno:02d} 생성 실패: {ex}")
+
+            try:
+                manager.save_state(state)
+            except Exception as save_ex:
+                err_v.error(f"상태 저장 실패: {save_ex}")
+                all_ok = False
 
         prog.empty()
         st.session_state.gen_running = False
+
+        try:
+            refreshed = manager.load_state(state["project_dir"])
+            st.session_state.current_project = refreshed
+        except Exception:
+            st.session_state.current_project = state
+
         if all_ok:
-            st.success(f"{len(pending_scenes)}컷 영상 생성 완료!")
+            st.success(f"{vid_batch_label} {len(next_vid_batch)}컷 영상 생성 완료!")
         else:
             st.warning("일부 컷에서 오류가 발생했습니다. 씬 카드에서 오류를 확인하세요.")
         st.rerun()
@@ -1163,11 +1191,12 @@ else:
                 img_status = scene.get("image_status", "pending")
                 current_ref = scene.get("reference_image_url", "")
 
-                # Flux 생성 이미지가 있으면 썸네일 표시 (fal CDN URL 또는 로컬 경로 모두 지원)
+                # 이미지 썸네일 표시 (Unsplash URL 또는 fal CDN URL 또는 로컬 경로 모두 지원)
                 _img_is_url = img_path.startswith("http")
                 if img_path and (_img_is_url or os.path.exists(img_path)):
+                    _img_src_caption = "Unsplash" if (_img_is_url and "images.unsplash" in img_path) else "FLUX Schnell"
                     st.image(img_path, use_container_width=True,
-                             caption=f"FLUX Schnell · {img_status}")
+                             caption=f"{_img_src_caption} · {img_status}")
                     new_ref = img_path  # Kling 첫 프레임으로 자동 사용
                 else:
                     # 개별 이미지 생성 버튼
@@ -1177,38 +1206,31 @@ else:
                     }.get(img_status, "?")
                     st.caption(f"이미지: {img_status_label}")
 
-                    if st.button(f"🖼 #{sno:02d} 이미지 생성",
+                    _btn_label = f"📷 #{sno:02d} 사진 검색" if _unsplash_key else f"🖼 #{sno:02d} 이미지 생성"
+                    if st.button(_btn_label,
                                  key=f"img_regen_{sno}",
-                                 disabled=(img_status == "generating"),
+                                 disabled=(img_status == "generating" or st.session_state.gen_running),
                                  use_container_width=True):
-                        def regen_img(sc, fal_key, proj_dir):
-                            from src.state_manager import StateManager
-                            from src.image_fal import generate_reference_image
-                            sc["image_status"] = "generating"
+                        with st.spinner(f"#{sno:02d} 이미지 수집 중…"):
                             try:
-                                # image_prompt 우선, 없으면 flow_prompt 사용
-                                _prompt = (sc.get("image_prompt") or sc.get("flow_prompt") or "").strip()
-                                url = generate_reference_image(fal_key, _prompt)
-                                sc["image_path"]          = url
-                                sc["image_status"]        = "done"
-                                sc["reference_image_url"] = url
-                                sc.pop("image_error", None)
+                                if _unsplash_key:
+                                    from src.image_search import search_unsplash, scene_to_query
+                                    url = search_unsplash(scene_to_query(scene), _unsplash_key)
+                                else:
+                                    _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+                                    url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                scene["image_path"]          = url
+                                scene["image_status"]        = "done"
+                                scene["reference_image_url"] = url
+                                scene.pop("image_error", None)
+                                manager.save_state(state)
+                                st.session_state.current_project = state
+                                st.rerun()
                             except Exception as ex:
-                                sc["image_status"] = "error"
-                                sc["image_error"]  = str(ex)
-                            mgr3 = StateManager(storage_dir="projects")
-                            cur3 = mgr3.load_state(proj_dir)
-                            for s3 in cur3["scenes"]:
-                                if s3["scene_no"] == sc["scene_no"]:
-                                    s3.update(sc); break
-                            mgr3.save_state(cur3)
-
-                        threading.Thread(
-                            target=regen_img,
-                            args=(scene, api_keys["FAL_KEY"], state["project_dir"]),
-                            daemon=True,
-                        ).start()
-                        st.info(f"#{sno:02d} 이미지 생성 시작. 자동 갱신됩니다.")
+                                scene["image_status"] = "error"
+                                scene["image_error"]  = str(ex)
+                                manager.save_state(state)
+                                st.error(f"#{sno:02d} 오류: {ex}")
 
                     # 드라이브 또는 URL 수동 입력 폴백
                     gdrive_images = load_gdrive_images(
