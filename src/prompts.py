@@ -118,16 +118,53 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      film grain visible, 9:16 vertical 4K"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[나레이션 작성 원칙 — 핵심]
+
+이 채널의 나레이션은 팟캐스트가 아니다. 화면이 설명하고 나레이션이 보조한다.
+
+▶ 씬별 narration 작성 규칙
+
+1. 분량: 씬당 1~2문장, 15~25자 이내. 짧고 강하게.
+   나쁜 예: "아이스 아메리카노와 아이스 롱블랙은 둘 다 에스프레소에 물을 더한 음료인데 순서 하나로 맛이 완전히 달라집니다."
+   좋은 예: "순서 하나. 그게 전부입니다."
+
+2. 인포그래픽 씬(visual_source: "ai")의 narration은 반드시 화면을 가리킨다.
+   화면에 무언가 보이고 있다는 걸 나레이션이 연동해야 한다.
+   사용 표현 예시:
+     - "보시다시피 — " (도표·다이어그램 씬)
+     - "왼쪽이 아메리카노, 오른쪽이 롱블랙입니다." (비교 씬)
+     - "이 순서대로입니다." (레시피·ASSEMBLY 씬)
+     - "숫자로 보면 — 1 대 3, 그리고 1 대 1.5." (수치 씬)
+     - "단면을 보면 크레마 층이 여기서 결정됩니다." (EXTRACTION 씬)
+     - "이 부품이 핵심입니다." (MACHINE 씬)
+
+3. 실사 씬(visual_source: "photo")의 narration은 분위기·감성·훅.
+   화면 설명 대신 감탄·궁금증·여운을 담는다.
+   예: "같은 듯 다른 두 잔." / "커피 한 잔이 이렇게 다를 수 있습니다."
+
+4. 오프닝(컷1): 강한 훅 질문 또는 반전 사실. 시청자를 멈추게 한다.
+   예: "당신이 마신 아메리카노, 사실 롱블랙이었을 수도 있습니다."
+
+5. 클로징(컷12): 브랜드 콜투액션.
+   반드시 포함: "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다."
+
+▶ full_narration 작성 규칙
+
+full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물이다.
+별도로 다시 쓰지 않는다. 씬과 씬 사이 전환이 매끄럽도록 연결어를 추가해도 된다.
+전체 낭독 시간 60~75초 기준 (한국어 기준 분당 약 300~350자).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [12컷 구성 원칙]
 
 정보 전달이 목적이므로 12컷 중 최소 7컷은 반드시 인포그래픽(AI 생성) 씬이어야 한다.
 실사(photo) 씬은 오프닝·클로징 분위기 연출용으로 최대 4~5컷으로 제한한다.
 
-컷 1       : 오프닝 훅 — 완성 비주얼 (TYPE A or D, visual_source: "ai")
-컷 2       : 핵심 궁금증 제기 (TYPE E: 비교/차이, visual_source: "ai")
+컷 1       : 오프닝 훅 — 강한 질문 or 반전 사실 (TYPE F or A, visual_source: "photo" or "ai")
+컷 2       : 핵심 비주얼 — 주제 전체 조감 (TYPE E or A, visual_source: "ai")
 컷 3       : 배경·원산지·역사 (TYPE C or F, visual_source: "photo")
 컷 4~5     : 핵심 과학·구조 설명 (TYPE B or D, visual_source: "ai")
-컷 6~8     : 메인 레시피/비교/수치 (TYPE A or E, visual_source: "ai")
+컷 6~8     : 메인 레시피/비교/수치 인포그래픽 (TYPE A or E, visual_source: "ai")
 컷 9       : 심화 데이터·수치 (TYPE E, visual_source: "ai")
 컷 10      : 분위기 전환 (TYPE F or C, visual_source: "photo")
 컷 11      : 완성 비주얼 클로즈업 (TYPE A or D, visual_source: "ai")
@@ -136,28 +173,28 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 [비교 주제 특칙]
 주제에 'vs', '차이', '비교', '아메리카노', '롱블랙', '두 가지' 등이 포함되면:
   → TYPE E (SCIENCE_DATA) 씬을 최소 3컷 이상 배치한다.
-  → 각 비교 씬은 서로 다른 비교 각도를 다룬다.
-    (예: 물 비율 비교 / 추출 순서 차이 / 맛 프로파일 차이)
+  → 각 비교 씬은 서로 다른 각도: 물 비율 / 추출 순서 / 맛 프로파일 / 카페인 수치 등.
+  → 각 씬 narration은 반드시 "왼쪽이 ~, 오른쪽이 ~" 또는 "보시다시피 ~" 형식.
 
 [레시피 주제 특칙]
 주제에 '레시피', '만들기', '방법', '만드는 법' 등이 포함되면:
   → TYPE A (ASSEMBLY) 씬을 3~4컷 분산 배치한다.
-  → 한 씬에 모든 재료를 몰아넣지 않고 재료·비율·순서를 분할해 시각화한다.
-    예: 컷6=재료 분해 / 컷7=비율 인포그래픽 / 컷8=조립 순서 / 컷11=완성 클로즈업
+  → 한 씬에 모든 재료를 몰아넣지 않고 재료·비율·순서를 분할 시각화한다.
+  → 각 씬 narration: "이 순서대로입니다." / "재료는 이렇게 분해됩니다." 형식.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [JSON 스키마]
 {
   "chapter": "챕터명",
   "title": "주제명",
-  "full_narration": "전체 읽을 나레이션 텍스트",
+  "full_narration": "12개 씬 narration을 자연스럽게 이어붙인 전체 낭독 텍스트 (60~75초 분량)",
   "scenes": [
     {
       "scene_no": 1,
       "scene_type": "ASSEMBLY",
       "visual_source": "ai",
       "name": "오프닝 훅",
-      "narration": "나레이션 대사",
+      "narration": "이 순서대로입니다. 얼음, 물, 그리고 에스프레소.",
       "image_prompt": "Exploded flat-lay of ice cubes, espresso shot, cold water arranged vertically, ice at very bottom, warm off-white background #FFF8F0, commercial food photography, Hasselblad 80mm f2.8, 9:16 vertical 4K, no text, no people",
       "flow_prompt": "ice cubes, espresso, water floating and stacking into tall glass, slow elegant assembly motion, cinematic coffee commercial, 9:16 vertical 4K",
       "sfx": "impact_whoosh",
@@ -206,14 +243,17 @@ def generate_script_and_prompts(
     client = anthropic.Anthropic(api_key=api_key)
 
     user_prompt = (
-        f"챕터: '{chapter}', 주제: '{topic}'.\n"
-        "씬 유형과 visual_source를 자동 판단하여 12컷 대본과 "
-        "FLUX 이미지 프롬프트(image_prompt), "
-        "Kling 영상 프롬프트(flow_prompt), SFX 태그를 JSON으로 출력해줘.\n"
-        "image_prompt는 visual_source가 'ai'인 씬은 반드시 영문 FLUX 프롬프트로, "
-        "'photo'인 씬은 Unsplash 검색 키워드로 작성할 것.\n"
-        "구체적인 재료명·기계명·지역명·수치·비교 대상을 실제로 채워서 작성할 것.\n"
-        "인포그래픽(ai) 씬이 최소 7컷 이상 포함되어야 한다."
+        f"챕터: '{chapter}', 주제: '{topic}'.\n\n"
+        "아래 조건을 모두 지켜서 12컷 대본을 JSON으로 출력해줘.\n\n"
+        "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것.\n"
+        "② 인포그래픽(visual_source: 'ai') 씬이 최소 7컷 이상 포함될 것.\n"
+        "③ 각 씬 narration은 1~2문장, 15~25자 이내로 짧고 강하게.\n"
+        "④ 인포그래픽 씬(ai)의 narration은 반드시 화면을 가리키는 표현 사용.\n"
+        "   예: '보시다시피 —', '왼쪽이 ~, 오른쪽이 ~', '이 순서대로입니다.', '숫자로 보면 —'\n"
+        "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
+        "⑥ 구체적 수치·재료명·비교 대상을 실제로 채울 것 (추상적 표현 금지).\n"
+        "⑦ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 텍스트.\n"
+        "   전체 낭독 시간 60~75초 분량으로 구성할 것."
     )
 
     response = client.messages.create(
