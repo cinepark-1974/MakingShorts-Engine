@@ -405,6 +405,21 @@ except ImportError as e:
     MODULES_OK = False
     IMPORT_ERROR = str(e)
 
+# ── 씬별 이미지 소스 판단 ────────────────────────────────────────────────────
+# Claude가 대본 생성 시 scene_type과 visual_source를 함께 결정한다.
+# visual_source: "ai"  → FLUX AI 생성 (인포그래픽·단면도·비교표·추출 시각화)
+# visual_source: "photo" → Unsplash 실사 (산지 풍경·카페 분위기·역사 장면)
+# 구 대본(visual_source 필드 없음) 호환을 위해 scene_type으로 폴백 판단.
+_AI_SCENE_TYPES = {"ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
+
+def needs_ai_image(scene: dict) -> bool:
+    """scene의 visual_source 또는 scene_type으로 FLUX AI 필요 여부 반환."""
+    vs = scene.get("visual_source", "")
+    if vs:
+        return vs == "ai"
+    # 폴백: scene_type 기반
+    return scene.get("scene_type", "") in _AI_SCENE_TYPES
+
 # ── API 키 로드 ───────────────────────────────────────────────────────────────
 def load_api_keys():
     """secrets.toml → 환경변수 순으로 API 키 로드"""
@@ -870,7 +885,7 @@ img_done_cnt  = img_done_cnt_panel   # 위에서 계산
 step2_done    = p2_done
 
 _unsplash_key = api_keys.get("UNSPLASH_ACCESS_KEY", "")
-_img_src_label = "Unsplash 실사 검색" if _unsplash_key else "FLUX Schnell (AI 생성)"
+_img_src_label = "Unsplash · FLUX AI 선택 가능" if _unsplash_key else "FLUX Schnell (AI 생성)"
 
 st.markdown(f"""
 <div class="step-header">
@@ -896,11 +911,31 @@ if not step2_locked:
     batch_nos     = [s["scene_no"] for s in next_batch]
     batch_label   = f"{batch_nos[0]}~{batch_nos[-1]}컷" if batch_nos else ""
 
+    # ── 이미지 생성 모드 선택 ────────────────────────────────────────────────
+    if _unsplash_key:
+        _mode_options = [
+            "🎯 자동 판단 (씬별 최적 소스)",
+            "📷 모두 Unsplash 실사",
+            "🤖 모두 FLUX AI",
+        ]
+    else:
+        _mode_options = ["🤖 FLUX AI 생성 (인포그래픽 · 3D · 단면도)"]
+
+    _img_mode = st.radio(
+        "이미지 소스",
+        options=_mode_options,
+        horizontal=True,
+        key="img_mode_radio",
+        label_visibility="collapsed",
+    )
+    _mode_is_auto  = _unsplash_key and "자동" in _img_mode
+    _use_unsplash_batch = _unsplash_key and "Unsplash" in _img_mode
+
     col_img, col_img_info = st.columns([2, 5])
     with col_img:
-        _src_icon = "📷" if _unsplash_key else "🖼"
+        _src_icon = "📷" if _use_unsplash_batch else "🤖"
         img_gen_btn = st.button(
-            f"{_src_icon} 다음 {len(next_batch)}컷 수집 ({batch_label})" if next_batch else "✅ 이미지 완료",
+            f"{_src_icon} 다음 {len(next_batch)}컷 ({batch_label})" if next_batch else "✅ 이미지 완료",
             disabled=(len(next_batch) == 0 or st.session_state.gen_running),
             key="img_gen_all",
         )
@@ -938,13 +973,28 @@ if not step2_locked:
             prog.info(f"🖼 {sno}컷 생성 중… ({i+1}/{len(next_batch)}컷)")
 
             try:
-                if _unsplash_key:
-                    # Unsplash 라이센스 프리 실사 사진
+                # 소스 결정:
+                #   "모두 FLUX AI"         → 항상 FLUX
+                #   "모두 Unsplash"        → 항상 Unsplash
+                #   "자동 판단" or 키없음  → visual_source / scene_type 기반 분기
+                if not _unsplash_key:
+                    _use_flux = True
+                elif "FLUX" in _img_mode and "모두" in _img_mode:
+                    _use_flux = True
+                elif "Unsplash" in _img_mode and "모두" in _img_mode:
+                    _use_flux = False
+                else:  # 자동 판단
+                    _use_flux = needs_ai_image(scene)
+
+                if _use_flux:
+                    # FLUX AI 생성 (인포그래픽 · 단면도 · 비교표 · 추출 시각화)
+                    url = generate_reference_image(api_keys["FAL_KEY"], prompt)
+                else:
+                    # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
                     from src.image_search import search_unsplash, scene_to_query
                     url = search_unsplash(scene_to_query(scene), _unsplash_key)
-                else:
-                    # 폴백: FLUX Schnell AI 생성 (UNSPLASH_ACCESS_KEY 미등록 시)
-                    url = generate_reference_image(api_keys["FAL_KEY"], prompt)
+                # 어느 소스로 생성했는지 기록 (썸네일 캡션·수동 교체 참고용)
+                scene["_img_source"] = "flux" if _use_flux else "unsplash"
 
                 # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
                 scene["image_path"]          = url
@@ -1194,10 +1244,94 @@ else:
                 # 이미지 썸네일 표시 (Unsplash URL 또는 fal CDN URL 또는 로컬 경로 모두 지원)
                 _img_is_url = img_path.startswith("http")
                 if img_path and (_img_is_url or os.path.exists(img_path)):
-                    _img_src_caption = "Unsplash" if (_img_is_url and "images.unsplash" in img_path) else "FLUX Schnell"
+                    _src_tag = scene.get("_img_source") or (
+                        "unsplash" if "images.unsplash" in img_path else "flux"
+                    )
+                    _type_tag = scene.get("scene_type", "")
+                    _img_src_caption = (
+                        f"{'📷 Unsplash' if _src_tag == 'unsplash' else '🤖 FLUX AI'}"
+                        + (f" · {_type_tag}" if _type_tag else "")
+                    )
                     st.image(img_path, use_container_width=True,
                              caption=f"{_img_src_caption} · {img_status}")
                     new_ref = img_path  # Kling 첫 프레임으로 자동 사용
+
+                    # ── 이미지 교체 옵션 ────────────────────────────────────
+                    if _unsplash_key:
+                        _sw_c1, _sw_c2 = st.columns(2)
+                        with _sw_c1:
+                            _swap_btn = st.button(
+                                "📷 다른 사진", key=f"swap_img_{sno}",
+                                use_container_width=True,
+                                disabled=st.session_state.gen_running,
+                            )
+                        with _sw_c2:
+                            _ai_swap_btn = st.button(
+                                "🤖 AI로 교체", key=f"ai_img_{sno}",
+                                use_container_width=True,
+                                disabled=st.session_state.gen_running,
+                            )
+                    else:
+                        _swap_btn = st.button(
+                            "🖼 다시 생성", key=f"swap_img_{sno}",
+                            use_container_width=True,
+                            disabled=st.session_state.gen_running,
+                        )
+                        _ai_swap_btn = False
+
+                    if _swap_btn:
+                        with st.spinner(f"#{sno:02d} 다른 사진 검색 중…"):
+                            try:
+                                from src.image_search import search_unsplash, scene_to_query
+                                _pg = scene.get("_unsplash_page", 1) + 1
+                                url = search_unsplash(
+                                    scene_to_query(scene), _unsplash_key, page=_pg
+                                )
+                                scene["_unsplash_page"]      = _pg
+                                scene["image_path"]          = url
+                                scene["image_status"]        = "done"
+                                scene["reference_image_url"] = url
+                                scene["_img_source"]         = "unsplash"
+                                scene.pop("image_error", None)
+                                manager.save_state(state)
+                                st.session_state.current_project = state
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"#{sno:02d} 교체 실패: {ex}")
+
+                    if _ai_swap_btn:
+                        with st.spinner(f"#{sno:02d} FLUX AI 생성 중… (약 20~40초)"):
+                            try:
+                                _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+                                url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                scene["image_path"]          = url
+                                scene["image_status"]        = "done"
+                                scene["reference_image_url"] = url
+                                scene["_img_source"]         = "flux"
+                                scene.pop("image_error", None)
+                                manager.save_state(state)
+                                st.session_state.current_project = state
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"#{sno:02d} AI 생성 실패: {ex}")
+
+                    # URL 직접 붙여넣기 (Enter 치면 즉시 적용)
+                    _custom_url = st.text_input(
+                        "또는 URL 직접 입력",
+                        value="",
+                        placeholder="https://… 붙여넣고 Enter",
+                        key=f"custom_img_{sno}",
+                        label_visibility="collapsed",
+                    ).strip()
+                    if _custom_url and _custom_url != img_path:
+                        scene["image_path"]          = _custom_url
+                        scene["image_status"]        = "done"
+                        scene["reference_image_url"] = _custom_url
+                        new_ref = _custom_url
+                        manager.save_state(state)
+                        st.session_state.current_project = state
+                        st.rerun()
+
                 else:
                     # 개별 이미지 생성 버튼
                     img_status_label = {
@@ -1206,22 +1340,54 @@ else:
                     }.get(img_status, "?")
                     st.caption(f"이미지: {img_status_label}")
 
-                    _btn_label = f"📷 #{sno:02d} 사진 검색" if _unsplash_key else f"🖼 #{sno:02d} 이미지 생성"
-                    if st.button(_btn_label,
-                                 key=f"img_regen_{sno}",
-                                 disabled=(img_status == "generating" or st.session_state.gen_running),
-                                 use_container_width=True):
-                        with st.spinner(f"#{sno:02d} 이미지 수집 중…"):
+                    _btn_disabled = (img_status == "generating" or st.session_state.gen_running)
+                    if _unsplash_key:
+                        _rc1, _rc2 = st.columns(2)
+                        with _rc1:
+                            _unsplash_single = st.button(
+                                "📷 Unsplash", key=f"img_regen_{sno}",
+                                disabled=_btn_disabled, use_container_width=True,
+                            )
+                        with _rc2:
+                            _flux_single = st.button(
+                                "🤖 FLUX AI", key=f"img_flux_{sno}",
+                                disabled=_btn_disabled, use_container_width=True,
+                            )
+                    else:
+                        _unsplash_single = False
+                        _flux_single = st.button(
+                            f"🖼 #{sno:02d} 이미지 생성", key=f"img_regen_{sno}",
+                            disabled=_btn_disabled, use_container_width=True,
+                        )
+
+                    if _unsplash_single:
+                        with st.spinner(f"#{sno:02d} Unsplash 검색 중…"):
                             try:
-                                if _unsplash_key:
-                                    from src.image_search import search_unsplash, scene_to_query
-                                    url = search_unsplash(scene_to_query(scene), _unsplash_key)
-                                else:
-                                    _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-                                    url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                from src.image_search import search_unsplash, scene_to_query
+                                url = search_unsplash(scene_to_query(scene), _unsplash_key)
                                 scene["image_path"]          = url
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
+                                scene["_img_source"]         = "unsplash"
+                                scene.pop("image_error", None)
+                                manager.save_state(state)
+                                st.session_state.current_project = state
+                                st.rerun()
+                            except Exception as ex:
+                                scene["image_status"] = "error"
+                                scene["image_error"]  = str(ex)
+                                manager.save_state(state)
+                                st.error(f"#{sno:02d} 오류: {ex}")
+
+                    if _flux_single:
+                        with st.spinner(f"#{sno:02d} FLUX AI 생성 중… (약 20~40초)"):
+                            try:
+                                _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+                                url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                scene["image_path"]          = url
+                                scene["image_status"]        = "done"
+                                scene["reference_image_url"] = url
+                                scene["_img_source"]         = "flux"
                                 scene.pop("image_error", None)
                                 manager.save_state(state)
                                 st.session_state.current_project = state
