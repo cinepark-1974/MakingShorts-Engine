@@ -56,17 +56,75 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 ▶ TYPE A — ASSEMBLY (레시피 · 재료 · 조립 · 비율 분배)
   트리거: 재료, 배합, 비율, 레이어, 붓기, 넣기, 레시피, 만들기, 분산
   visual_source: "ai"
-  image_prompt 패턴:
-    "Exploded flat-lay of [재료1], [재료2], [재료3] arranged vertically
-     from bottom to top — [BASE재료] at very bottom, each ingredient
-     floating with subtle separation, thin elegant dark guide lines,
-     warm off-white background #FFF8F0, commercial food photography,
-     Hasselblad 80mm f2.8, shallow depth of field, 9:16 vertical 4K,
-     no text, no people"
+
+  ★ 레시피 주제에서 ASSEMBLY 씬은 3~4컷으로 반드시 분산한다.
+     씬마다 시각적 초점이 달라야 한다. 아래 4가지 하위패턴 중 씬 내용에 맞는 것을 선택할 것.
+     같은 패턴을 두 씬에 연속으로 쓰지 않는다.
+
+  [하위패턴 1 — 재료 클로즈업] 한 가지 핵심 재료만 단독으로 강조한다.
+    "Macro hero shot of [재료 하나] — [재료 묘사: e.g. 'espresso shot with golden crema'
+     or 'ice crystals with frosted surface texture'],
+     single ingredient floating dramatically on warm off-white background #FFF8F0,
+     extreme close-up, dramatic side rim lighting, Hasselblad 80mm macro lens,
+     shallow depth of field, pure visual zero text zero labels zero words,
+     no people, 9:16 vertical 4K"
+
+  [하위패턴 2 — 비율 시각화] 재료 간 양적 비율을 물리적 크기 차이로 표현한다.
+    "Three minimalist glass vessels of starkly different heights placed side by side —
+     TALLEST vessel filled with [A재료, 색]: [전체의 몇 분의 몇 비율],
+     MEDIUM vessel filled with [B재료, 색]: [비율],
+     SHORTEST vessel filled with [C재료, 색]: [비율],
+     each vessel precisely proportioned to reflect actual recipe ratio,
+     dark charcoal #1A1A1A background, warm amber studio lighting,
+     pure visual zero text zero labels zero numbers, no people, 9:16 vertical 4K"
+
+  [하위패턴 3 — 폭발 분해도] BASE AT BOTTOM 원칙으로 재료를 수직 분해한다.
+  ★ MASTER TEMPLATE v9 DNA — 원작자가 설계한 광고 포스터 폭발도 개념을 FLUX에 맞게 적용.
+     "BASE AT BOTTOM" 원칙: 맨 아래=베이스 재료, 위로 갈수록 나중에 올라가는 재료 순.
+     커피 예시: Bottom=Ice Cubes → Cold Water → Espresso Shot → Top=Foam or Sauce
+
+    "Premium exploded ingredient breakdown, BASE AT BOTTOM stacking order —
+     [베이스재료] floating at very BOTTOM of frame,
+     [재료2] floating above with clear separation gap,
+     [재료3] floating above that,
+     [재료4] floating above that,
+     [최상단재료] floating at very TOP of frame,
+     EXACTLY 5 ingredients total stacked vertically, each ingredient EXTRA LARGE scale
+     very prominent close-up filling at least 40% of frame width,
+     thin elegant dark brown indicator lines only connecting each element
+     (lines only — ZERO text ZERO labels ZERO words on any line),
+     [배경 자동선택]:
+       커피음료(아이스아메리카노·라떼·마키아토·에이드) → warm beige #EDE6D6 or off-white #FFF8F0
+       따뜻한커피음료 → clean warm off-white #FFF8F0
+       음식(비빔밥·가츠동·포케) → warm off-white #FFF8F0 or dark charcoal #1A1A1A
+     soft natural window light from left, warm natural light,
+     commercial food photography Hasselblad H6D-100c 80mm f2.8,
+     real food styling natural imperfections,
+     pure visual zero text zero labels zero words zero numbers,
+     no people, no tablecloth, no fabric texture, no CGI, no 3D render,
+     9:16 vertical 4K"
+
+  [하위패턴 4 — 완성 히어로샷] 완성된 음료를 대형 히어로 스케일로 담는다.
+  ★ MASTER TEMPLATE v9 오른쪽 패널 DNA — 분해도와 한 쌍이 되는 완성 비주얼.
+
+    "Completed [음료명/음식명] large hero scale prominent in [matte black or white cup/bowl/glass] —
+     clean elegant plating, light sauce brush not heavy drip, balanced visual weight,
+     [아이스드링크: ice crystals and condensation on glass exterior,
+      dramatic side backlighting revealing distinct liquid layer transparency],
+     [따뜻한음료: steam wisps rising gently, warm amber backlight],
+     [음식: natural imperfections in real food styling, vibrant color],
+     soft natural window light from left, warm natural light,
+     commercial food photography Hasselblad H6D-100c 80mm f2.8,
+     real food styling natural imperfections, 8K real photo,
+     pure visual zero text zero labels zero words,
+     no people, no tablecloth, no linen texture, no heavy sauce drip,
+     no gross, no slimy, no plastic, no CGI, no 3D render,
+     9:16 vertical 4K"
+
   flow_prompt 패턴:
-    "[재료들] floating and stacking downward into [완성된 잔],
-     slow elegant assembly motion from top, cinematic food commercial,
-     warm natural light, 9:16 vertical 4K"
+    "[재료들] floating and assembling downward into [완성된 잔/그릇],
+     slow elegant layering motion from top, each ingredient settling into position,
+     cinematic food commercial, warm natural light, 9:16 vertical 4K"
 
 ▶ TYPE B — MACHINE (기계 · 장비 · 도구 · 구조)
   트리거: 머신, 그라인더, 포타필터, 탬퍼, 드리퍼, 케틀, 장비, 부품, 구조
@@ -207,8 +265,32 @@ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물�
 [레시피 주제 특칙]
 주제에 '레시피', '만들기', '방법', '만드는 법' 등이 포함되면:
   → TYPE A (ASSEMBLY) 씬을 3~4컷 분산 배치한다.
-  → 한 씬에 모든 재료를 몰아넣지 않고 재료·비율·순서를 분할 시각화한다.
-  → 각 씬 narration: "이 순서대로입니다." / "재료는 이렇게 분해됩니다." 형식.
+  → 각 ASSEMBLY 씬은 서로 다른 하위패턴을 써야 한다.
+     아래 4컷 구성을 기준으로 삼는다:
+
+  ASSEMBLY 컷 1 (재료 클로즈업): 주재료 하나만 단독 강조 — 하위패턴 1 사용
+    narration 예시: "재료는 딱 세 가지입니다."
+    image_prompt: 하위패턴 1 — Macro hero shot of [핵심 재료] single ingredient floating...
+
+  ASSEMBLY 컷 2 (비율 시각화): 재료 간 양적 비율 — 하위패턴 2 사용
+    narration 예시: "비율로 보면 — 얼음 1, 물 1, 에스프레소 0.5."
+    image_prompt: 하위패턴 2 — Three vessels of different heights...
+
+  ASSEMBLY 컷 3 (폭발 분해도): BASE AT BOTTOM 원칙으로 5재료 수직 분해 — 하위패턴 3 사용
+    narration 예시: "이 순서대로입니다. 얼음 먼저, 물 다음, 마지막 에스프레소."
+    image_prompt: 하위패턴 3 — Premium exploded breakdown, BASE AT BOTTOM,
+                  Ice Cubes at very bottom → Cold Water → Espresso Shot at top,
+                  EXTRA LARGE scale, thin indicator lines only (zero text zero labels),
+                  warm beige #EDE6D6 background, Hasselblad 80mm f2.8...
+
+  ASSEMBLY 컷 4 (완성 히어로샷): 완성된 음료 대형 히어로 — 하위패턴 4 사용
+    narration 예시: "레이어가 섞이지 않는 게 핵심입니다."
+    image_prompt: 하위패턴 4 — Completed [음료명] large hero scale in matte black cup,
+                  ice crystals and condensation, distinct liquid layers,
+                  Hasselblad H6D-100c 80mm f2.8, 8K real photo...
+
+  → 레시피가 단순하면 3컷으로 줄여도 되나, 하위패턴은 반드시 다른 것 사용.
+  → 한 씬에 모든 재료를 몰아넣지 않는다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [JSON 스키마]
