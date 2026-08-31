@@ -229,35 +229,59 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 
 ▶ TYPE E — SCIENCE_DATA (과학 · 수치 · 비교 · 성분 · 차이점)
   트리거: 온도, pH, 산도, 성분, 카페인, 비율, 수치, 퍼센트, 차이, 비교,
-          vs, 다른 점, 같은 점, 그래프, 롱블랙, 아메리카노 차이 등
+          vs, 다른 점, 같은 점, 롱블랙, 아메리카노 차이 등
   visual_source: "ai"
-  image_prompt 패턴:
-  ★ 절대로 "infographic", "chart", "graph", "diagram", "label" 단어 사용 금지.
-    이 단어들이 포함되면 FLUX가 텍스트 레이블을 생성한다.
-    대신 아래 패턴을 사용할 것:
 
-    "Abstract geometric comparison visual of [비교 대상] — two distinct
-     vertical zones side by side, LEFT zone: [왼쪽 개념 표현하는 색·형태],
-     RIGHT zone: [오른쪽 개념 표현하는 색·형태], bold color contrast,
-     [데이터 차이를 비례로 표현하는 기하 도형 묘사],
-     navy #142C3C background, gold accent #DBA12C geometric divider,
-     floating spheres or liquid layers representing ratio proportions,
-     premium editorial still life photography, no text no labels no words,
-     no people, 9:16 vertical 4K"
+  ★★ SCIENCE_DATA 이미지 작성 핵심 원칙 ★★
+  FLUX는 "개념"을 묘사하면 플로우차트·흩어진 도형·추상 형태를 만든다.
+  반드시 "스튜디오에서 실제로 촬영할 수 있는 피사체"를 묘사한다.
+  모든 데이터와 비교는 실제 음료·용기·재료의 물리적 차이(색·투명도·양·높이)로 표현한다.
 
-  비율·수치 씬 예시: "Two tall glass columns side by side — LEFT column
-    filled 2/3 with amber espresso layer over ice, RIGHT column filled 1/2,
-    precise geometric liquid layers, color difference visible,
-    dark studio background, gold accent lines, pure visual zero text, 9:16 vertical 4K"
+  금지 단어: "abstract", "geometric", "floating spheres", "zones", "conceptual",
+             "infographic", "chart", "graph", "diagram", "label", "molecular cluster"
+  → 이 단어들이 있으면 플로우차트 또는 SF 그래픽이 나온다.
 
-  성분·분자 씬 예시: "Floating molecular cluster of [성분] — abstract
-    organic spheres in warm amber and cream, suspended on dark background,
-    macro photography aesthetic, no text no labels, 9:16 vertical 4K"
+  [하위패턴 1 — 두 음료 나란히 비교] 아메리카노/롱블랙처럼 두 음료를 실제로 나란히 놓는다.
+    "Two identical tall clear glasses placed side by side on [dark marble/light marble] surface —
+     LEFT glass: [음료1 구체 묘사: e.g. 'lighter translucent coffee-brown liquid, ice cubes visible,
+       water poured first creating uniform diluted color throughout'],
+     RIGHT glass: [음료2 구체 묘사: e.g. 'darker concentrated espresso sitting on top of cold water,
+       visible dark-to-light gradient layer from top to bottom, ice cubes underneath'],
+     dramatic side lighting from left revealing liquid transparency and color depth difference,
+     condensation droplets on both glass exteriors,
+     commercial food photography Hasselblad H6D-100c 80mm f2.8,
+     real food styling natural imperfections, 8K,
+     pure visual zero text zero labels zero words,
+     no people, no CGI, no 3D render, 9:16 vertical 4K"
+
+  [하위패턴 2 — 비율 비커] 물·에스프레소 비율을 실험실 계량 용기로 물리적으로 표현한다.
+    "Two clear glass beakers or measuring cylinders placed side by side on dark surface —
+     LEFT container: [재료A 묘사: e.g. 'filled 3/4 height with clear water,
+       tiny espresso shot layer settling at bottom, amber tint diffusing upward'],
+     RIGHT container: [재료B 묘사: e.g. 'filled 1/2 height with concentrated espresso,
+       dark rich brown throughout with golden crema ring at surface'],
+     [fill height difference clearly visible showing volume ratio],
+     dramatic overhead or 45-degree angle studio lighting,
+     dark matte surface, warm amber studio light from left,
+     commercial still life photography Hasselblad 80mm f2.8,
+     pure visual zero text zero labels zero words zero numbers,
+     no people, no CGI, 9:16 vertical 4K"
+
+  [하위패턴 3 — 재료 클로즈업 대비] 핵심 재료 하나를 극단 클로즈업해 성분·질감 차이를 보인다.
+    "Extreme macro close-up of [핵심 재료: e.g. 'espresso crema surface' or
+     'coffee grounds texture in portafilter' or 'ice melt pattern in cold brew'],
+     [재료의 구체적 물리 묘사: e.g. 'golden-brown crema with tiger-stripe natural oil pattern,
+       micro bubbles visible, coffee lipids glistening under warm light'],
+     100mm macro lens f2.0 extreme shallow depth of field,
+     warm studio lighting from upper-left, bokeh background,
+     commercial food photography real texture visible,
+     pure visual zero text zero labels zero words,
+     no people, no CGI, no 3D render, 9:16 vertical 4K"
 
   flow_prompt 패턴:
-    "geometric zones separating and merging with elegant motion,
-     color zones revealing with smooth transition, scientific aesthetic,
-     9:16 vertical 4K"
+    "two drinks side by side, liquid layers slowly settling and separating,
+     color contrast becoming more vivid, condensation forming on glass,
+     warm cinematic lighting, 9:16 vertical 4K"
 
 ▶ TYPE F — CINEMATIC (역사 · 문화 · 스토리 · 분위기)
   트리거: 역사, 기원, 전설, 카페, 문화, 시대, 유래, 퍼졌다, 전파
