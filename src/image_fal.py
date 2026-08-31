@@ -7,9 +7,17 @@ import fal_client
 
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
-# flux/schnell : 컷당 3~5초, 안정적, 9:16 커스텀 사이즈 지원
-# negative_prompt / guidance_scale 미지원 — 프롬프트로 제어
-FLUX_MODEL = "fal-ai/flux/schnell"
+# flux/dev  : 컷당 15~30초, 프롬프트 지시 준수율 높음, 28-step 권장
+# flux/schnell : 4-step, 빠르지만 "no text" 같은 음성 지시를 무시하는 경향 있음
+FLUX_MODEL = "fal-ai/flux/dev"
+
+# 모든 AI 씬 프롬프트 앞에 자동으로 붙이는 NO-TEXT 강제 접두사
+# FLUX는 negative_prompt API가 없으므로 positive 프롬프트 최상단에 배치해야 효과적임
+_NO_TEXT_PREFIX = (
+    "PURE VISUAL ONLY. ABSOLUTELY ZERO TEXT. ZERO LABELS. ZERO WORDS. "
+    "ZERO NUMBERS. ZERO LETTERS. ZERO WATERMARKS. ZERO CAPTIONS. "
+    "NO TYPOGRAPHY OF ANY KIND. "
+)
 
 
 def generate_reference_image(
@@ -35,20 +43,27 @@ def generate_reference_image(
     """
     os.environ["FAL_KEY"] = fal_key
 
-    # flux/schnell 지원 파라미터만 사용 (negative_prompt, guidance_scale 없음)
+    # NO-TEXT 접두사를 프롬프트 최상단에 강제 삽입
+    # flux/dev는 negative_prompt 파라미터가 없으므로 positive 지시로 제어한다
+    enforced_prompt = _NO_TEXT_PREFIX + image_prompt
+
+    # flux/dev 권장 파라미터
+    # num_inference_steps 28 = 기본값, 품질과 속도의 균형점
+    # guidance_scale 3.5 = flux/dev 권장 범위 (2.5~4.5)
     arguments = {
-        "prompt":                image_prompt,
-        "image_size":            {"width": width, "height": height},
-        "num_inference_steps":   4,   # schnell 최적값 (1~12)
-        "num_images":            1,
-        "output_format":         "jpeg",
-        "enable_safety_checker": True,
+        "prompt":              enforced_prompt,
+        "image_size":          {"width": width, "height": height},
+        "num_inference_steps": 28,
+        "guidance_scale":      3.5,
+        "num_images":          1,
+        "output_format":       "jpeg",
     }
 
     handler = fal_client.submit(FLUX_MODEL, arguments=arguments)
     result  = handler.get()
 
-    return result["images"][0]["url"]   # fal CDN URL 반환
+    # fal-ai/flux/dev 응답 구조: result["images"][0]["url"]
+    return result["images"][0]["url"]
 
 
 def generate_images_for_scenes(fal_key: str, scenes: list, project_dir: str = "") -> list:

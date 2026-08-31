@@ -32,10 +32,18 @@ scene_type에 따라 아래 규칙으로 자동 결정한다:
 
 [AI 이미지 작성 절대 규칙 — visual_source: "ai" 씬 전용]
 image_prompt는 FLUX AI 이미지 생성용 영문 프롬프트다.
-반드시 아래 세 가지 금지 조건을 지킬 것:
+반드시 아래 조건을 지킬 것:
+
   ① NO TEXT — 한글, 영문, 숫자, 글자, 워터마크, 로고 일절 금지
+     → 프롬프트 안에 "pure visual only zero text zero labels zero words" 문구를 반드시 포함할 것
   ② NO FACE — 사람 얼굴, 인물 초상 금지. 손만 허용(EXTRACTION 씬 한정)
   ③ NO CGI  — 3D 렌더 느낌, 플라스틱 질감, 언캐니밸리 금지
+  ④ 금지 단어 — "infographic", "chart", "graph", "diagram", "label", "legend",
+                 "data visualization" 절대 사용 금지.
+     이 단어들이 프롬프트에 포함되면 FLUX가 텍스트 레이블이 붙은 도표를 생성한다.
+     대체 표현: "abstract geometric visual", "cross-section illustration",
+                "color zone composition", "floating geometric shapes",
+                "molecular cluster", "liquid layer composition"
 
 [실사 씬 — visual_source: "photo" 씬]
 image_prompt는 Unsplash 검색어 역할을 한다.
@@ -64,10 +72,12 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
   트리거: 머신, 그라인더, 포타필터, 탬퍼, 드리퍼, 케틀, 장비, 부품, 구조
   visual_source: "ai"
   image_prompt 패턴:
-    "3D exploded technical diagram of [기계명] — parts floating apart
-     with thin dark indicator lines, blueprint-meets-product-photography
-     aesthetic, dark charcoal #1A1A1A background, gold accent #DBA12C,
-     studio rim lighting, no text labels, no people, 9:16 vertical 4K"
+    "3D exploded cross-section illustration of [기계명] — metallic parts
+     floating apart with precise spatial separation, each component casting
+     soft shadow, blueprint-meets-product-photography aesthetic,
+     dark charcoal #1A1A1A background, gold accent #DBA12C rim lighting,
+     studio product photography, pure visual only zero text zero labels,
+     no people, 9:16 vertical 4K"
   flow_prompt 패턴:
     "parts slowly drifting apart and reassembling, smooth rotation,
      technical documentary style, 9:16 vertical 4K"
@@ -99,14 +109,32 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
           vs, 다른 점, 같은 점, 그래프, 롱블랙, 아메리카노 차이 등
   visual_source: "ai"
   image_prompt 패턴:
-    "clean minimal infographic-style illustration of [비교 대상 or 과학 개념] —
-     abstract geometric shapes representing [데이터 or 차이점], navy #142C3C
-     background, gold accent #DBA12C lines, floating molecular or
-     geometric elements, premium editorial design aesthetic,
-     no text, no people, 9:16 vertical 4K"
+  ★ 절대로 "infographic", "chart", "graph", "diagram", "label" 단어 사용 금지.
+    이 단어들이 포함되면 FLUX가 텍스트 레이블을 생성한다.
+    대신 아래 패턴을 사용할 것:
+
+    "Abstract geometric comparison visual of [비교 대상] — two distinct
+     vertical zones side by side, LEFT zone: [왼쪽 개념 표현하는 색·형태],
+     RIGHT zone: [오른쪽 개념 표현하는 색·형태], bold color contrast,
+     [데이터 차이를 비례로 표현하는 기하 도형 묘사],
+     navy #142C3C background, gold accent #DBA12C geometric divider,
+     floating spheres or liquid layers representing ratio proportions,
+     premium editorial still life photography, no text no labels no words,
+     no people, 9:16 vertical 4K"
+
+  비율·수치 씬 예시: "Two tall glass columns side by side — LEFT column
+    filled 2/3 with amber espresso layer over ice, RIGHT column filled 1/2,
+    precise geometric liquid layers, color difference visible,
+    dark studio background, gold accent lines, pure visual zero text, 9:16 vertical 4K"
+
+  성분·분자 씬 예시: "Floating molecular cluster of [성분] — abstract
+    organic spheres in warm amber and cream, suspended on dark background,
+    macro photography aesthetic, no text no labels, 9:16 vertical 4K"
+
   flow_prompt 패턴:
-    "elements animating in sequence, data revealing with elegant motion,
-     clean scientific aesthetic, 9:16 vertical 4K"
+    "geometric zones separating and merging with elegant motion,
+     color zones revealing with smooth transition, scientific aesthetic,
+     9:16 vertical 4K"
 
 ▶ TYPE F — CINEMATIC (역사 · 문화 · 스토리 · 분위기)
   트리거: 역사, 기원, 전설, 카페, 문화, 시대, 유래, 퍼졌다, 전파
@@ -195,7 +223,7 @@ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물�
       "visual_source": "ai",
       "name": "오프닝 훅",
       "narration": "이 순서대로입니다. 얼음, 물, 그리고 에스프레소.",
-      "image_prompt": "Exploded flat-lay of ice cubes, espresso shot, cold water arranged vertically, ice at very bottom, warm off-white background #FFF8F0, commercial food photography, Hasselblad 80mm f2.8, 9:16 vertical 4K, no text, no people",
+      "image_prompt": "Exploded flat-lay of ice cubes, espresso shot glass, cold water splash arranged vertically from bottom to top — ice at very bottom, each element floating with subtle separation, thin elegant dark guide lines, warm off-white background #FFF8F0, commercial food photography, Hasselblad 80mm f2.8, shallow depth of field, pure visual zero text zero labels zero words, no people, 9:16 vertical 4K",
       "flow_prompt": "ice cubes, espresso, water floating and stacking into tall glass, slow elegant assembly motion, cinematic coffee commercial, 9:16 vertical 4K",
       "sfx": "impact_whoosh",
       "overlay_text": "화면 자막 키워드",
