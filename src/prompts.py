@@ -129,16 +129,49 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 ▶ TYPE B — MACHINE (기계 · 장비 · 도구 · 구조)
   트리거: 머신, 그라인더, 포타필터, 탬퍼, 드리퍼, 케틀, 장비, 부품, 구조
   visual_source: "ai"
-  image_prompt 패턴:
-    "3D exploded cross-section illustration of [기계명] — metallic parts
-     floating apart with precise spatial separation, each component casting
-     soft shadow, blueprint-meets-product-photography aesthetic,
-     dark charcoal #1A1A1A background, gold accent #DBA12C rim lighting,
-     studio product photography, pure visual only zero text zero labels,
-     no people, 9:16 vertical 4K"
+
+  ★ 금지 단어: "blueprint", "technical diagram", "schematic", "illustration", "cutaway diagram"
+     이 단어들이 텍스트 레이블과 그리드선을 유발한다.
+     레퍼런스: Apple iPhone/AirPods 제품 분해 광고 사진 스타일 — 어두운 배경에 금속 부품들이 공중 부양.
+
+  [하위패턴 1 — 전체 분해도 (Apple 스타일)] 기계 전체를 부품별로 분해해 수직으로 배치한다.
+    "Premium exploded product photography of [기계명] —
+     [부품1: 맨 아래 베이스 부품] floating at very bottom,
+     [부품2] floating above with precise gap,
+     [부품3] floating above that,
+     [부품4] floating above that,
+     [부품5: 외관 상단] floating at very top,
+     each metallic component casting precise soft drop shadow,
+     [소재 묘사: 'brushed stainless steel surface', 'matte black anodized aluminum',
+      'polished chrome collar', 'ceramic flat burr disc'],
+     dark charcoal #1A1A1A background, gold accent rim lighting #DBA12C,
+     studio product photography Hasselblad H6D-100c 80mm f2.8,
+     Apple-style premium hardware photography,
+     pure visual zero text zero labels zero words zero annotations,
+     no people, no CGI plastic look, no blueprint grid, no 3D render,
+     9:16 vertical 4K"
+
+  [하위패턴 2 — 핵심 부품 클로즈업] 핵심 부품 하나를 극단적으로 클로즈업해 질감을 강조한다.
+    "Extreme close-up macro hero shot of [핵심 부품명] —
+     [소재·질감 묘사: e.g.
+      'brushed stainless steel portafilter with micro-perforated filter basket,
+       water droplets caught in filter basket holes',
+      or 'ceramic flat burr grinder disc with precision-engineered tungsten ridges,
+         fine coffee ground particles caught in burr grooves',
+      or 'matte black espresso tamper with chrome collar and mirror-flat base,
+         coffee grounds residue on tamper face'],
+     dramatic single-source studio lighting from upper-left,
+     gold accent highlight catching metal edge,
+     dark charcoal #1A1A1A background,
+     Hasselblad H6D-100c 100mm macro f2.8, real material texture visible,
+     pure visual zero text zero labels zero words,
+     no people, no CGI, no plastic look, no 3D render,
+     9:16 vertical 4K"
+
   flow_prompt 패턴:
-    "parts slowly drifting apart and reassembling, smooth rotation,
-     technical documentary style, 9:16 vertical 4K"
+    "metallic parts slowly drifting apart revealing internal structure,
+     smooth 360-degree rotation, studio lighting catching each component edge,
+     premium hardware documentary style, 9:16 vertical 4K"
 
 ▶ TYPE C — ORIGIN_MAP (원산지 · 지역 · 지도)
   트리거: 에티오피아, 콜롬비아, 예멘, 브라질, 지도, 산지, 고도, 위도, 원산지
@@ -152,15 +185,47 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 ▶ TYPE D — EXTRACTION (추출 · 유체역학 · 크레마)
   트리거: 추출, 에스프레소, 드립, 압력, 크레마, 흐름, 투과, 퍼콜레이션
   visual_source: "ai"
-  image_prompt 패턴:
-    "extreme macro cross-section of [추출방식] coffee extraction —
-     golden crema forming at spout, water droplets suspended mid-air,
-     coffee grounds visible in portafilter, warm amber tones,
-     professional food photography, 100mm macro lens,
-     no text, no face (hands allowed), 9:16 vertical 4K"
+
+  ★ "cross-section diagram", "cutaway view" 금지 — 다이어그램 스타일로 빠짐.
+     레퍼런스: 실제 커피 매크로 사진작가 스타일 (Dritan Alsela, James Hoffmann 채널 비주얼).
+     물리적 실체가 있는 피사체를 극단 클로즈업하는 것이 이 씬의 핵심.
+
+  [하위패턴 1 — 추출 순간] 에스프레소/드립 추출이 진행되는 찰나를 포착한다.
+    "Extreme macro photography of [에스프레소/드립] coffee extraction in progress —
+     [에스프레소: 'twin golden amber espresso streams flowing from portafilter spout,
+       rich golden crema bubbling at surface with tiger-stripe pattern,
+       coffee puck moisture visible through basket holes,
+       micro steam wisps rising from fresh extraction'],
+     [드립: 'single bloom water droplet suspended above dark coffee grounds in paper filter,
+       golden-amber extraction liquid dripping below,
+       paper filter glowing amber with warm backlight behind it'],
+     warm amber golden tones, dramatic backlighting from behind subject,
+     100mm macro lens f2.8 extreme shallow depth of field,
+     real fluid physics and natural imperfections visible,
+     commercial food photography Hasselblad H6D-100c,
+     pure visual zero text zero labels zero words,
+     hands allowed at frame edge (absolutely no face),
+     no CGI, no 3D render, no plastic, no harsh moody dark,
+     9:16 vertical 4K"
+
+  [하위패턴 2 — 크레마 클로즈업] 갓 추출된 에스프레소 크레마 표면을 극단 확대한다.
+    "Extreme close-up macro of fresh espresso crema surface in ceramic espresso cup —
+     rich golden-brown crema with natural tiger-stripe swirl pattern,
+     micro bubbles and coffee oil droplets glistening on surface,
+     [optional: small espresso spoon breaking crema surface tension at edge],
+     warm studio lighting from upper-left,
+     extreme shallow depth of field, bokeh background,
+     commercial food photography Hasselblad 100mm macro f2.8,
+     appetizing warm color grade, real coffee surface texture,
+     pure visual zero text zero labels zero words,
+     hands allowed holding cup edge (no face),
+     no CGI, no 3D render, no plastic cup,
+     9:16 vertical 4K"
+
   flow_prompt 패턴:
-    "extreme slow motion extraction, golden crema swirling,
-     fluid dynamics visible, steam wisps rising, 9:16 vertical 4K"
+    "extreme slow motion espresso extraction, golden crema building up slowly,
+     fluid dynamics visible in amber liquid, micro steam wisps rising,
+     warm cinematic lighting, 9:16 vertical 4K"
 
 ▶ TYPE E — SCIENCE_DATA (과학 · 수치 · 비교 · 성분 · 차이점)
   트리거: 온도, pH, 산도, 성분, 카페인, 비율, 수치, 퍼센트, 차이, 비교,
