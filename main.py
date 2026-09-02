@@ -413,12 +413,44 @@ except ImportError as e:
 _AI_SCENE_TYPES = {"ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
 
 def needs_ai_image(scene: dict) -> bool:
-    """scene의 visual_source 또는 scene_type으로 FLUX AI 필요 여부 반환."""
+    """scene의 visual_source 또는 scene_type으로 AI 이미지 생성 필요 여부 반환."""
     vs = scene.get("visual_source", "")
     if vs:
         return vs == "ai"
     # 폴백: scene_type 기반
     return scene.get("scene_type", "") in _AI_SCENE_TYPES
+
+
+def smart_ai_image(scene: dict, fal_key: str, google_key: str) -> tuple:
+    """
+    씬 타입에 따라 최적 AI 엔진으로 이미지를 생성하고 (cdn_url, source_label)을 반환한다.
+
+    라우팅:
+      MACHINE / EXTRACTION / SCIENCE_DATA  →  Gemini Imagen 3 (수채화 스케치)
+      ASSEMBLY                             →  FLUX Pro (포토리얼 음식사진)
+      기타 / google_key 없음               →  FLUX Dev (폴백)
+
+    Returns:
+        tuple[str, str]: (fal CDN URL, source_label)
+        source_label: "gemini" | "flux"
+    """
+    scene_type = scene.get("scene_type", "")
+    prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+
+    if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"} and google_key:
+        from src.image_gemini import generate_illustration_image
+        url = generate_illustration_image(
+            gemini_key=google_key,
+            fal_key=fal_key,
+            image_prompt=prompt,
+        )
+        return url, "gemini"
+
+    # ASSEMBLY → flux-pro, 그 외 → flux-dev
+    from src.image_fal import FLUX_PRO_MODEL
+    chosen_model = FLUX_PRO_MODEL if scene_type == "ASSEMBLY" else ""
+    url = generate_reference_image(fal_key, prompt, model=chosen_model)
+    return url, "flux"
 
 # ── API 키 로드 ───────────────────────────────────────────────────────────────
 def load_api_keys():
@@ -987,14 +1019,17 @@ if not step2_locked:
                     _use_flux = needs_ai_image(scene)
 
                 if _use_flux:
-                    # FLUX AI 생성 (인포그래픽 · 단면도 · 비교표 · 추출 시각화)
-                    url = generate_reference_image(api_keys["FAL_KEY"], prompt)
+                    # AI 생성: 씬 타입에 따라 Gemini Imagen 또는 FLUX로 자동 분기
+                    url, _ai_src = smart_ai_image(
+                        scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                    )
                 else:
                     # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
                     from src.image_search import search_unsplash, scene_to_query
                     url = search_unsplash(scene_to_query(scene), _unsplash_key)
+                    _ai_src = "unsplash"
                 # 어느 소스로 생성했는지 기록 (썸네일 캡션·수동 교체 참고용)
-                scene["_img_source"] = "flux" if _use_flux else "unsplash"
+                scene["_img_source"] = _ai_src
 
                 # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
                 scene["image_path"]          = url
@@ -1248,10 +1283,12 @@ else:
                         "unsplash" if "images.unsplash" in img_path else "flux"
                     )
                     _type_tag = scene.get("scene_type", "")
-                    _img_src_caption = (
-                        f"{'📷 Unsplash' if _src_tag == 'unsplash' else '🤖 FLUX AI'}"
-                        + (f" · {_type_tag}" if _type_tag else "")
-                    )
+                    _src_display = {
+                        "unsplash": "📷 Unsplash",
+                        "gemini":   "🎨 Gemini",
+                        "flux":     "🤖 FLUX",
+                    }.get(_src_tag, "🤖 FLUX")
+                    _img_src_caption = _src_display + (f" · {_type_tag}" if _type_tag else "")
                     st.image(img_path, use_container_width=True,
                              caption=f"{_img_src_caption} · {img_status}")
                     new_ref = img_path  # Kling 첫 프레임으로 자동 사용
@@ -1300,14 +1337,15 @@ else:
                                 st.error(f"#{sno:02d} 교체 실패: {ex}")
 
                     if _ai_swap_btn:
-                        with st.spinner(f"#{sno:02d} FLUX AI 생성 중… (약 20~40초)"):
+                        with st.spinner(f"#{sno:02d} AI 이미지 생성 중… (약 20~60초)"):
                             try:
-                                _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-                                url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                url, _ai_src = smart_ai_image(
+                                    scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                                )
                                 scene["image_path"]          = url
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
-                                scene["_img_source"]         = "flux"
+                                scene["_img_source"]         = _ai_src
                                 scene.pop("image_error", None)
                                 manager.save_state(state)
                                 st.session_state.current_project = state
@@ -1380,14 +1418,15 @@ else:
                                 st.error(f"#{sno:02d} 오류: {ex}")
 
                     if _flux_single:
-                        with st.spinner(f"#{sno:02d} FLUX AI 생성 중… (약 20~40초)"):
+                        with st.spinner(f"#{sno:02d} AI 이미지 생성 중… (약 20~60초)"):
                             try:
-                                _prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-                                url = generate_reference_image(api_keys["FAL_KEY"], _prompt)
+                                url, _ai_src = smart_ai_image(
+                                    scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                                )
                                 scene["image_path"]          = url
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
-                                scene["_img_source"]         = "flux"
+                                scene["_img_source"]         = _ai_src
                                 scene.pop("image_error", None)
                                 manager.save_state(state)
                                 st.session_state.current_project = state
