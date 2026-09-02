@@ -23,10 +23,10 @@ FLUX AI 이미지 프롬프트, Kling 영상 프롬프트, SFX 태그를 JSON으
 visual_source는 이미지 생성 소스를 결정하는 핵심 필드다.
 scene_type에 따라 아래 규칙으로 자동 결정한다:
 
-  ASSEMBLY    → "ai"    (재료 분해도, 레이어 배치, 레시피 인포그래픽)
-  MACHINE     → "ai"    (기계 단면도, 기술 다이어그램, 부품 분해도)
-  SCIENCE_DATA→ "ai"    (비교표, 추출 곡선, 성분 차트, 수치 시각화)
-  EXTRACTION  → "ai"    (추출 단면도, 크레마 형성, 유체역학 시각화)
+  ASSEMBLY    → "ai"    (재료 분해도, 레이어 배치, 레시피 → flux-pro 포토리얼)
+  MACHINE     → "ai"    (기계 구조, 부품 — flux-dev 편집 일러스트)
+  SCIENCE_DATA→ "ai"    (비교 시각화, 수치 — flux-dev 편집 일러스트)
+  EXTRACTION  → "ai"    (추출 장면, 크레마 — flux-dev 편집 일러스트)
   ORIGIN_MAP  → "photo" (실제 산지 풍경, 농장, 지형)
   CINEMATIC   → "photo" (카페 분위기, 역사 장면, 바리스타 실루엣)
 
@@ -41,9 +41,19 @@ image_prompt는 FLUX AI 이미지 생성용 영문 프롬프트다.
   ④ 금지 단어 — "infographic", "chart", "graph", "diagram", "label", "legend",
                  "data visualization" 절대 사용 금지.
      이 단어들이 프롬프트에 포함되면 FLUX가 텍스트 레이블이 붙은 도표를 생성한다.
-     대체 표현: "abstract geometric visual", "cross-section illustration",
-                "color zone composition", "floating geometric shapes",
-                "molecular cluster", "liquid layer composition"
+  ⑤ 씬 타입별 렌더링 방식 — 프롬프트 작성 시 반드시 구분할 것
+     ASSEMBLY               → flux-pro 포토리얼 (음식 사진 스타일)
+                              "Hasselblad", "macro lens", "commercial food photography" 등 카메라 표현 사용 가능
+     MACHINE / EXTRACTION
+     SCIENCE_DATA           → flux-dev 수채화 스케치 (pen-and-ink + watercolor wash)
+                              ★ 카메라·촬영 표현 절대 금지 ★
+                              "Hasselblad", "macro lens f2.8", "commercial photography",
+                              "studio product photography", "shallow depth of field" 사용 금지
+                              → 이 표현들이 수채화 스케치 접두사(image_fal.py 자동 삽입)와 충돌해
+                                 어중간한 포토리얼 결과물(언캐니밸리)이 나온다.
+                              ✓ 대신 사용할 표현:
+                              "delicate ink lines", "watercolor wash", "paper texture",
+                              "warm amber tones", "sketchbook quality", "artbook illustration"
 
 [실사 씬 — visual_source: "photo" 씬]
 image_prompt는 Unsplash 검색어 역할을 한다.
@@ -145,10 +155,9 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      [소재 묘사: 'brushed stainless steel surface', 'matte black anodized aluminum',
       'polished chrome collar', 'ceramic flat burr disc'],
      dark charcoal #1A1A1A background, gold accent rim lighting #DBA12C,
-     studio product photography Hasselblad H6D-100c 80mm f2.8,
-     Apple-style premium hardware photography,
+     delicate ink lines, warm watercolor wash fills, sketchbook artbook quality,
      pure visual zero text zero labels zero words zero annotations,
-     no people, no CGI plastic look, no blueprint grid, no 3D render,
+     no people, no CGI, no blueprint grid, no 3D render, no photorealism,
      9:16 vertical 4K"
 
   [하위패턴 2 — 핵심 부품 클로즈업] 핵심 부품 하나를 극단적으로 클로즈업해 질감을 강조한다.
@@ -163,9 +172,10 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      dramatic single-source studio lighting from upper-left,
      gold accent highlight catching metal edge,
      dark charcoal #1A1A1A background,
-     Hasselblad H6D-100c 100mm macro f2.8, real material texture visible,
+     delicate ink linework, watercolor wash detail, warm amber tones,
+     sketchbook artbook quality, material texture visible,
      pure visual zero text zero labels zero words,
-     no people, no CGI, no plastic look, no 3D render,
+     no people, no CGI, no 3D render, no photorealism,
      9:16 vertical 4K"
 
   flow_prompt 패턴:
@@ -200,12 +210,12 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
        golden-amber extraction liquid dripping below,
        paper filter glowing amber with warm backlight behind it'],
      warm amber golden tones, dramatic backlighting from behind subject,
-     100mm macro lens f2.8 extreme shallow depth of field,
-     real fluid physics and natural imperfections visible,
-     commercial food photography Hasselblad H6D-100c,
+     extreme close-up extreme detail, fluid physics and imperfections visible,
+     delicate ink strokes, amber watercolor wash blooms on paper texture,
+     sketchbook artbook quality, warm golden glow,
      pure visual zero text zero labels zero words,
      hands allowed at frame edge (absolutely no face),
-     no CGI, no 3D render, no plastic, no harsh moody dark,
+     no CGI, no 3D render, no photorealism, no harsh moody dark,
      9:16 vertical 4K"
 
   [하위패턴 2 — 크레마 클로즈업] 갓 추출된 에스프레소 크레마 표면을 극단 확대한다.
@@ -214,12 +224,11 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      micro bubbles and coffee oil droplets glistening on surface,
      [optional: small espresso spoon breaking crema surface tension at edge],
      warm studio lighting from upper-left,
-     extreme shallow depth of field, bokeh background,
-     commercial food photography Hasselblad 100mm macro f2.8,
-     appetizing warm color grade, real coffee surface texture,
+     delicate ink linework, watercolor wash fills, paper grain texture,
+     warm amber color grade, sketchbook artbook quality,
      pure visual zero text zero labels zero words,
      hands allowed holding cup edge (no face),
-     no CGI, no 3D render, no plastic cup,
+     no CGI, no 3D render, no photorealism, no plastic cup,
      9:16 vertical 4K"
 
   flow_prompt 패턴:
@@ -249,10 +258,10 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
        visible dark-to-light gradient layer from top to bottom, ice cubes underneath'],
      dramatic side lighting from left revealing liquid transparency and color depth difference,
      condensation droplets on both glass exteriors,
-     commercial food photography Hasselblad H6D-100c 80mm f2.8,
-     real food styling natural imperfections, 8K,
+     delicate ink outlines, soft watercolor wash fills showing liquid layers,
+     warm cream paper texture background, sketchbook artbook quality,
      pure visual zero text zero labels zero words,
-     no people, no CGI, no 3D render, 9:16 vertical 4K"
+     no people, no CGI, no 3D render, no photorealism, 9:16 vertical 4K"
 
   [하위패턴 2 — 비율 비커] 물·에스프레소 비율을 실험실 계량 용기로 물리적으로 표현한다.
     "Two clear glass beakers or measuring cylinders placed side by side on dark surface —
@@ -263,20 +272,21 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      [fill height difference clearly visible showing volume ratio],
      dramatic overhead or 45-degree angle studio lighting,
      dark matte surface, warm amber studio light from left,
-     commercial still life photography Hasselblad 80mm f2.8,
+     delicate ink lines, watercolor wash fills, paper grain texture,
+     warm amber and cream tones, sketchbook artbook quality,
      pure visual zero text zero labels zero words zero numbers,
-     no people, no CGI, 9:16 vertical 4K"
+     no people, no CGI, no photorealism, 9:16 vertical 4K"
 
   [하위패턴 3 — 재료 클로즈업 대비] 핵심 재료 하나를 극단 클로즈업해 성분·질감 차이를 보인다.
     "Extreme macro close-up of [핵심 재료: e.g. 'espresso crema surface' or
      'coffee grounds texture in portafilter' or 'ice melt pattern in cold brew'],
      [재료의 구체적 물리 묘사: e.g. 'golden-brown crema with tiger-stripe natural oil pattern,
        micro bubbles visible, coffee lipids glistening under warm light'],
-     100mm macro lens f2.0 extreme shallow depth of field,
-     warm studio lighting from upper-left, bokeh background,
-     commercial food photography real texture visible,
+     extreme close-up detail, delicate ink linework,
+     warm amber watercolor wash, paper grain texture, bokeh background,
+     sketchbook artbook quality, real texture visible,
      pure visual zero text zero labels zero words,
-     no people, no CGI, no 3D render, 9:16 vertical 4K"
+     no people, no CGI, no 3D render, no photorealism, 9:16 vertical 4K"
 
   flow_prompt 패턴:
     "two drinks side by side, liquid layers slowly settling and separating,
