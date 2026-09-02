@@ -1,29 +1,30 @@
 # src/image_fal.py
-# 너도나도아는커피 숏폼 팩토리 — Fal.ai FLUX 레퍼런스 이미지 생성기
-# 씬 타입별 모델 + 렌더링 방식 분리 (혼합 전략 v2)
+# 너도나도아는커피 숏폼 팩토리 — 레퍼런스 이미지 생성기 (혼합 전략 v3)
 #
-# ┌─────────────────────────────────────────────────────┐
-# │ ASSEMBLY              → fal-ai/flux-pro             │
-# │                         포토리얼 음식사진 스타일        │
-# │                                                     │
-# │ MACHINE               → fal-ai/flux/dev             │
-# │ EXTRACTION               편집 그래픽 일러스트 스타일   │
-# │ SCIENCE_DATA                                        │
-# └─────────────────────────────────────────────────────┘
+# ┌─────────────────────────────────────────────────────────────┐
+# │ ASSEMBLY              → fal-ai/flux-pro                     │
+# │                         포토리얼 음식사진 스타일               │
+# │                                                             │
+# │ MACHINE               → Gemini Imagen 3                     │
+# │ EXTRACTION               수채화 펜-잉크 스케치 일러스트 스타일  │
+# │ SCIENCE_DATA             (FLUX는 스케치 불가 → Gemini로 교체) │
+# └─────────────────────────────────────────────────────────────┘
 # 생성된 이미지는 fal.ai CDN URL로 저장 (로컬 다운로드 없음 → Reboot 후에도 상태 유지)
 
 import os
 import fal_client
 
+from src.image_gemini import generate_illustration_image
+
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
-FLUX_DEV_MODEL = "fal-ai/flux/dev"   # 28-step | 일러스트 씬 (MACHINE·EXTRACTION·SCIENCE_DATA)
 FLUX_PRO_MODEL = "fal-ai/flux-pro"   # 28-step | 포토리얼 씬 (ASSEMBLY 음식사진)
+FLUX_DEV_MODEL = "fal-ai/flux/dev"   # 28-step | Gemini 실패 시 폴백용
 
-# ── 씬 타입 → 모델 라우팅 ────────────────────────────────────────────────────
+# ── 씬 타입 → 렌더링 엔진 라우팅 ─────────────────────────────────────────────
 _ASSEMBLY_TYPES = {"ASSEMBLY"}
-_ILLUST_TYPES   = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}
-_PHOTO_TYPES    = {"CINEMATIC", "ORIGIN_MAP"}   # Unsplash 처리 — 여기서 생성 안 함
+_ILLUST_TYPES   = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}   # → Gemini Imagen 3
+_PHOTO_TYPES    = {"CINEMATIC", "ORIGIN_MAP"}                 # Unsplash 처리 — 여기서 생성 안 함
 
 # ── 접두사 ────────────────────────────────────────────────────────────────────
 # ASSEMBLY (포토리얼): 텍스트/레이블 완전 금지만 선언
@@ -98,14 +99,20 @@ def generate_reference_image(
     return result["images"][0]["url"]
 
 
-def generate_images_for_scenes(fal_key: str, scenes: list, project_dir: str = "") -> list:
+def generate_images_for_scenes(
+    fal_key: str,
+    scenes: list,
+    project_dir: str = "",
+    gemini_key: str = "",
+) -> list:
     """
     여러 씬의 프롬프트를 순차적으로 생성한다.
 
     라우팅 규칙:
       ASSEMBLY               → flux-pro + NO_TEXT 접두사 (포토리얼 음식사진)
       MACHINE / EXTRACTION
-      SCIENCE_DATA           → flux-dev + ILLUST 접두사 (편집 일러스트)
+      SCIENCE_DATA           → Gemini Imagen 3 (수채화 펜-잉크 스케치)
+                               gemini_key 미제공 시 flux-dev 로 폴백
       CINEMATIC / ORIGIN_MAP → 건너뜀 (Unsplash 실사 처리)
       image_status == 'done' → 건너뜀 (이미 생성 완료)
     """
@@ -113,7 +120,7 @@ def generate_images_for_scenes(fal_key: str, scenes: list, project_dir: str = ""
         scene_type    = scene.get("scene_type", "")
         visual_source = scene.get("visual_source", "ai")
 
-        # 실사 씬(photo)은 Unsplash에서 처리 — FLUX 생성 대상 아님
+        # 실사 씬(photo)은 Unsplash에서 처리 — 여기서 생성 안 함
         if visual_source == "photo" or scene_type in _PHOTO_TYPES:
             continue
 
@@ -123,24 +130,35 @@ def generate_images_for_scenes(fal_key: str, scenes: list, project_dir: str = ""
         if scene.get("image_status") == "done":
             continue
 
-        # 씬 타입별 모델 + 렌더링 방식 결정
-        if scene_type in _ASSEMBLY_TYPES:
-            chosen_model = FLUX_PRO_MODEL
-            illust_mode  = False   # 포토리얼 음식사진
-        else:
-            # MACHINE / EXTRACTION / SCIENCE_DATA (+ 알 수 없는 ai 씬)
-            chosen_model = FLUX_DEV_MODEL
-            illust_mode  = True    # 편집 그래픽 일러스트
-
         scene["image_status"] = "generating"
 
         try:
-            url = generate_reference_image(
-                fal_key=fal_key,
-                image_prompt=prompt,
-                model=chosen_model,
-                illust_mode=illust_mode,
-            )
+            if scene_type in _ASSEMBLY_TYPES:
+                # ── ASSEMBLY: FLUX Pro 포토리얼 음식사진 ──────────────────
+                url = generate_reference_image(
+                    fal_key=fal_key,
+                    image_prompt=prompt,
+                    model=FLUX_PRO_MODEL,
+                    illust_mode=False,
+                )
+
+            elif scene_type in _ILLUST_TYPES and gemini_key:
+                # ── MACHINE / EXTRACTION / SCIENCE_DATA: Gemini 수채화 스케치 ─
+                url = generate_illustration_image(
+                    gemini_key=gemini_key,
+                    fal_key=fal_key,
+                    image_prompt=prompt,
+                )
+
+            else:
+                # ── 폴백: Gemini 키 없거나 알 수 없는 ai 씬 → flux-dev ────
+                url = generate_reference_image(
+                    fal_key=fal_key,
+                    image_prompt=prompt,
+                    model=FLUX_DEV_MODEL,
+                    illust_mode=True,
+                )
+
             scene["image_path"]          = url   # fal CDN URL
             scene["image_status"]        = "done"
             scene["reference_image_url"] = url
