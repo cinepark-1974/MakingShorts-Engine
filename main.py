@@ -437,14 +437,19 @@ def smart_ai_image(scene: dict, fal_key: str, google_key: str) -> tuple:
     scene_type = scene.get("scene_type", "")
     prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
 
-    if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"} and google_key:
-        from src.image_gemini import generate_illustration_image
-        url = generate_illustration_image(
-            gemini_key=google_key,
-            fal_key=fal_key,
-            image_prompt=prompt,
-        )
-        return url, "gemini"
+    if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}:
+        from src.image_gptimage2 import generate_illustration_image
+        try:
+            url = generate_illustration_image(
+                fal_key=fal_key,
+                image_prompt=prompt,
+            )
+            return url, "gpt2"
+        except Exception:
+            # GPT Image 2 실패 시 FLUX Dev 일러스트 모드로 폴백
+            from src.image_fal import FLUX_DEV_MODEL, generate_reference_image as _flux_gen
+            url = _flux_gen(fal_key=fal_key, image_prompt=prompt, model=FLUX_DEV_MODEL, illust_mode=True)
+            return url, "flux"
 
     # ASSEMBLY → flux-pro, 그 외 → flux-dev
     from src.image_fal import FLUX_PRO_MODEL
@@ -1285,6 +1290,7 @@ else:
                     _type_tag = scene.get("scene_type", "")
                     _src_display = {
                         "unsplash": "📷 Unsplash",
+                        "gpt2":     "🎨 GPT Image 2",
                         "gemini":   "🎨 Gemini",
                         "flux":     "🤖 FLUX",
                     }.get(_src_tag, "🤖 FLUX")
