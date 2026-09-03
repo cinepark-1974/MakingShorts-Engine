@@ -14,7 +14,7 @@
 import os
 import fal_client
 
-from src.image_gemini import generate_illustration_image
+from src.image_gptimage2 import generate_illustration_image
 
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
@@ -142,13 +142,22 @@ def generate_images_for_scenes(
                     illust_mode=False,
                 )
 
-            elif scene_type in _ILLUST_TYPES and gemini_key:
-                # ── MACHINE / EXTRACTION / SCIENCE_DATA: Gemini 수채화 스케치 ─
-                url = generate_illustration_image(
-                    gemini_key=gemini_key,
-                    fal_key=fal_key,
-                    image_prompt=prompt,
-                )
+            elif scene_type in _ILLUST_TYPES:
+                # ── MACHINE / EXTRACTION / SCIENCE_DATA: GPT Image 2 수채화 스케치 ─
+                # FAL_KEY 하나로 사용 — Enterprise 제한 없음
+                try:
+                    url = generate_illustration_image(
+                        fal_key=fal_key,
+                        image_prompt=prompt,
+                    )
+                except Exception:
+                    # GPT Image 2 실패 시 FLUX Dev 일러스트 모드로 폴백
+                    url = generate_reference_image(
+                        fal_key=fal_key,
+                        image_prompt=prompt,
+                        model=FLUX_DEV_MODEL,
+                        illust_mode=True,
+                    )
 
             else:
                 # ── 폴백: Gemini 키 없거나 알 수 없는 ai 씬 → flux-dev ────
