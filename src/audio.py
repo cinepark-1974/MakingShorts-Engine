@@ -10,7 +10,7 @@ from elevenlabs.client import ElevenLabs
 # ElevenLabs 콘솔(Voices 탭)에서 원하는 음성 ID로 교체하거나
 # Streamlit Secrets에 ELEVENLABS_VOICE_ID를 등록하면 그 값을 우선 사용한다.
 # 아래 기본값은 한국어 발음이 자연스러운 "Rachel" 다국어 음성 ID.
-DEFAULT_VOICE_ID = "9vTWeZwjAkqIiZJdCarV"
+DEFAULT_VOICE_ID = "8jHHF8rMqMlg8if2mOUe"
 DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 DEFAULT_FORMAT   = "mp3_44100_128"
 
