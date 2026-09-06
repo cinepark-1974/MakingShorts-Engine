@@ -1121,7 +1121,7 @@ elif not step3_audio_locked:
         if not narration_text:
             st.warning("대본에 full_narration 텍스트가 없습니다. STEP 1을 먼저 실행하세요.")
         else:
-            voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+            voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "8jHHF8rMqMlg8if2mOUe")
             st.caption(f"음성 ID: `{voice_id}` · 모델: `eleven_multilingual_v2`")
             audio_btn = st.button("🎙 나레이션 음성 생성", key="audio_gen")
             if audio_btn:
