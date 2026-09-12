@@ -405,6 +405,18 @@ except ImportError as e:
     MODULES_OK = False
     IMPORT_ERROR = str(e)
 
+# SEO 키워드 모듈 — 없어도 앱 기동에 영향 없음 (lazy)
+try:
+    from src.seo_keywords import (
+        get_keywords_for_chapter,
+        get_trending_keywords,
+        GRADE_LABEL,
+        ALL_CHAPTERS as SEO_CHAPTERS,
+    )
+    SEO_MODULE_OK = True
+except ImportError:
+    SEO_MODULE_OK = False
+
 # ── 씬별 이미지 소스 판단 ────────────────────────────────────────────────────
 # Claude가 대본 생성 시 scene_type과 visual_source를 함께 결정한다.
 # visual_source: "ai"  → FLUX AI 생성 (인포그래픽·단면도·비교표·추출 시각화)
@@ -682,12 +694,21 @@ if st.session_state.current_project is None:
     }
     CHAPTER_LABELS = list(CHAPTERS.keys())
 
+    # ── session_state: SEO 키워드 클릭 시 topic 자동 채우기 ─────────────────
+    if "seo_selected_topic" not in st.session_state:
+        st.session_state["seo_selected_topic"] = ""
+
     # 주제 입력 — 가장 크게, 맨 위
     topic = st.text_input(
         "어떤 커피 이야기를 만들까요?",
+        value=st.session_state.get("seo_selected_topic", ""),
         placeholder="예: 아이스아메리카노와 롱블랙의 차이   |   예가체프 내추럴 프로세싱의 비밀",
         help="구체적인 키워드나 질문 형태로 입력할수록 대본 품질이 높아집니다.",
+        key="topic_text_input",
     )
+    # 직접 타이핑하면 SEO 선택값 초기화 (충돌 방지)
+    if topic != st.session_state.get("seo_selected_topic", ""):
+        st.session_state["seo_selected_topic"] = topic
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
@@ -709,6 +730,62 @@ if st.session_state.current_project is None:
 
     # 최종 챕터 문자열
     chapter = "" if chapter_val == "MISC" else chapter_val
+
+    # ── SEO 키워드 추천 UI ────────────────────────────────────────────────────
+    if SEO_MODULE_OK:
+        with st.expander("💡 SEO 인기 키워드 추천 (클릭하면 자동 입력됩니다)", expanded=False):
+            # 탭: 큐레이션 / 실시간
+            tab_bank, tab_live = st.tabs(["📚 검증된 고검색 키워드", "📡 YouTube 실시간 트렌드"])
+
+            with tab_bank:
+                # 챕터가 선택된 경우 해당 챕터 키워드, 아니면 전체 랜덤 표시
+                if chapter and chapter in [v for v in CHAPTERS.values() if v and v != "MISC"]:
+                    # 선택된 챕터명으로 SEO 뱅크 조회
+                    _seo_chapter_key = chapter.split(" ", 1)[-1].strip() if " " in chapter else chapter
+                    _kw_list = get_keywords_for_chapter(_seo_chapter_key)
+                    if not _kw_list:
+                        # 직접 챕터 전체 이름으로 재시도
+                        _kw_list = get_keywords_for_chapter(chapter)
+                else:
+                    # 챕터 미선택 → 모든 챕터에서 A등급만 모아서 표시
+                    _kw_list = []
+                    for _cat_kws in [get_keywords_for_chapter(c) for c in SEO_CHAPTERS]:
+                        _kw_list.extend([k for k in _cat_kws if k["grade"] == "A"])
+
+                if _kw_list:
+                    st.caption("아래 키워드를 클릭하면 주제 입력창에 자동으로 채워집니다.")
+                    _cols = st.columns(2)
+                    for _i, _kw in enumerate(_kw_list):
+                        _grade_tag = GRADE_LABEL.get(_kw["grade"], "")
+                        _label = f"{_grade_tag}  {_kw['topic']}"
+                        with _cols[_i % 2]:
+                            if st.button(_label, key=f"seo_bank_{_i}", use_container_width=True):
+                                st.session_state["seo_selected_topic"] = _kw["topic"]
+                                st.rerun()
+                else:
+                    st.info("선택한 챕터에 해당하는 키워드 뱅크가 없습니다. 챕터를 선택하거나 직접 입력해 주세요.")
+
+            with tab_live:
+                # 씨앗 키워드: 챕터 첫 단어 or 기본값 "커피"
+                _seed_word = chapter.split()[0] if chapter else "커피"
+                st.caption(f"'{_seed_word}' 기준 YouTube 자동완성 실시간 조회")
+                if st.button("🔄 실시간 조회", key="seo_refresh_live"):
+                    st.session_state["seo_live_keywords"] = get_trending_keywords(
+                        _seed_word, max_realtime=8
+                    )
+
+                _live_kws = st.session_state.get("seo_live_keywords", [])
+                if _live_kws:
+                    _live_cols = st.columns(2)
+                    for _j, _kw in enumerate(_live_kws):
+                        _src_tag = "📡" if _kw["source"] == "youtube" else GRADE_LABEL.get(_kw["grade"], "")
+                        _label = f"{_src_tag}  {_kw['topic']}"
+                        with _live_cols[_j % 2]:
+                            if st.button(_label, key=f"seo_live_{_j}", use_container_width=True):
+                                st.session_state["seo_selected_topic"] = _kw["topic"]
+                                st.rerun()
+                else:
+                    st.info("'실시간 조회' 버튼을 눌러 YouTube 트렌드 키워드를 가져오세요.")
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
