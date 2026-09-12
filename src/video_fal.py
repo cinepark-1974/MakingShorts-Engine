@@ -230,27 +230,51 @@ def generate_single_clip(
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 다중 씬 순차 생성
 # ─────────────────────────────────────────────────────────────────────────────
-def generate_clips_parallel(fal_key: str, scenes: list, project_dir: str) -> list:
+def generate_clips_parallel(
+    fal_key: str,
+    scenes: list,
+    project_dir: str,
+    max_workers: int = 4,
+) -> list:
     """
-    여러 씬을 순차적으로 생성한다.
+    여러 씬을 병렬로 생성한다. (ThreadPoolExecutor 사용)
     씬에 'reference_image_url' 키가 있으면 image-to-video 모드로 생성한다.
 
     Args:
         fal_key     : FAL_KEY
         scenes      : state["scenes"] 리스트
         project_dir : 프로젝트 디렉터리 경로
+        max_workers : 동시 생성 스레드 수 (기본 4 — fal.ai 동시 요청 허용 범위)
 
     Returns:
         list : 업데이트된 scenes 리스트
-    """
-    for scene in scenes:
-        if scene.get("status") not in ("pending", "error"):
-            continue
 
-        sno      = scene["scene_no"]
+    동작 방식:
+        12컷을 동시에 fal.ai 큐에 제출 → 모두 완료 대기.
+        총 대기 시간 ≈ 1컷 생성 시간(3~5분) ≒ 종전 12배 감소.
+        실패한 씬은 status='error'로 기록되며 나머지 씬에 영향 없음.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
+    # 생성 대상 씬만 추려냄
+    targets = [s for s in scenes if s.get("status") in ("pending", "error")]
+    if not targets:
+        return scenes
+
+    # scene_no → scene 인덱스 맵 (결과 반영용)
+    scene_map = {s["scene_no"]: s for s in scenes}
+
+    # 씬 하나를 생성하는 워커 함수
+    lock = threading.Lock()
+
+    def _generate_one(scene: dict) -> dict:
+        sno     = scene["scene_no"]
         out_path = os.path.join(project_dir, f"scene_{sno:02d}.mp4")
-        ref_img  = scene.get("reference_image_url", "")  # 드라이브 URL or 빈 문자열
-        scene["status"] = "generating"
+        ref_img  = scene.get("reference_image_url", "")
+
+        with lock:
+            scene["status"] = "generating"
 
         try:
             generate_single_clip(
@@ -259,11 +283,22 @@ def generate_clips_parallel(fal_key: str, scenes: list, project_dir: str) -> lis
                 output_path=out_path,
                 image_url=ref_img,
             )
-            scene["video_url"] = out_path
-            scene["status"]    = "done"
-            scene.pop("error_msg", None)
+            return {"scene_no": sno, "status": "done", "video_url": out_path}
         except Exception as e:
-            scene["status"]    = "error"
-            scene["error_msg"] = str(e)
+            return {"scene_no": sno, "status": "error", "error_msg": str(e)}
+
+    # 병렬 실행
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_generate_one, s): s["scene_no"] for s in targets}
+        for future in as_completed(futures):
+            result = future.result()
+            sno    = result["scene_no"]
+            target = scene_map[sno]
+            target["status"] = result["status"]
+            if result["status"] == "done":
+                target["video_url"] = result["video_url"]
+                target.pop("error_msg", None)
+            else:
+                target["error_msg"] = result.get("error_msg", "알 수 없는 오류")
 
     return scenes
