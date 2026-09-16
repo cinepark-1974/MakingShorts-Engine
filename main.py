@@ -762,6 +762,7 @@ if st.session_state.current_project is None:
                         with _cols[_i % 2]:
                             if st.button(_label, key=f"seo_bank_{_i}", use_container_width=True):
                                 st.session_state["seo_selected_topic"] = _kw["topic"]
+                                st.session_state["topic_text_input"] = _kw["topic"]
                                 st.rerun()
                 else:
                     st.info("선택한 챕터에 해당하는 키워드 뱅크가 없습니다. 챕터를 선택하거나 직접 입력해 주세요.")
