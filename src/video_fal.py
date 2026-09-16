@@ -228,7 +228,68 @@ def generate_single_clip(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 공개 API: 다중 씬 순차 생성
+# 공개 API: 다중 씬 병렬 생성 — CDN URL 반환 (Streamlit Cloud 권장)
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_clips_parallel_cdn(
+    fal_key: str,
+    scenes: list,
+    max_workers: int = 4,
+    progress_callback=None,
+) -> list:
+    """
+    여러 씬을 병렬로 생성하고 CDN URL을 scene["video_url"]에 기록한다.
+    로컬에 저장하지 않으므로 Streamlit Cloud 리부트 후에도 URL이 유효하다.
+
+    Args:
+        fal_key           : FAL_KEY
+        scenes            : state["scenes"] 리스트
+        max_workers       : 동시 생성 스레드 수 (기본 4)
+        progress_callback : (scene_no, status) 를 받는 콜백 (선택)
+
+    Returns:
+        list : 업데이트된 scenes 리스트
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    targets = [s for s in scenes if s.get("status") in ("pending", "error")]
+    if not targets:
+        return scenes
+
+    scene_map = {s["scene_no"]: s for s in scenes}
+
+    def _generate_one(scene: dict) -> dict:
+        sno     = scene["scene_no"]
+        ref_img = scene.get("reference_image_url", "")
+        try:
+            cdn_url = generate_single_clip_url(
+                fal_key=fal_key,
+                prompt=scene.get("flow_prompt", ""),
+                image_url=ref_img,
+            )
+            return {"scene_no": sno, "status": "done", "video_url": cdn_url}
+        except Exception as e:
+            return {"scene_no": sno, "status": "error", "error_msg": str(e)}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_generate_one, s): s["scene_no"] for s in targets}
+        for future in as_completed(futures):
+            result = future.result()
+            sno    = result["scene_no"]
+            target = scene_map[sno]
+            target["status"] = result["status"]
+            if result["status"] == "done":
+                target["video_url"] = result["video_url"]
+                target.pop("error_msg", None)
+            else:
+                target["error_msg"] = result.get("error_msg", "알 수 없는 오류")
+            if progress_callback:
+                progress_callback(sno, result["status"])
+
+    return scenes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 다중 씬 순차 생성 (로컬 저장 — 하위 호환 유지용)
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_clips_parallel(
     fal_key: str,
