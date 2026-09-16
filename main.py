@@ -478,6 +478,7 @@ def load_api_keys():
         "ELEVENLABS_API_KEY",
         "ELEVENLABS_VOICE_ID",
         "FAL_KEY",
+        "REPLICATE_API_TOKEN",     # Replicate Wan 2.1 (fal.ai 대안 비디오 백엔드)
         "UNSPLASH_ACCESS_KEY",     # Unsplash 라이센스 프리 사진 검색용
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용 (폴백)
         "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID (폴백)
@@ -1241,8 +1242,8 @@ st.markdown(f"""
 
 if step3_locked:
     st.info("STEP 1 대본 생성 후 이 단계를 진행하세요.")
-elif not api_keys.get("FAL_KEY"):
-    st.warning("FAL_KEY를 Secrets에 등록하면 영상을 생성할 수 있습니다.")
+elif not api_keys.get("FAL_KEY") and not api_keys.get("REPLICATE_API_TOKEN"):
+    st.warning("FAL_KEY 또는 REPLICATE_API_TOKEN을 Secrets에 등록하면 영상을 생성할 수 있습니다.")
 else:
     # 영상: 3컷 × 4회 배치 생성
     VIDEO_BATCH_SIZE  = 3
@@ -1266,40 +1267,51 @@ else:
                 + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
             )
 
-    # 배치 생성 — 동기식 순차 실행 (CDN URL 저장, 리부트 후에도 유지)
+    # ── 비디오 백엔드 선택: FAL 우선, 없으면 Replicate ─────────────────────────
+    _fal_key        = api_keys.get("FAL_KEY", "")
+    _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
+    _use_replicate  = (not _fal_key) and bool(_replicate_key)
+
+    # 배치 생성 — 병렬 실행 (CDN URL 저장, 리부트 후에도 유지)
     if all_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
         prog   = st.empty()
         err_v  = st.empty()
         all_ok = True
 
-        for i, scene in enumerate(next_vid_batch):
-            sno       = scene["scene_no"]
-            prompt    = scene.get("flow_prompt", "")
-            image_url = scene.get("reference_image_url", "")
-
-            prog.info(f"🎬 {sno}컷 영상 생성 중… ({i+1}/{len(next_vid_batch)}컷 · 약 2~3분)")
+        if _use_replicate:
+            prog.info(f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… (Replicate Wan 2.1 · 약 3~5분)")
             try:
-                from src.video_fal import generate_single_clip_url
-                cdn_url = generate_single_clip_url(
-                    fal_key=api_keys["FAL_KEY"],
-                    prompt=prompt,
-                    image_url=image_url,
+                from src.video_replicate import generate_clips_parallel_cdn
+                generate_clips_parallel_cdn(
+                    replicate_token=_replicate_key,
+                    scenes=next_vid_batch,
+                    max_workers=4,
                 )
-                scene["video_url"] = cdn_url   # scene은 state["scenes"] 참조
-                scene["status"]    = "done"
-                scene.pop("error_msg", None)
+                # next_vid_batch는 state["scenes"] 참조 — 이미 수정됨
+                all_ok = all(s.get("status") == "done" for s in next_vid_batch)
             except Exception as ex:
                 all_ok = False
-                scene["status"]    = "error"
-                scene["error_msg"] = str(ex)
-                err_v.error(f"#{sno:02d} 생성 실패: {ex}")
-
+                err_v.error(f"Replicate 생성 실패: {ex}")
+        else:
+            prog.info(f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… (Fal.ai Kling · 약 3~5분)")
             try:
-                manager.save_state(state)
-            except Exception as save_ex:
-                err_v.error(f"상태 저장 실패: {save_ex}")
+                from src.video_fal import generate_clips_parallel_cdn
+                generate_clips_parallel_cdn(
+                    fal_key=_fal_key,
+                    scenes=next_vid_batch,
+                    max_workers=4,
+                )
+                all_ok = all(s.get("status") == "done" for s in next_vid_batch)
+            except Exception as ex:
                 all_ok = False
+                err_v.error(f"Fal.ai 생성 실패: {ex}")
+
+        try:
+            manager.save_state(state)
+        except Exception as save_ex:
+            err_v.error(f"상태 저장 실패: {save_ex}")
+            all_ok = False
 
         prog.empty()
         st.session_state.gen_running = False
