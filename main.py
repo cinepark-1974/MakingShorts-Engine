@@ -699,6 +699,12 @@ if st.session_state.current_project is None:
     if "seo_selected_topic" not in st.session_state:
         st.session_state["seo_selected_topic"] = ""
 
+    # SEO 버튼 클릭 후 rerun 시 위젯 렌더링 전에 값을 적용 (위젯 충돌 방지)
+    if st.session_state.get("_seo_pending_topic"):
+        st.session_state["topic_text_input"] = st.session_state["_seo_pending_topic"]
+        st.session_state["seo_selected_topic"] = st.session_state["_seo_pending_topic"]
+        del st.session_state["_seo_pending_topic"]
+
     # 주제 입력 — 가장 크게, 맨 위
     topic = st.text_input(
         "어떤 커피 이야기를 만들까요?",
@@ -761,8 +767,7 @@ if st.session_state.current_project is None:
                         _label = f"{_grade_tag}  {_kw['topic']}"
                         with _cols[_i % 2]:
                             if st.button(_label, key=f"seo_bank_{_i}", use_container_width=True):
-                                st.session_state["seo_selected_topic"] = _kw["topic"]
-                                st.session_state["topic_text_input"] = _kw["topic"]
+                                st.session_state["_seo_pending_topic"] = _kw["topic"]
                                 st.rerun()
                 else:
                     st.info("선택한 챕터에 해당하는 키워드 뱅크가 없습니다. 챕터를 선택하거나 직접 입력해 주세요.")
