@@ -497,6 +497,7 @@ def init_session():
         "gen_running": False,       # 생성 중 락
         "video_threads": {},        # scene_no → Thread
         "force_refresh": False,    # 버튼 직후 최소 1회 자동갱신 강제
+        "stop_requested": False,   # 영상 배치 생성 중단 요청 플래그
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1232,7 +1233,7 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 4 — 컷별 영상 생성 (Fal.ai Kling)
 # ─────────────────────────────────────────────────────────────────────────────
-step3_locked = not step1_done
+step3_locked = not step1_done or (img_done_cnt < total_cnt and total_cnt > 0)
 
 st.markdown(f"""
 <div class="step-header">
@@ -1258,20 +1259,32 @@ else:
     vid_batch_nos     = [s["scene_no"] for s in next_vid_batch]
     vid_batch_label   = f"{vid_batch_nos[0]}~{vid_batch_nos[-1]}컷" if vid_batch_nos else ""
 
-    col_gen, col_info2 = st.columns([2, 5])
+    col_gen, col_stop, col_info2 = st.columns([2, 1, 4])
     with col_gen:
         all_gen_btn = st.button(
             f"▶ 다음 {len(next_vid_batch)}컷 생성 ({vid_batch_label})" if next_vid_batch else "✅ 영상 완료",
             disabled=(len(next_vid_batch) == 0 or st.session_state.gen_running),
         )
+    with col_stop:
+        stop_btn = st.button(
+            "⏹ 중단",
+            disabled=not st.session_state.gen_running,
+            help="현재 배치 완료 후 다음 배치를 시작하지 않습니다.",
+        )
+        if stop_btn:
+            st.session_state.stop_requested = True
+            st.info("다음 배치부터 중단됩니다.")
     with col_info2:
         if st.session_state.gen_running:
-            st.info("영상 생성 중…")
+            st.info("영상 생성 중… (중단하려면 ⏹ 버튼 또는 브라우저 새로고침)")
         else:
-            st.caption(
-                f"{done_cnt}/{total_cnt}컷 완료"
-                + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
-            )
+            if st.session_state.get("stop_requested"):
+                st.warning("중단 요청됨 — ▶ 버튼을 누르면 이어서 생성합니다.")
+            else:
+                st.caption(
+                    f"{done_cnt}/{total_cnt}컷 완료"
+                    + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
+                )
 
     # ── 비디오 백엔드 선택: FAL 우선, 없으면 Replicate ─────────────────────────
     _fal_key        = api_keys.get("FAL_KEY", "")
@@ -1279,7 +1292,8 @@ else:
     _use_replicate  = (not _fal_key) and bool(_replicate_key)
 
     # 배치 생성 — 병렬 실행 (CDN URL 저장, 리부트 후에도 유지)
-    if all_gen_btn and not st.session_state.gen_running:
+    if all_gen_btn and not st.session_state.gen_running and not st.session_state.get("stop_requested"):
+        st.session_state.stop_requested = False  # 생성 시작 시 중단 플래그 초기화
         st.session_state.gen_running = True
         prog   = st.empty()
         err_v  = st.empty()
