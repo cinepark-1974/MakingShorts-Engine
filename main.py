@@ -1331,46 +1331,87 @@ else:
     if all_gen_btn and not st.session_state.gen_running and not st.session_state.get("stop_requested"):
         st.session_state.stop_requested = False  # 생성 시작 시 중단 플래그 초기화
         st.session_state.gen_running = True
-        prog   = st.empty()
-        err_v  = st.empty()
-        all_ok = True
+        all_ok  = True
+        _err_ph = st.empty()   # 에러 전용 placeholder
 
-        if _use_replicate:
-            prog.info(f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… (Replicate Wan 2.1 · 약 3~5분)")
-            try:
-                from src.video_replicate import generate_clips_parallel_cdn
-                generate_clips_parallel_cdn(
-                    replicate_token=_replicate_key,
-                    scenes=next_vid_batch,
-                    max_workers=4,
+        _backend_label = "Replicate Wan 2.1" if _use_replicate else "Fal.ai Kling"
+        _status_label  = f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… ({_backend_label} · 약 3~5분)"
+
+        with st.status(_status_label, expanded=True) as _status_ctx:
+            # ── 씬별 진행상황을 st.status 내부에 실시간 표시 ──
+            _scene_ph = {}   # scene_no → st.empty()
+
+            # 씬 placeholder 미리 생성 (생성 전 "⏳ 대기" 상태 표시)
+            for _s in next_vid_batch:
+                _sno = _s["scene_no"]
+                _scene_ph[_sno] = st.empty()
+                _scene_ph[_sno].markdown(f"⏳ 씬 #{_sno:02d} &nbsp; 대기 중…")
+
+            def _progress_cb(scene_no: int, scene_status: str) -> None:
+                """generate_clips_parallel_cdn 의 progress_callback 으로 전달됩니다."""
+                if scene_no in _scene_ph:
+                    if scene_status == "done":
+                        _scene_ph[scene_no].markdown(f"✅ 씬 #{scene_no:02d} &nbsp; 완료")
+                    else:
+                        _scene_ph[scene_no].markdown(f"❌ 씬 #{scene_no:02d} &nbsp; 오류")
+
+            # ── Replicate 백엔드 ──────────────────────────────────────────────
+            if _use_replicate:
+                try:
+                    from src.video_replicate import generate_clips_parallel_cdn
+                    generate_clips_parallel_cdn(
+                        replicate_token=_replicate_key,
+                        scenes=next_vid_batch,
+                        max_workers=4,
+                        progress_callback=_progress_cb,
+                    )
+                    # next_vid_batch는 state["scenes"] 참조 — 이미 수정됨
+                    all_ok = all(s.get("status") == "done" for s in next_vid_batch)
+                except Exception as ex:
+                    all_ok = False
+                    _status_ctx.update(label=f"❌ Replicate 오류: {ex}", state="error")
+                    _err_ph.error(f"Replicate 생성 실패: {ex}")
+
+            # ── Fal.ai 백엔드 ─────────────────────────────────────────────────
+            else:
+                try:
+                    from src.video_fal import generate_clips_parallel_cdn
+                    generate_clips_parallel_cdn(
+                        fal_key=_fal_key,
+                        scenes=next_vid_batch,
+                        max_workers=4,
+                        project_dir=state.get("project_dir", "/tmp"),
+                    )
+                    all_ok = all(s.get("status") == "done" for s in next_vid_batch)
+                except Exception as ex:
+                    all_ok = False
+                    _status_ctx.update(label=f"❌ Fal.ai 오류: {ex}", state="error")
+                    _err_ph.error(f"Fal.ai 생성 실패: {ex}")
+
+            # ── st.status 최종 상태 갱신 ─────────────────────────────────────
+            if all_ok:
+                done_n = len(next_vid_batch)
+                _status_ctx.update(
+                    label=f"✅ {done_n}컷 생성 완료 ({_backend_label})",
+                    state="complete",
+                    expanded=False,
                 )
-                # next_vid_batch는 state["scenes"] 참조 — 이미 수정됨
-                all_ok = all(s.get("status") == "done" for s in next_vid_batch)
-            except Exception as ex:
-                all_ok = False
-                err_v.error(f"Replicate 생성 실패: {ex}")
-        else:
-            prog.info(f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… (Fal.ai Kling · 약 3~5분)")
-            try:
-                from src.video_fal import generate_clips_parallel_cdn
-                generate_clips_parallel_cdn(
-                    fal_key=_fal_key,
-                    scenes=next_vid_batch,
-                    max_workers=4,
-                    project_dir=state.get("project_dir", "/tmp"),
+            else:
+                # 일부 오류 — except 블록이 이미 state="error" 로 업데이트했을 수 있음
+                err_cnt = sum(1 for s in next_vid_batch if s.get("status") == "error")
+                ok_cnt  = sum(1 for s in next_vid_batch if s.get("status") == "done")
+                _status_ctx.update(
+                    label=f"⚠️ {ok_cnt}컷 완료 / {err_cnt}컷 오류",
+                    state="error",
+                    expanded=True,
                 )
-                all_ok = all(s.get("status") == "done" for s in next_vid_batch)
-            except Exception as ex:
-                all_ok = False
-                err_v.error(f"Fal.ai 생성 실패: {ex}")
 
         try:
             manager.save_state(state)
         except Exception as save_ex:
-            err_v.error(f"상태 저장 실패: {save_ex}")
+            _err_ph.error(f"상태 저장 실패: {save_ex}")
             all_ok = False
 
-        prog.empty()
         st.session_state.gen_running = False
 
         try:
