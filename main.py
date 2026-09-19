@@ -1355,6 +1355,7 @@ else:
                     fal_key=_fal_key,
                     scenes=next_vid_batch,
                     max_workers=4,
+                    project_dir=state.get("project_dir", "/tmp"),
                 )
                 all_ok = all(s.get("status") == "done" for s in next_vid_batch)
             except Exception as ex:
@@ -1636,12 +1637,20 @@ else:
                 ):
                     with st.spinner(f"#{sno:02d} 재생성 중… (약 2~3분)"):
                         try:
-                            from src.video_fal import generate_single_clip_url
-                            cdn_url = generate_single_clip_url(
-                                fal_key=api_keys["FAL_KEY"],
-                                prompt=scene.get("flow_prompt", ""),
-                                image_url=scene.get("reference_image_url", ""),
-                            )
+                            if _use_replicate:
+                                from src.video_replicate import generate_single_clip_url
+                                cdn_url = generate_single_clip_url(
+                                    replicate_token=_replicate_key,
+                                    prompt=scene.get("flow_prompt", ""),
+                                    image_url=scene.get("reference_image_url", ""),
+                                )
+                            else:
+                                from src.video_fal import generate_single_clip_url
+                                cdn_url = generate_single_clip_url(
+                                    fal_key=api_keys["FAL_KEY"],
+                                    prompt=scene.get("flow_prompt", ""),
+                                    image_url=scene.get("reference_image_url", ""),
+                                )
                             for s in state["scenes"]:
                                 if s["scene_no"] == sno:
                                     s["video_url"] = cdn_url
