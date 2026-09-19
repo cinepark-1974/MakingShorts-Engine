@@ -750,14 +750,16 @@ if st.session_state.current_project is None:
                 if chapter and chapter in [v for v in CHAPTERS.values() if v and v != "MISC"]:
                     # 선택된 챕터명으로 SEO 뱅크 조회
                     _seo_chapter_key = chapter.split(" ", 1)[-1].strip() if " " in chapter else chapter
-                    _kw_list = get_keywords_for_chapter(_seo_chapter_key)
+                    _g_key = api_keys.get("GOOGLE_API_KEY", "")
+                    _kw_list = get_keywords_for_chapter(_seo_chapter_key, api_key=_g_key)
                     if not _kw_list:
                         # 직접 챕터 전체 이름으로 재시도
-                        _kw_list = get_keywords_for_chapter(chapter)
+                        _kw_list = get_keywords_for_chapter(chapter, api_key=_g_key)
                 else:
                     # 챕터 미선택 → 모든 챕터에서 A등급만 모아서 표시
+                    _g_key   = api_keys.get("GOOGLE_API_KEY", "")
                     _kw_list = []
-                    for _cat_kws in [get_keywords_for_chapter(c) for c in SEO_CHAPTERS]:
+                    for _cat_kws in [get_keywords_for_chapter(c, api_key=_g_key) for c in SEO_CHAPTERS]:
                         _kw_list.extend([k for k in _cat_kws if k["grade"] == "A"])
 
                 if _kw_list:
