@@ -1240,12 +1240,13 @@ elif not step3_audio_locked:
                 with st.spinner("ElevenLabs 음성 생성 중… (약 20~40초)"):
                     try:
                         from src.audio import generate_narration_cdn
-                        # fal CDN에 업로드 → URL 저장 (리부트 후에도 유지)
+                        # 로컬 project_dir에 narration.mp3 저장 (fal CDN 대신)
                         cdn_url = generate_narration_cdn(
                             api_key=api_keys["ELEVENLABS_API_KEY"],
                             text=narration_text,
-                            fal_key=api_keys["FAL_KEY"],
+                            fal_key=api_keys.get("FAL_KEY", ""),
                             voice_id=voice_id,
+                            project_dir=state.get("project_dir", "/tmp"),
                         )
                         state["audio_path"] = cdn_url
                         manager.save_state(state)
