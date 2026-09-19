@@ -1,197 +1,189 @@
 # src/seo_keywords.py
-# 너도나도아는커피 숏폼 팩토리 — SEO 키워드 자동 발굴기
+# 너도나도아는커피 숏폼 팩토리 — SEO 키워드 뱅크
 #
-# 전략: 사전 큐레이션 뱅크(오프라인) + YouTube 자동완성(실시간) 조합
-# YouTube 자동완성: API 키 불필요 — suggestqueries.google.com 공개 엔드포인트 사용
-# 대한민국 YouTube 기준 hl=ko&gl=KR 파라미터로 한국어 트렌드 반영
+# [전략]
+# - "검증된 고검색 키워드" 탭: YouTube Data API v3로 "커피" 단독 검색 → 24시간 캐시
+#   → 하루 1회 호출 (100 units) 로 쿼터 최소 소모
+# - "실시간 트렌드" 탭: YouTube 자동완성 (무료, 키 불필요)
 
+import os
 import json
+import time
 import requests
+from pathlib import Path
 
 
-# ── 챕터별 큐레이션 키워드 뱅크 ──────────────────────────────────────────────
-# Claude가 생성한 커피 고검색량 키워드 (2026-09 기준 추정치)
-# 각 항목: (주제명, 예상_월간검색량_등급)  A=1만↑ / B=3천~1만 / C=1천~3천
-KEYWORD_BANK: dict[str, list[tuple[str, str]]] = {
-    "에스프레소 추출 과학": [
-        ("에스프레소 만드는 법", "A"),
-        ("에스프레소 크레마 생기는 이유", "B"),
-        ("에스프레소 추출 압력 9바", "B"),
-        ("에스프레소 쓴맛 줄이는 방법", "A"),
-        ("에스프레소 샷 비율", "B"),
-        ("에스프레소 머신 원리", "B"),
-        ("리스트레또 vs 룽고 차이", "C"),
-        ("에스프레소 과다추출 과소추출", "B"),
-    ],
-    "커피 원두 선택법": [
-        ("커피 원두 차이 아라비카 로부스타", "A"),
-        ("커피 원두 추천 입문자", "A"),
-        ("싱글오리진 블렌드 차이", "B"),
-        ("커피 산지별 맛 차이 에티오피아 콜롬비아", "B"),
-        ("커피 원두 보관법", "A"),
-        ("커피 원두 유통기한", "B"),
-        ("생두 vs 원두 차이", "C"),
-        ("스페셜티 커피란", "B"),
-    ],
-    "로스팅 단계와 맛": [
-        ("커피 로스팅 단계 차이", "A"),
-        ("라이트 로스트 다크 로스트 뭐가 다를까", "A"),
-        ("커피 로스팅 원리", "B"),
-        ("홈 로스팅 하는 법", "B"),
-        ("커피 신맛 줄이는 방법", "A"),
-        ("커피 쓴맛 나는 이유", "A"),
-        ("로스팅 날짜 중요한 이유", "B"),
-        ("커피 프레쉬니스", "C"),
-    ],
-    "추출 도구 비교": [
-        ("드립 커피 vs 에스프레소 차이", "A"),
-        ("모카포트 사용법", "A"),
-        ("에어로프레스 커피 만드는 법", "B"),
-        ("프렌치프레스 사용법", "A"),
-        ("핸드드립 커피 입문", "A"),
-        ("콜드브루 만드는 법", "A"),
-        ("커피 도구 추천 입문자", "A"),
-        ("케멕스 v60 차이", "B"),
-    ],
-    "카페인과 건강": [
-        ("커피 카페인 함량 비교", "A"),
-        ("디카페인 커피 카페인 있나", "A"),
-        ("커피 하루 몇 잔이 적당한가", "A"),
-        ("커피 공복에 마시면", "A"),
-        ("커피 수면 영향", "A"),
-        ("커피 위장 자극 이유", "B"),
-        ("카페인 반감기", "B"),
-        ("임산부 커피 섭취 기준", "B"),
-    ],
-    "라떼아트와 밀크폼": [
-        ("라떼아트 만드는 법 입문", "A"),
-        ("우유 스티밍 온도", "B"),
-        ("마이크로폼 만드는 법", "B"),
-        ("오트밀크 라떼아트 가능한가", "B"),
-        ("라떼 카푸치노 차이", "A"),
-        ("플랫화이트란", "B"),
-        ("홈 라떼아트 연습법", "B"),
-        ("우유 종류별 스팀 차이", "C"),
-    ],
-    "커피의 역사와 문화": [
-        ("커피 역사 기원", "B"),
-        ("에티오피아 커피 기원 전설", "B"),
-        ("커피 한국 들어온 역사", "B"),
-        ("이탈리아 에스프레소 문화", "B"),
-        ("제3의 물결 커피란", "B"),
-        ("스페셜티 커피 문화", "B"),
-        ("커피벨트 커피 재배 지역", "C"),
-        ("커피 무역 역사", "C"),
-    ],
-    "홈카페 레시피": [
-        ("달고나 커피 만드는 법", "A"),
-        ("아이스 라떼 만드는 법", "A"),
-        ("바닐라 라떼 레시피", "A"),
-        ("플랫화이트 만드는 법", "B"),
-        ("콜드브루 레시피", "A"),
-        ("카라멜 마키아토 만들기", "A"),
-        ("에스프레소 토닉 레시피", "B"),
-        ("홈카페 입문 장비 추천", "A"),
-    ],
+# ── 상수 ──────────────────────────────────────────────────────────────────────
+ALL_CHAPTERS = [
+    "커피 역사", "원두 산지", "로스팅", "에스프레소",
+    "브루잉", "라떼아트", "커피 과학", "카페 문화",
+]
+
+GRADE_LABEL = {
+    "A": "🔴",
+    "B": "🟡",
+    "C": "⚪",
 }
 
-# 전체 챕터 목록 (UI 드롭다운용)
-ALL_CHAPTERS = list(KEYWORD_BANK.keys())
+# 24시간 캐시 파일 경로 (Streamlit Cloud /tmp 는 재시작 시 초기화되지만 세션 내 유지)
+_CACHE_FILE = Path("/tmp/coffee_kw_cache.json")
+_CACHE_TTL  = 86400   # 24시간 (초)
+
+# ── 챕터 → 관련 단어 매핑 (필터링용) ─────────────────────────────────────────
+_CHAPTER_FILTERS = {
+    "커피 역사":  ["역사", "기원", "유래", "발견", "전파", "오스만", "에티오피아"],
+    "원두 산지":  ["원두", "산지", "에티오피아", "콜롬비아", "예가체프", "수마트라", "케냐"],
+    "로스팅":    ["로스팅", "볶기", "로스터", "다크", "라이트", "미디엄", "원두 볶"],
+    "에스프레소": ["에스프레소", "샷", "크레마", "추출", "롱블랙", "아메리카노"],
+    "브루잉":    ["핸드드립", "브루잉", "푸어오버", "케멕스", "에어로프레스", "프렌치프레스", "드립"],
+    "라떼아트":  ["라떼아트", "카푸치노", "플랫화이트", "밀크폼", "스팀", "로제타"],
+    "커피 과학":  ["카페인", "성분", "산도", "향미", "플레이버", "과학", "화학"],
+    "카페 문화":  ["카페", "스페셜티", "트렌드", "문화", "서울카페", "제3의물결"],
+}
+
+# ── 폴백 정적 목록 (API 실패 시) ─────────────────────────────────────────────
+_FALLBACK = [
+    {"topic": "아이스아메리카노 맛의 진짜 비밀",     "grade": "A", "source": "bank"},
+    {"topic": "에스프레소와 롱블랙 차이",           "grade": "A", "source": "bank"},
+    {"topic": "예가체프 내추럴 vs 워시드",           "grade": "A", "source": "bank"},
+    {"topic": "핸드드립 물 온도가 맛을 바꾼다",       "grade": "A", "source": "bank"},
+    {"topic": "카페인 없이 커피 향만 즐기는 법",      "grade": "B", "source": "bank"},
+    {"topic": "다크 로스팅 원두가 쓴 이유",          "grade": "B", "source": "bank"},
+    {"topic": "라떼아트 하트 그리는 법",             "grade": "B", "source": "bank"},
+    {"topic": "스페셜티 커피란 무엇인가",             "grade": "B", "source": "bank"},
+    {"topic": "콜드브루 직접 만드는 법",             "grade": "C", "source": "bank"},
+    {"topic": "커피 찌꺼기 재활용 아이디어",          "grade": "C", "source": "bank"},
+]
 
 
-# ── YouTube/Google 자동완성 실시간 조회 ──────────────────────────────────────
-def fetch_youtube_suggestions(seed_keyword: str, max_results: int = 8) -> list[str]:
-    """
-    Google의 YouTube 자동완성 엔드포인트에서 실시간 연관 검색어를 가져온다.
-    API 키 불필요. 실패 시 빈 리스트 반환(앱 중단 없음).
-
-    Args:
-        seed_keyword : 검색 씨앗 키워드 (예: "에스프레소")
-        max_results  : 최대 반환 개수
-
-    Returns:
-        list[str] : 자동완성 검색어 목록
-    """
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부: YouTube Data API v3 — "커피" 검색 → 제목 목록 반환
+# 하루 1회 호출 (100 units), 결과를 /tmp 파일에 캐시
+# ─────────────────────────────────────────────────────────────────────────────
+def _fetch_youtube_titles(api_key: str, max_results: int = 50) -> list[str]:
+    """YouTube Data API로 "커피" 검색 → 동영상 제목 리스트 반환."""
     try:
-        url = "https://suggestqueries.google.com/complete/search"
+        url = "https://www.googleapis.com/youtube/v3/search"
         params = {
-            "client": "youtube",
-            "q":      seed_keyword,
-            "hl":     "ko",
-            "gl":     "KR",
-            "ds":     "yt",
+            "part":             "snippet",
+            "q":                "커피",
+            "type":             "video",
+            "regionCode":       "KR",
+            "relevanceLanguage":"ko",
+            "maxResults":       max_results,
+            "order":            "viewCount",
+            "key":              api_key,
         }
-        resp = requests.get(url, params=params, timeout=4)
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
-
-        # 응답 형식: [0, [["검색어", 0], ...], ...]
-        # Content-Type이 application/json이 아닐 수 있어 직접 파싱
-        raw = resp.text
-        # JSONP 형식 대비: )]}' 로 시작하는 경우 제거
-        if raw.startswith(")]}'"):
-            raw = raw[4:]
-        data = json.loads(raw)
-
-        # data[1]: [["검색어", score], ...]
-        suggestions = []
-        for item in data[1]:
-            if isinstance(item, list) and len(item) > 0:
-                suggestions.append(item[0])
-            elif isinstance(item, str):
-                suggestions.append(item)
-            if len(suggestions) >= max_results:
-                break
-
-        return suggestions
-
-    except Exception:
-        # 네트워크 오류, 파싱 실패 등 — 조용히 실패
+        items = resp.json().get("items", [])
+        return [item["snippet"]["title"] for item in items if "snippet" in item]
+    except Exception as e:
+        print(f"[seo_keywords] YouTube API 오류: {e}", flush=True)
         return []
 
 
-# ── 챕터별 키워드 조회 ────────────────────────────────────────────────────────
-def get_keywords_for_chapter(chapter: str) -> list[dict]:
-    """
-    챕터에 해당하는 큐레이션 키워드 목록을 반환한다.
+def _load_cache() -> list[str] | None:
+    """캐시 파일이 유효하면 제목 리스트 반환, 만료·없으면 None."""
+    if not _CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        if time.time() - data.get("ts", 0) < _CACHE_TTL:
+            return data.get("titles", [])
+    except Exception:
+        pass
+    return None
 
-    Returns:
-        list[dict] : [{"topic": str, "grade": str, "source": "bank"}, ...]
+
+def _save_cache(titles: list[str]) -> None:
+    try:
+        _CACHE_FILE.write_text(
+            json.dumps({"ts": time.time(), "titles": titles}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _get_titles(api_key: str) -> list[str]:
+    """캐시 우선, 없으면 API 호출 후 캐시 저장."""
+    cached = _load_cache()
+    if cached:
+        return cached
+    titles = _fetch_youtube_titles(api_key)
+    if titles:
+        _save_cache(titles)
+    return titles
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부: YouTube 자동완성 (무료, API 키 불필요)
+# ─────────────────────────────────────────────────────────────────────────────
+def _autocomplete(seed: str, count: int = 10) -> list[str]:
+    try:
+        url = "https://suggestqueries.google.com/complete/search"
+        params = {"client": "youtube", "q": seed, "hl": "ko", "gl": "KR", "ds": "yt"}
+        resp = requests.get(url, params=params, timeout=5)
+        raw  = resp.text
+        # 응답 형식: function(["seed", [["kw1",...], ...]])
+        start = raw.index("[")
+        data  = json.loads(raw[start:])
+        suggestions = data[1]
+        return [s[0] for s in suggestions if isinstance(s, list)][:count]
+    except Exception:
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 챕터별 키워드 (검증된 고검색 탭)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_keywords_for_chapter(chapter: str, api_key: str = "") -> list[dict]:
     """
-    items = KEYWORD_BANK.get(chapter, [])
+    YouTube "커피" 검색 결과(캐시)에서 챕터 연관 제목을 필터링해 반환.
+    api_key 없으면 폴백 정적 목록 반환.
+    """
+    if not api_key:
+        # API 키 없음 → 폴백
+        filters = _CHAPTER_FILTERS.get(chapter, [])
+        if filters:
+            return [k for k in _FALLBACK if any(f in k["topic"] for f in filters)] or _FALLBACK[:6]
+        return _FALLBACK[:6]
+
+    titles = _get_titles(api_key)
+    if not titles:
+        return _FALLBACK[:6]
+
+    filters = _CHAPTER_FILTERS.get(chapter, [])
+    results: list[dict] = []
+
+    # 1순위: 필터 단어 포함 제목
+    if filters:
+        for t in titles:
+            if any(f in t for f in filters):
+                results.append({"topic": t, "grade": "A", "source": "youtube"})
+        for t in titles:
+            if t not in [r["topic"] for r in results]:
+                results.append({"topic": t, "grade": "B", "source": "youtube"})
+    else:
+        # 챕터 없음 → 전체 상위 목록
+        for i, t in enumerate(titles):
+            grade = "A" if i < 15 else ("B" if i < 35 else "C")
+            results.append({"topic": t, "grade": grade, "source": "youtube"})
+
+    return results[:14]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 실시간 트렌드 (실시간 트렌드 탭)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_trending_keywords(seed: str, max_realtime: int = 8) -> list[dict]:
+    """
+    YouTube 자동완성(무료)으로 실시간 키워드 반환.
+    API 키 불필요, 쿼터 소모 없음.
+    """
+    suggestions = _autocomplete(seed, count=max_realtime)
     return [
-        {"topic": topic, "grade": grade, "source": "bank"}
-        for topic, grade in items
+        {"topic": s, "grade": "A", "source": "youtube"}
+        for s in suggestions
     ]
-
-
-# ── 실시간 트렌드 키워드 조회 ─────────────────────────────────────────────────
-def get_trending_keywords(chapter: str, max_realtime: int = 5) -> list[dict]:
-    """
-    챕터 큐레이션 키워드 + YouTube 실시간 트렌드를 합쳐 반환한다.
-
-    Returns:
-        list[dict] : [{"topic": str, "grade": str, "source": "bank"|"youtube"}, ...]
-    """
-    results = get_keywords_for_chapter(chapter)
-
-    # 챕터명의 첫 번째 단어를 씨앗 키워드로 사용
-    seed = chapter.split()[0] if chapter else "커피"
-    live = fetch_youtube_suggestions(seed, max_results=max_realtime)
-
-    # 중복 제거 (이미 뱅크에 있는 것은 건너뜀)
-    existing_topics = {r["topic"] for r in results}
-    for topic in live:
-        if topic not in existing_topics:
-            results.append({"topic": topic, "grade": "?", "source": "youtube"})
-            existing_topics.add(topic)
-
-    return results
-
-
-# ── 등급 뱃지 텍스트 ─────────────────────────────────────────────────────────
-GRADE_LABEL = {
-    "A": "🔥 고검색",
-    "B": "✨ 중검색",
-    "C": "💡 틈새",
-    "?": "📡 실시간",
-}
