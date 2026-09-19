@@ -1028,7 +1028,10 @@ st.markdown(f"""
 BATCH_SIZE = 4   # 이미지: 4장 × 3회 = 12컷
 
 if not step2_locked:
-    pending_imgs  = [s for s in scenes if s.get("image_status") in ("pending", "error")]
+    # 'pending'만 next_batch 대상 — 'error'는 버튼 카운트에는 남기되 자동 재시도 안 함
+    # (STEP 4에서 text-to-video로 처리되므로 무한 루프 방지)
+    pending_imgs  = [s for s in scenes if s.get("image_status") == "pending"]
+    error_imgs    = [s for s in scenes if s.get("image_status") == "error"]
     next_batch    = pending_imgs[:BATCH_SIZE]
     batch_nos     = [s["scene_no"] for s in next_batch]
     batch_label   = f"{batch_nos[0]}~{batch_nos[-1]}컷" if batch_nos else ""
@@ -1053,7 +1056,7 @@ if not step2_locked:
     _mode_is_auto  = _unsplash_key and "자동" in _img_mode
     _use_unsplash_batch = _unsplash_key and "Unsplash" in _img_mode
 
-    col_img, col_img_info = st.columns([2, 5])
+    col_img, col_img_retry, col_img_info = st.columns([2, 2, 4])
     with col_img:
         _src_icon = "📷" if _use_unsplash_batch else "🤖"
         img_gen_btn = st.button(
@@ -1061,11 +1064,35 @@ if not step2_locked:
             disabled=(len(next_batch) == 0 or st.session_state.gen_running),
             key="img_gen_all",
         )
+    with col_img_retry:
+        # 실패 컷 재시도 버튼 — error 상태인 컷을 pending으로 되돌려 다음 배치에 포함
+        if error_imgs:
+            retry_btn = st.button(
+                f"🔁 실패 {len(error_imgs)}컷 재시도",
+                disabled=st.session_state.gen_running,
+                key="img_retry_errors",
+                help="수집 실패한 컷을 pending으로 되돌려 다시 시도합니다.",
+            )
+            if retry_btn:
+                for s in error_imgs:
+                    s["image_status"] = "pending"
+                    s.pop("image_error", None)
+                try:
+                    manager.save_state(state)
+                except Exception:
+                    pass
+                st.rerun()
+        else:
+            st.empty()
     with col_img_info:
-        st.caption(
-            f"{img_done_cnt}/{total_cnt}컷 완료"
-            + (f" · 남은 {len(pending_imgs)}컷" if pending_imgs else " — 모두 완료")
-        )
+        done_label = f"{img_done_cnt}/{total_cnt}컷 완료"
+        if error_imgs:
+            done_label += f" · ⚠️ {len(error_imgs)}컷 실패 (STEP 4에서 텍스트→영상으로 대체)"
+        elif pending_imgs:
+            done_label += f" · 남은 {len(pending_imgs)}컷"
+        else:
+            done_label += " — 모두 완료"
+        st.caption(done_label)
 
     # ── 배치 오류 표시 (스레드에서 잡힌 전체 오류) ──────────────────────────
     if state.get("batch_image_error"):
@@ -1233,7 +1260,13 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 4 — 컷별 영상 생성 (Fal.ai Kling)
 # ─────────────────────────────────────────────────────────────────────────────
-step3_locked = not step1_done or (img_done_cnt < total_cnt and total_cnt > 0)
+# 이미지가 모두 '시도됨' (done 또는 error) 이면 STEP 4 진행 허용.
+# error 컷은 reference_image_url이 없으므로 Kling이 text-to-video 모드로 자동 처리.
+img_all_attempted = (
+    all(s.get("image_status") in ("done", "error") for s in scenes)
+    if scenes else False
+)
+step3_locked = not step1_done or (not img_all_attempted and total_cnt > 0)
 
 st.markdown(f"""
 <div class="step-header">
