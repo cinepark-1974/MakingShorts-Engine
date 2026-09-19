@@ -398,8 +398,8 @@ div[data-testid="stProgress"] > div > div {
 try:
     from src.state_manager import StateManager
     from src.prompts import generate_script_and_prompts
-    from src.image_fal import generate_images_for_scenes, generate_reference_image
-    from src.video_fal import generate_single_clip
+    from src.image_replicate import generate_images_for_scenes, generate_reference_image
+    from src.video_fal import generate_single_clip   # fal.ai 미사용 시 import만
     MODULES_OK = True
 except ImportError as e:
     MODULES_OK = False
@@ -433,7 +433,7 @@ def needs_ai_image(scene: dict) -> bool:
     return scene.get("scene_type", "") in _AI_SCENE_TYPES
 
 
-def smart_ai_image(scene: dict, fal_key: str, google_key: str) -> tuple:
+def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
     """
     씬 타입에 따라 최적 AI 엔진으로 이미지를 생성하고 (cdn_url, source_label)을 반환한다.
 
@@ -443,31 +443,29 @@ def smart_ai_image(scene: dict, fal_key: str, google_key: str) -> tuple:
       기타 / google_key 없음               →  FLUX Dev (폴백)
 
     Returns:
-        tuple[str, str]: (fal CDN URL, source_label)
-        source_label: "gemini" | "flux"
+        tuple[str, str]: (Replicate CDN URL, source_label)
+        source_label: "flux-illust" | "flux-pro" | "flux"
     """
+    from src.image_replicate import (
+        FLUX_DEV_MODEL, FLUX_PRO_MODEL, FLUX_SCHNELL_MODEL,
+        generate_reference_image, generate_illustration_image,
+    )
     scene_type = scene.get("scene_type", "")
     prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
 
+    # MACHINE / EXTRACTION / SCIENCE_DATA → 일러스트·설계도 스타일 (FLUX Dev)
     if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}:
-        from src.image_gptimage2 import generate_illustration_image
-        try:
-            url = generate_illustration_image(
-                fal_key=fal_key,
-                image_prompt=prompt,
-            )
-            return url, "gpt2"
-        except Exception:
-            # GPT Image 2 실패 시 FLUX Dev 일러스트 모드로 폴백
-            from src.image_fal import FLUX_DEV_MODEL, generate_reference_image as _flux_gen
-            url = _flux_gen(fal_key=fal_key, image_prompt=prompt, model=FLUX_DEV_MODEL, illust_mode=True)
-            return url, "flux"
+        url = generate_illustration_image(
+            replicate_token=replicate_token,
+            image_prompt=prompt,
+        )
+        return url, "flux-illust"
 
-    # ASSEMBLY → flux-pro, 그 외 → flux-dev
-    from src.image_fal import FLUX_PRO_MODEL
-    chosen_model = FLUX_PRO_MODEL if scene_type == "ASSEMBLY" else ""
-    url = generate_reference_image(fal_key, prompt, model=chosen_model)
-    return url, "flux"
+    # ASSEMBLY → FLUX 1.1 Pro (고품질 조립 장면), 그 외 → Schnell (빠른 레퍼런스)
+    chosen_model = FLUX_PRO_MODEL if scene_type == "ASSEMBLY" else FLUX_SCHNELL_MODEL
+    url = generate_reference_image(replicate_token, prompt, model=chosen_model)
+    label = "flux-pro" if scene_type == "ASSEMBLY" else "flux"
+    return url, label
 
 # ── API 키 로드 ───────────────────────────────────────────────────────────────
 def load_api_keys():
@@ -1128,8 +1126,12 @@ if not step2_locked:
                 #   "모두 FLUX AI"         → 항상 FLUX
                 #   "모두 Unsplash"        → 항상 Unsplash
                 #   "자동 판단" or 키없음  → visual_source / scene_type 기반 분기
-                if not _unsplash_key:
+                _rep_key_ok = bool(api_keys.get("REPLICATE_API_TOKEN", ""))
+                if not _unsplash_key and _rep_key_ok:
                     _use_flux = True
+                elif not _unsplash_key and not _rep_key_ok:
+                    # Replicate도 Unsplash도 없으면 오류 방지: 빈 URL → error 처리
+                    raise RuntimeError("이미지 생성 불가: REPLICATE_API_TOKEN 과 UNSPLASH_ACCESS_KEY 가 모두 없습니다.")
                 elif "FLUX" in _img_mode and "모두" in _img_mode:
                     _use_flux = True
                 elif "Unsplash" in _img_mode and "모두" in _img_mode:
@@ -1138,9 +1140,11 @@ if not step2_locked:
                     _use_flux = needs_ai_image(scene)
 
                 if _use_flux:
-                    # AI 생성: 씬 타입에 따라 Gemini Imagen 또는 FLUX로 자동 분기
+                    # AI 생성: 씬 타입에 따라 FLUX Schnell/Dev/Pro로 자동 분기 (Replicate)
                     url, _ai_src = smart_ai_image(
-                        scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                        scene,
+                        api_keys.get("REPLICATE_API_TOKEN", ""),
+                        api_keys.get("GOOGLE_API_KEY", ""),
                     )
                 else:
                     # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
