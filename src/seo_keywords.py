@@ -25,9 +25,10 @@ GRADE_LABEL = {
     "C": "⚪",
 }
 
-# 24시간 캐시 파일 경로 (Streamlit Cloud /tmp 는 재시작 시 초기화되지만 세션 내 유지)
-_CACHE_FILE = Path("/tmp/coffee_kw_cache.json")
-_CACHE_TTL  = 86400   # 24시간 (초)
+# 캐시 파일 경로 (Streamlit Cloud /tmp 는 재시작 시 초기화되지만 세션 내 유지)
+_CACHE_FILE     = Path("/tmp/coffee_kw_cache.json")
+_CACHE_TTL_OK   = 86400   # 24시간 — 성공 결과 캐시
+_CACHE_TTL_FAIL =  3600   #  1시간 — 실패(403 등) 결과 캐시, 복구 시 빠른 재시도 허용
 
 # ── 챕터 → 관련 단어 매핑 (필터링용) ─────────────────────────────────────────
 _CHAPTER_FILTERS = {
@@ -84,22 +85,29 @@ def _fetch_youtube_titles(api_key: str, max_results: int = 50) -> list[str]:
 
 
 def _load_cache() -> list[str] | None:
-    """캐시 파일이 유효하면 제목 리스트 반환, 만료·없으면 None."""
+    """
+    캐시 파일이 유효하면 제목 리스트 반환 (빈 리스트 [] 포함).
+    만료되었거나 파일이 없으면 None 반환.
+    성공 캐시 TTL = 24h / 실패 캐시 TTL = 1h
+    """
     if not _CACHE_FILE.exists():
         return None
     try:
         data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
-        if time.time() - data.get("ts", 0) < _CACHE_TTL:
-            return data.get("titles", [])
+        ttl  = _CACHE_TTL_OK if data.get("ok") else _CACHE_TTL_FAIL
+        if time.time() - data.get("ts", 0) < ttl:
+            return data.get("titles", [])   # 빈 리스트도 유효한 캐시로 반환
     except Exception:
         pass
     return None
 
 
 def _save_cache(titles: list[str]) -> None:
+    """결과(빈 리스트 포함)를 캐시 파일에 저장. ok 플래그로 성공/실패 TTL 구분."""
     try:
         _CACHE_FILE.write_text(
-            json.dumps({"ts": time.time(), "titles": titles}, ensure_ascii=False),
+            json.dumps({"ts": time.time(), "titles": titles, "ok": bool(titles)},
+                       ensure_ascii=False),
             encoding="utf-8",
         )
     except Exception:
@@ -107,13 +115,15 @@ def _save_cache(titles: list[str]) -> None:
 
 
 def _get_titles(api_key: str) -> list[str]:
-    """캐시 우선, 없으면 API 호출 후 캐시 저장."""
+    """
+    캐시 우선, 없으면 API 호출 후 캐시 저장.
+    ※ 실패(빈 결과)도 반드시 캐시 — 403 반복 호출 방지.
+    """
     cached = _load_cache()
-    if cached:
+    if cached is not None:   # None = 만료·없음 / [] = 캐시된 실패 결과
         return cached
     titles = _fetch_youtube_titles(api_key)
-    if titles:
-        _save_cache(titles)
+    _save_cache(titles)      # 빈 결과도 저장하여 다음 재실행에서 반복 호출 차단
     return titles
 
 
