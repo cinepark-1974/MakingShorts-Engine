@@ -640,7 +640,8 @@ with st.sidebar:
 # API 키 체크
 # ─────────────────────────────────────────────────────────────────────────────
 api_keys = load_api_keys()
-REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY"]
+# FAL_KEY는 선택 사항 — REPLICATE_API_TOKEN 으로 대체 가능
+REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]
 missing = [k for k in REQUIRED_KEYS if not api_keys.get(k)]
 if missing:
     st.warning(
@@ -1546,7 +1547,7 @@ else:
                         with st.spinner(f"#{sno:02d} AI 이미지 생성 중… (약 20~60초)"):
                             try:
                                 url, _ai_src = smart_ai_image(
-                                    scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                                    scene, api_keys.get("REPLICATE_API_TOKEN", ""), api_keys.get("GOOGLE_API_KEY", "")
                                 )
                                 scene["image_path"]          = url
                                 scene["image_status"]        = "done"
@@ -1627,7 +1628,7 @@ else:
                         with st.spinner(f"#{sno:02d} AI 이미지 생성 중… (약 20~60초)"):
                             try:
                                 url, _ai_src = smart_ai_image(
-                                    scene, api_keys["FAL_KEY"], api_keys.get("GOOGLE_API_KEY", "")
+                                    scene, api_keys.get("REPLICATE_API_TOKEN", ""), api_keys.get("GOOGLE_API_KEY", "")
                                 )
                                 scene["image_path"]          = url
                                 scene["image_status"]        = "done"
@@ -1703,7 +1704,7 @@ else:
                             else:
                                 from src.video_fal import generate_single_clip_url
                                 cdn_url = generate_single_clip_url(
-                                    fal_key=api_keys["FAL_KEY"],
+                                    fal_key=api_keys.get("FAL_KEY", ""),
                                     prompt=scene.get("flow_prompt", ""),
                                     image_url=scene.get("reference_image_url", ""),
                                 )
@@ -1773,7 +1774,7 @@ elif not step4_locked:
         with st.spinner("FFmpeg로 합성 중… 클립 다운로드 포함 약 2~5분 소요됩니다."):
             try:
                 from src.assembler import assemble_final_video
-                cdn_url = assemble_final_video(state, api_keys["FAL_KEY"])
+                cdn_url = assemble_final_video(state, api_keys.get("FAL_KEY", ""))
                 state["final_video_path"] = cdn_url
                 state["status"] = "done"
                 manager.save_state(state)
