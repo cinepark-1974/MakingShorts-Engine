@@ -760,6 +760,15 @@ if st.session_state.current_project is None:
                     for _cat_kws in [get_keywords_for_chapter(c, api_key=_g_key) for c in SEO_CHAPTERS]:
                         _kw_list.extend([k for k in _cat_kws if k["grade"] == "A"])
 
+                # 챕터 미선택 시 여러 챕터에서 동일 폴백 항목이 중복 추가될 수 있으므로 topic 기준 중복 제거
+                _seen_topics: set = set()
+                _kw_list_deduped = []
+                for _k in _kw_list:
+                    if _k["topic"] not in _seen_topics:
+                        _seen_topics.add(_k["topic"])
+                        _kw_list_deduped.append(_k)
+                _kw_list = _kw_list_deduped
+
                 if _kw_list:
                     st.caption("아래 키워드를 클릭하면 주제 입력창에 자동으로 채워집니다.")
                     _cols = st.columns(2)
