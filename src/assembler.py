@@ -32,7 +32,6 @@ import shutil
 import subprocess
 import tempfile
 import requests
-import fal_client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -548,24 +547,23 @@ def _apply_overlay_to_clip(
 # ─────────────────────────────────────────────────────────────────────────────
 def assemble_final_video(
     state: dict,
-    fal_key: str,
+    fal_key: str = "",       # 하위 호환 유지 (미사용)
     apply_overlay: bool = True,
 ) -> str:
     """
-    state의 모든 씬 video_url + audio_path → 최종 숏폼 MP4 합성 → fal CDN URL 반환.
+    state의 모든 씬 video_url + audio_path → 최종 숏폼 MP4 합성 → 로컬 파일 경로 반환.
 
     Args:
-        state         : 프로젝트 상태 dict (scenes, audio_path 포함)
-        fal_key       : FAL_KEY
+        state         : 프로젝트 상태 dict (scenes, audio_path, project_dir 포함)
+        fal_key       : 미사용 (하위 호환용 파라미터 유지)
         apply_overlay : True면 "신비한 건축사전" 오버레이 적용
 
     Returns:
-        str : 최종 영상 fal CDN URL
+        str : 최종 MP4 로컬 파일 경로 (project_dir/final.mp4)
 
     Raises:
         ValueError : 합성할 클립이 없거나 FFmpeg 실패 시
     """
-    os.environ["FAL_KEY"] = fal_key
 
     scenes    = state.get("scenes", [])
     audio_src = state.get("audio_path", "").strip()
@@ -662,9 +660,9 @@ def assemble_final_video(
         else:
             shutil.copy2(concat_path, final_path)
 
-        # ── 8. fal.ai CDN 업로드 ────────────────────────────────────────────
-        with open(final_path, "rb") as f:
-            video_bytes = f.read()
-
-        cdn_url = fal_client.upload(video_bytes, content_type="video/mp4")
-        return cdn_url
+        # ── 8. 최종 파일 저장 (project_dir/final.mp4) ───────────────────────
+        project_dir = state.get("project_dir", "/tmp")
+        os.makedirs(project_dir, exist_ok=True)
+        dest_path = os.path.join(project_dir, "final.mp4")
+        shutil.copy2(final_path, dest_path)
+        return dest_path
