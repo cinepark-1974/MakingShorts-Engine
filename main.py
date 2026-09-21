@@ -399,7 +399,6 @@ try:
     from src.state_manager import StateManager
     from src.prompts import generate_script_and_prompts
     from src.image_replicate import generate_images_for_scenes, generate_reference_image
-    from src.video_fal import generate_single_clip   # fal.ai 미사용 시 import만
     MODULES_OK = True
 except ImportError as e:
     MODULES_OK = False
@@ -630,7 +629,7 @@ with st.sidebar:
     st.markdown(
         '<div style="text-align:center; color:rgba(255,255,255,0.4); '
         'font-size:10px; line-height:1.7; padding:4px 0 8px;">'
-        'Claude API · ElevenLabs · Fal.ai Kling<br>'
+        'Claude API · ElevenLabs · Replicate Wan 2.1<br>'
         '<span style="color:rgba(219,161,44,0.6);">You & I Know Coffee</span>'
         '</div>',
         unsafe_allow_html=True,
@@ -1275,7 +1274,7 @@ elif not step3_audio_locked:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — 컷별 영상 생성 (Fal.ai Kling)
+# STEP 4 — 컷별 영상 생성 (Replicate Wan 2.1)
 # ─────────────────────────────────────────────────────────────────────────────
 # 이미지가 모두 '시도됨' (done 또는 error) 이면 STEP 4 진행 허용.
 # error 컷은 reference_image_url이 없으므로 Kling이 text-to-video 모드로 자동 처리.
@@ -1291,7 +1290,7 @@ st.markdown(f"""
     {"✓" if done_cnt == total_cnt and total_cnt > 0 else "4"}
   </div>
   <div>
-    <div class="step-title">STEP 4 · 컷별 영상 생성 (Fal.ai Kling v2.6 Pro)</div>
+    <div class="step-title">STEP 4 · 컷별 영상 생성 (Replicate Wan 2.1)</div>
     <div class="step-sub">9:16 세로 · 5초 · Flux 이미지 첫 프레임 자동 사용 · 컷별 재생성 가능</div>
   </div>
 </div>
@@ -1299,8 +1298,8 @@ st.markdown(f"""
 
 if step3_locked:
     st.info("STEP 1 대본 생성 후 이 단계를 진행하세요.")
-elif not api_keys.get("FAL_KEY") and not api_keys.get("REPLICATE_API_TOKEN"):
-    st.warning("FAL_KEY 또는 REPLICATE_API_TOKEN을 Secrets에 등록하면 영상을 생성할 수 있습니다.")
+elif not api_keys.get("REPLICATE_API_TOKEN"):
+    st.warning("REPLICATE_API_TOKEN을 Streamlit Secrets에 등록하면 영상을 생성할 수 있습니다.")
 else:
     # 영상: 3컷 × 4회 배치 생성
     VIDEO_BATCH_SIZE  = 3
@@ -1336,10 +1335,10 @@ else:
                     + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
                 )
 
-    # ── 비디오 백엔드 선택: FAL 우선, 없으면 Replicate ─────────────────────────
+    # ── 비디오 백엔드 선택: Replicate 우선 (fal.ai 접속 불가로 비활성화) ─────────
     _fal_key        = api_keys.get("FAL_KEY", "")
     _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
-    _use_replicate  = (not _fal_key) and bool(_replicate_key)
+    _use_replicate  = bool(_replicate_key)   # REPLICATE_API_TOKEN 있으면 항상 Replicate 사용
 
     # 배치 생성 — 병렬 실행 (CDN URL 저장, 리부트 후에도 유지)
     if all_gen_btn and not st.session_state.gen_running and not st.session_state.get("stop_requested"):
@@ -1774,8 +1773,8 @@ elif not step4_locked:
         with st.spinner("FFmpeg로 합성 중… 클립 다운로드 포함 약 2~5분 소요됩니다."):
             try:
                 from src.assembler import assemble_final_video
-                cdn_url = assemble_final_video(state, api_keys.get("FAL_KEY", ""))
-                state["final_video_path"] = cdn_url
+                local_path = assemble_final_video(state)   # project_dir/final.mp4 반환
+                state["final_video_path"] = local_path
                 state["status"] = "done"
                 manager.save_state(state)
                 st.session_state.current_project = state
@@ -1806,6 +1805,6 @@ if any_generating:
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="factory-footer">
-  너도나도아는커피 숏폼 팩토리 · Powered by Claude API · ElevenLabs · Fal.ai Kling
+  너도나도아는커피 숏폼 팩토리 · Powered by Claude API · ElevenLabs · Replicate Wan 2.1
 </div>
 """, unsafe_allow_html=True)
