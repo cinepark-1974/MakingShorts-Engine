@@ -614,9 +614,17 @@ with st.sidebar:
         import json as _json
         try:
             restored = _json.loads(uploaded_json.read().decode("utf-8"))
-            # projects/ 에 상태 파일 재저장
-            manager.save_state(restored)
+            # ① 세션 상태 먼저 설정 — 디스크 저장 실패와 무관하게 복구 보장
             st.session_state.current_project = restored
+            # ② 디렉터리 생성 후 디스크 저장 시도 (실패해도 세션 복구는 유지)
+            try:
+                import os as _os
+                proj_dir = restored.get("project_dir", "")
+                if proj_dir:
+                    _os.makedirs(proj_dir, exist_ok=True)
+                manager.save_state(restored)
+            except Exception:
+                pass  # 디스크 저장 실패는 무시 — 세션 내 작업은 계속 가능
             st.success("복구 완료!")
             time.sleep(0.5)
             st.rerun()
