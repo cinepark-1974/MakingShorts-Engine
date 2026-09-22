@@ -10,8 +10,10 @@ import replicate
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
 # flux-schnell: 4 steps, 가장 빠름 — 모든 씬 통일 사용 (속도 우선)
-# flux-dev: 28 steps, 고품질이지만 3~5배 느림 → 제거
+# flux-dev / flux-pro: 하위 호환용 별칭 (실제로는 schnell로 라우팅)
 FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"
+FLUX_DEV_MODEL     = FLUX_SCHNELL_MODEL   # 하위 호환 — schnell로 대체
+FLUX_PRO_MODEL     = FLUX_SCHNELL_MODEL   # 하위 호환 — schnell로 대체
 
 # 9:16 세로 영상 기준 해상도
 DEFAULT_WIDTH  = 576
