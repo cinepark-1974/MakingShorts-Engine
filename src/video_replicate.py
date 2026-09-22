@@ -81,14 +81,15 @@ def generate_single_clip_url(
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # Image-to-Video: T2V와 동일하게 num_frames 사용
-        # ※ "frames"는 모델이 인식 못해 무시됨 → OOM → E002 크래시
-        # ※ max_area는 i2v-480p 모델에서 미지원 → 제거
+        # Image-to-Video: I2V 파라미터는 "frames" (T2V의 "num_frames"와 다름)
+        # 공식 스펙: frames 범위 5-100, max_area "480x832"(세로) or "832x480"(가로)
+        # 출처: replicate.com/wavespeedai/wan-2.1-i2v-480p 공식 API 스키마
         inputs = {
-            "prompt":     prompt,
-            "image":      image_url,
-            "num_frames": DEFAULT_NUM_FRAMES,
-            "fps":        DEFAULT_FPS,
+            "prompt":   prompt,
+            "image":    image_url,
+            "frames":   DEFAULT_NUM_FRAMES,
+            "max_area": DEFAULT_MAX_AREA,
+            "fps":      DEFAULT_FPS,
         }
         model = WAN_I2V_MODEL
     else:
