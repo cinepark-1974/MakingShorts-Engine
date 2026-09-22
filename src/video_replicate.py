@@ -4,7 +4,7 @@
 
 import os
 import sys
-import requests
+import time
 import replicate
 
 # ── Replicate 모델 ID ──────────────────────────────────────────────────────────
@@ -17,24 +17,46 @@ DEFAULT_NUM_FRAMES = 5 * DEFAULT_FPS   # 80
 DEFAULT_ASPECT     = "9:16"
 DEFAULT_MAX_AREA   = "480x832"         # I2V: width×height (세로 9:16)
 
+# 429 재시도 설정 ($5 미만 계정: burst=1, 6 req/min 제한)
+_MAX_RETRIES  = 5       # 최대 재시도 횟수
+_RETRY_DELAY  = 15      # 기본 대기 시간 (초) — 429 응답에 포함된 시간보다 여유 있게
+_INTER_SCENE  = 5       # 씬 간 간격 (초) — rate limit 예방용
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 헬퍼: Replicate 출력 → URL 추출
 # ─────────────────────────────────────────────────────────────────────────────
 def _to_url(output) -> str:
     """FileOutput / 리스트 / 이터레이터 / 문자열 모두 대응해 URL을 반환한다."""
-    # 이터레이터/제너레이터인 경우 모든 값을 소비해서 마지막(영상) 항목 획득
+    # FileOutput 객체: .url 속성 우선 (Replicate Python client >= 1.0)
+    if hasattr(output, "url"):
+        url = str(output.url).strip()
+        if url.startswith("http"):
+            return url
+
+    # 이터레이터/제너레이터: 마지막 항목 (영상 URL)
     if hasattr(output, "__iter__") and not isinstance(output, (str, bytes)):
         items = list(output)
         if items:
-            output = items[-1]   # 마지막이 영상인 경우가 일반적
-        else:
-            raise ValueError("Replicate 출력이 비어 있습니다.")
+            last = items[-1]
+            if hasattr(last, "url"):
+                url = str(last.url).strip()
+            else:
+                url = str(last).strip()
+            if url.startswith("http"):
+                return url
+        raise ValueError("Replicate 출력이 비어 있습니다.")
 
     url = str(output).strip()
     if not url.startswith("http"):
         raise ValueError(f"유효하지 않은 Replicate 출력 URL: {url!r}")
     return url
+
+
+def _is_rate_limit_error(e: Exception) -> bool:
+    """429 rate limit 오류 여부 판별."""
+    msg = str(e)
+    return "429" in msg or "throttled" in msg or "rate limit" in msg.lower()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -49,6 +71,7 @@ def generate_single_clip_url(
     Replicate Wan 2.1로 MP4를 생성하고 공개 URL을 반환한다.
 
     image_url이 있으면 image-to-video, 없으면 text-to-video 모드.
+    429 Rate limit 발생 시 최대 _MAX_RETRIES 회 자동 재시도.
 
     Returns:
         str : Replicate CDN 공개 URL
@@ -62,8 +85,8 @@ def generate_single_clip_url(
         inputs = {
             "prompt":    prompt,
             "image":     image_url,
-            "frames":    DEFAULT_NUM_FRAMES,   # ← duration 아님
-            "max_area":  DEFAULT_MAX_AREA,     # "480x832" = 9:16
+            "frames":    DEFAULT_NUM_FRAMES,
+            "max_area":  DEFAULT_MAX_AREA,
             "fps":       DEFAULT_FPS,
         }
         model = WAN_I2V_MODEL
@@ -72,75 +95,106 @@ def generate_single_clip_url(
         inputs = {
             "prompt":       prompt,
             "aspect_ratio": DEFAULT_ASPECT,
-            "num_frames":   DEFAULT_NUM_FRAMES,  # ← duration 아님
+            "num_frames":   DEFAULT_NUM_FRAMES,
             "fps":          DEFAULT_FPS,
         }
         model = WAN_T2V_MODEL
 
     print(f"[video_replicate] {model} 호출 | prompt={prompt[:60]}...", flush=True)
-    output = replicate.run(model, input=inputs)
-    url = _to_url(output)
-    print(f"[video_replicate] 완료 → {url[:80]}", flush=True)
-    return url
+
+    last_error = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            output = replicate.run(model, input=inputs)
+            url = _to_url(output)
+            print(f"[video_replicate] 완료 → {url[:80]}", flush=True)
+            return url
+
+        except Exception as e:
+            last_error = e
+            if _is_rate_limit_error(e):
+                # 429: 지정된 시간만큼 대기 후 재시도
+                wait = _RETRY_DELAY * attempt   # 15s, 30s, 45s, …
+                print(
+                    f"[video_replicate] 429 rate limit (시도 {attempt}/{_MAX_RETRIES}) "
+                    f"→ {wait}초 대기 후 재시도…",
+                    flush=True,
+                )
+                time.sleep(wait)
+            else:
+                # 다른 오류는 즉시 전파
+                raise
+
+    raise RuntimeError(
+        f"Replicate 429 rate limit: {_MAX_RETRIES}회 재시도 실패 — {last_error}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 공개 API: 다중 씬 병렬 생성 — CDN URL 저장
+# 공개 API: 다중 씬 순차 생성 — CDN URL 저장
+# (병렬 처리 제거 — $5 미만 계정 burst=1 rate limit 대응)
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_clips_parallel_cdn(
     replicate_token: str,
     scenes: list,
-    max_workers: int = 4,
+    max_workers: int = 1,     # burst=1 계정 대응: 항상 순차 처리
     progress_callback=None,
 ) -> list:
     """
-    여러 씬을 병렬로 생성하고 CDN URL을 scene["video_url"]에 기록한다.
+    여러 씬을 순차로 생성하고 CDN URL을 scene["video_url"]에 기록한다.
+
+    ※ max_workers 파라미터는 하위 호환을 위해 유지하지만 항상 1로 동작합니다.
+       Replicate $5 미만 계정은 burst=1 제한이 있어 병렬 처리 시 전부 429.
 
     Args:
         replicate_token   : REPLICATE_API_TOKEN
         scenes            : state["scenes"] 리스트
-        max_workers       : 동시 생성 스레드 수 (기본 4)
+        max_workers       : 미사용 (하위 호환용)
         progress_callback : (scene_no, status) 를 받는 콜백 (선택)
 
     Returns:
         list : 업데이트된 scenes 리스트
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     targets = [s for s in scenes if s.get("status") in ("pending", "error")]
     if not targets:
         return scenes
 
     scene_map = {s["scene_no"]: s for s in scenes}
 
-    def _generate_one(scene: dict) -> dict:
+    for i, scene in enumerate(targets):
         sno     = scene["scene_no"]
         ref_img = scene.get("reference_image_url", "")
+
+        # 씬 간 간격 — 첫 씬은 대기 없음
+        if i > 0:
+            print(
+                f"[video_replicate] 씬 간 {_INTER_SCENE}초 대기 (rate limit 예방)…",
+                flush=True,
+            )
+            time.sleep(_INTER_SCENE)
+
         try:
             cdn_url = generate_single_clip_url(
                 replicate_token=replicate_token,
                 prompt=scene.get("flow_prompt", ""),
                 image_url=ref_img,
             )
-            return {"scene_no": sno, "status": "done", "video_url": cdn_url}
-        except Exception as e:
-            # 에러 메시지를 Streamlit Cloud 로그에도 출력
-            print(f"[video_replicate] 씬 #{sno:02d} 오류: {e}", file=sys.stderr, flush=True)
-            return {"scene_no": sno, "status": "error", "error_msg": str(e)}
+            result = {"scene_no": sno, "status": "done", "video_url": cdn_url}
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_generate_one, s): s["scene_no"] for s in targets}
-        for future in as_completed(futures):
-            result = future.result()
-            sno    = result["scene_no"]
-            target = scene_map[sno]
-            target["status"] = result["status"]
-            if result["status"] == "done":
-                target["video_url"] = result["video_url"]
-                target.pop("error_msg", None)
-            else:
-                target["error_msg"] = result.get("error_msg", "알 수 없는 오류")
-            if progress_callback:
-                progress_callback(sno, result["status"])
+        except Exception as e:
+            print(f"[video_replicate] 씬 #{sno:02d} 오류: {e}", file=sys.stderr, flush=True)
+            result = {"scene_no": sno, "status": "error", "error_msg": str(e)}
+
+        # scene dict 업데이트
+        target = scene_map[sno]
+        target["status"] = result["status"]
+        if result["status"] == "done":
+            target["video_url"] = result["video_url"]
+            target.pop("error_msg", None)
+        else:
+            target["error_msg"] = result.get("error_msg", "알 수 없는 오류")
+
+        if progress_callback:
+            progress_callback(sno, result["status"])
 
     return scenes
