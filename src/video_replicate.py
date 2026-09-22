@@ -2,9 +2,11 @@
 # 너도나도아는커피 숏폼 팩토리 — Replicate Wan 2.1 비디오 생성기
 # fal.ai 접속 불가 시 대안으로 사용. API 키: REPLICATE_API_TOKEN
 
+import io
 import os
 import sys
 import time
+import requests
 import replicate
 
 # ── Replicate 모델 ID ──────────────────────────────────────────────────────────
@@ -59,6 +61,25 @@ def _is_rate_limit_error(e: Exception) -> bool:
     return "429" in msg or "throttled" in msg or "rate limit" in msg.lower()
 
 
+def _fetch_image_as_fileobj(url: str) -> io.BytesIO:
+    """
+    이미지 URL을 Streamlit 서버에서 직접 다운로드해 BytesIO로 반환한다.
+
+    Replicate 추론 서버가 외부 URL(Unsplash, FLUX CDN 등)에 직접 접근하지
+    못해 E002가 발생하는 경우를 방지한다.
+    Replicate Python client는 BytesIO를 받으면 자체 스토리지에 업로드한 뒤
+    추론 서버에 내부 URL을 전달하므로 외부 접근 문제가 없어진다.
+    """
+    try:
+        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        buf = io.BytesIO(resp.content)
+        buf.name = "image.jpg"   # Replicate client가 Content-Type 추론에 사용
+        return buf
+    except Exception as e:
+        raise RuntimeError(f"레퍼런스 이미지 다운로드 실패 ({url[:60]}…): {e}") from e
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 단일 클립 생성 — CDN URL 반환
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,12 +102,13 @@ def generate_single_clip_url(
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # Image-to-Video: 필수 파라미터는 image + prompt 만 (공식 Replicate 블로그 확인)
-        # frames / max_area / fps 는 이 모델에 없는 파라미터 → E002 원인
-        # 출처: replicate.com/blog/wan-21-generate-videos-with-an-api
+        # Image-to-Video: image를 URL 대신 BytesIO로 전달
+        # → Replicate 추론 서버가 외부 URL(Unsplash·FLUX CDN)에 직접 접근하지 못해
+        #   E002가 발생하는 문제를 해결. Streamlit 서버에서 먼저 다운로드 후 전달.
+        image_obj = _fetch_image_as_fileobj(image_url)
         inputs = {
             "prompt": prompt,
-            "image":  image_url,
+            "image":  image_obj,
         }
         model = WAN_I2V_MODEL
     else:
