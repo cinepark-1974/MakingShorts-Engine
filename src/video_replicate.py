@@ -88,6 +88,38 @@ def _fetch_image_as_fileobj(url: str) -> io.BytesIO:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 내부 헬퍼: 모델 실행 + 429 재시도
+# ─────────────────────────────────────────────────────────────────────────────
+def _run_model_with_retry(model: str, inputs: dict) -> str:
+    """
+    replicate.run()을 실행하고 429 rate limit 시 지수 백오프로 재시도한다.
+    성공 시 CDN URL을 반환한다.
+    """
+    last_error = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            output = replicate.run(model, input=inputs)
+            url = _to_url(output)
+            print(f"[video_replicate] 완료 → {url[:80]}", flush=True)
+            return url
+        except Exception as e:
+            last_error = e
+            if _is_rate_limit_error(e):
+                wait = _RETRY_DELAY * attempt
+                print(
+                    f"[video_replicate] 429 rate limit (시도 {attempt}/{_MAX_RETRIES}) "
+                    f"→ {wait}초 대기 후 재시도…",
+                    flush=True,
+                )
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError(
+        f"Replicate 429 rate limit: {_MAX_RETRIES}회 재시도 실패 — {last_error}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 단일 클립 생성 — CDN URL 반환
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_single_clip_url(
@@ -98,7 +130,8 @@ def generate_single_clip_url(
     """
     Replicate Wan 2.1로 MP4를 생성하고 공개 URL을 반환한다.
 
-    image_url이 있으면 image-to-video, 없으면 text-to-video 모드.
+    image_url이 있으면 I2V(image-to-video) 시도 → E002 발생 시 T2V 자동 전환.
+    image_url이 없으면 처음부터 T2V.
     429 Rate limit 발생 시 최대 _MAX_RETRIES 회 자동 재시도.
 
     Returns:
@@ -108,54 +141,41 @@ def generate_single_clip_url(
 
     use_image_mode = bool(image_url and image_url.strip())
 
+    # ── I2V 시도 ──────────────────────────────────────────────────────────────
     if use_image_mode:
-        # Image-to-Video: image를 URL 대신 BytesIO로 전달
-        # → Replicate 추론 서버가 외부 URL(Unsplash·FLUX CDN)에 직접 접근하지 못해
-        #   E002가 발생하는 문제를 해결. Streamlit 서버에서 먼저 다운로드 후 전달.
         image_obj = _fetch_image_as_fileobj(image_url)
-        inputs = {
+        i2v_inputs = {
             "prompt": prompt,
             "image":  image_obj,
         }
-        model = WAN_I2V_MODEL
-    else:
-        # Text-to-Video: num_frames + aspect_ratio
-        inputs = {
-            "prompt":       prompt,
-            "aspect_ratio": DEFAULT_ASPECT,
-            "num_frames":   DEFAULT_NUM_FRAMES,
-            "fps":          DEFAULT_FPS,
-        }
-        model = WAN_T2V_MODEL
-
-    print(f"[video_replicate] {model} 호출 | prompt={prompt[:60]}...", flush=True)
-
-    last_error = None
-    for attempt in range(1, _MAX_RETRIES + 1):
+        print(
+            f"[video_replicate] I2V 시도: {WAN_I2V_MODEL} | prompt={prompt[:60]}…",
+            flush=True,
+        )
         try:
-            output = replicate.run(model, input=inputs)
-            url = _to_url(output)
-            print(f"[video_replicate] 완료 → {url[:80]}", flush=True)
-            return url
-
+            return _run_model_with_retry(WAN_I2V_MODEL, i2v_inputs)
         except Exception as e:
-            last_error = e
-            if _is_rate_limit_error(e):
-                # 429: 지정된 시간만큼 대기 후 재시도
-                wait = _RETRY_DELAY * attempt   # 15s, 30s, 45s, …
+            if "E002" in str(e):
+                # I2V 모델 내부 오류(E002) → T2V 자동 전환
                 print(
-                    f"[video_replicate] 429 rate limit (시도 {attempt}/{_MAX_RETRIES}) "
-                    f"→ {wait}초 대기 후 재시도…",
+                    f"[video_replicate] I2V E002 발생 → T2V 모드로 자동 전환",
                     flush=True,
                 )
-                time.sleep(wait)
             else:
-                # 다른 오류는 즉시 전파
-                raise
+                raise   # E002 외 오류는 그대로 전파
 
-    raise RuntimeError(
-        f"Replicate 429 rate limit: {_MAX_RETRIES}회 재시도 실패 — {last_error}"
+    # ── T2V (I2V 없음 또는 E002 폴백) ─────────────────────────────────────────
+    t2v_inputs = {
+        "prompt":       prompt,
+        "aspect_ratio": DEFAULT_ASPECT,
+        "num_frames":   DEFAULT_NUM_FRAMES,
+        "fps":          DEFAULT_FPS,
+    }
+    print(
+        f"[video_replicate] T2V 실행: {WAN_T2V_MODEL} | prompt={prompt[:60]}…",
+        flush=True,
     )
+    return _run_model_with_retry(WAN_T2V_MODEL, t2v_inputs)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
