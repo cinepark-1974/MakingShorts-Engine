@@ -446,13 +446,12 @@ def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
         source_label: "flux-illust" | "flux-pro" | "flux"
     """
     from src.image_replicate import (
-        FLUX_DEV_MODEL, FLUX_PRO_MODEL, FLUX_SCHNELL_MODEL,
         generate_reference_image, generate_illustration_image,
     )
     scene_type = scene.get("scene_type", "")
     prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
 
-    # MACHINE / EXTRACTION / SCIENCE_DATA → 일러스트·설계도 스타일 (FLUX Dev)
+    # MACHINE / EXTRACTION / SCIENCE_DATA → 일러스트·설계도 스타일 (flux-schnell + illust_mode)
     if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}:
         url = generate_illustration_image(
             replicate_token=replicate_token,
@@ -460,11 +459,9 @@ def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
         )
         return url, "flux-illust"
 
-    # ASSEMBLY → FLUX Dev (고품질 조립 장면 · Pro보다 빠르고 안정적)
-    # 그 외    → FLUX Schnell (빠른 레퍼런스)
-    chosen_model = FLUX_DEV_MODEL if scene_type == "ASSEMBLY" else FLUX_SCHNELL_MODEL
-    url = generate_reference_image(replicate_token, prompt, model=chosen_model)
-    label = "flux-dev" if scene_type == "ASSEMBLY" else "flux"
+    # 그 외 (ASSEMBLY 포함) → FLUX Schnell (빠른 레퍼런스, 모든 씬 통일)
+    url = generate_reference_image(replicate_token, prompt)
+    label = "flux"
     return url, label
 
 # ── API 키 로드 ───────────────────────────────────────────────────────────────
