@@ -1,6 +1,7 @@
 # src/video_replicate.py
-# 너도나도아는커피 숏폼 팩토리 — Replicate Wan 2.1 비디오 생성기
-# fal.ai 접속 불가 시 대안으로 사용. API 키: REPLICATE_API_TOKEN
+# 너도나도아는커피 숏폼 팩토리 — Replicate MiniMax Video-01 비디오 생성기
+# wavespeedai/wan-2.1 → minimax/video-01 교체 (E002 지속 오류 대응)
+# API 키: REPLICATE_API_TOKEN
 
 import io
 import os
@@ -10,18 +11,11 @@ import requests
 import replicate
 
 # ── Replicate 모델 ID ──────────────────────────────────────────────────────────
-WAN_T2V_MODEL = "wavespeedai/wan-2.1-t2v-480p"   # text-to-video
-WAN_I2V_MODEL = "wavespeedai/wan-2.1-i2v-480p"   # image-to-video
+MINIMAX_MODEL = "minimax/video-01"   # I2V(first_frame_image) + T2V 통합 모델
 
-# 기본 생성 옵션 (5초 × 16fps = 80프레임)
-DEFAULT_FPS        = 16
-DEFAULT_NUM_FRAMES = 5 * DEFAULT_FPS   # 80
-DEFAULT_ASPECT     = "9:16"
-DEFAULT_MAX_AREA   = "480x832"         # I2V: width×height (세로 9:16)
-
-# 429 재시도 설정 ($5 미만 계정: burst=1, 6 req/min 제한)
+# 429 재시도 설정
 _MAX_RETRIES  = 5       # 최대 재시도 횟수
-_RETRY_DELAY  = 15      # 기본 대기 시간 (초) — 429 응답에 포함된 시간보다 여유 있게
+_RETRY_DELAY  = 15      # 기본 대기 시간 (초)
 _INTER_SCENE  = 5       # 씬 간 간격 (초) — rate limit 예방용
 
 
@@ -63,12 +57,11 @@ def _is_rate_limit_error(e: Exception) -> bool:
 
 def _fetch_image_as_fileobj(url: str) -> io.BytesIO:
     """
-    이미지 URL을 Streamlit 서버에서 직접 다운로드해 BytesIO로 반환한다.
+    이미지 URL을 서버에서 직접 다운로드해 BytesIO로 반환한다.
 
-    Replicate 추론 서버가 외부 URL(Unsplash, FLUX CDN 등)에 직접 접근하지
-    못해 E002가 발생하는 경우를 방지한다.
+    Replicate 추론 서버가 외부 URL에 직접 접근하지 못하는 경우를 방지한다.
     Replicate Python client는 BytesIO를 받으면 자체 스토리지에 업로드한 뒤
-    추론 서버에 내부 URL을 전달하므로 외부 접근 문제가 없어진다.
+    추론 서버에 내부 URL을 전달하므로 외부 접근 문제가 해소된다.
     """
     print(f"[video_replicate] 이미지 다운로드 시작 → {url[:80]}", flush=True)
     try:
@@ -128,10 +121,13 @@ def generate_single_clip_url(
     image_url: str = "",
 ) -> str:
     """
-    Replicate Wan 2.1로 MP4를 생성하고 공개 URL을 반환한다.
+    Replicate MiniMax Video-01로 MP4를 생성하고 공개 URL을 반환한다.
 
-    image_url이 있으면 I2V(image-to-video) 시도 → E002 발생 시 T2V 자동 전환.
-    image_url이 없으면 처음부터 T2V.
+    image_url이 있으면 I2V(image-to-video): first_frame_image로 레퍼런스 이미지 전달.
+      - FLUX가 생성한 9:16(576×1024) 이미지를 BytesIO로 다운로드해 전달.
+      - 출력 비율은 first_frame_image 크기를 따르므로 별도 aspect_ratio 불필요.
+    image_url이 없으면 T2V(text-to-video): prompt만 전달.
+
     429 Rate limit 발생 시 최대 _MAX_RETRIES 회 자동 재시도.
 
     Returns:
@@ -141,58 +137,46 @@ def generate_single_clip_url(
 
     use_image_mode = bool(image_url and image_url.strip())
 
-    # ── I2V 시도 ──────────────────────────────────────────────────────────────
     if use_image_mode:
-        image_obj = _fetch_image_as_fileobj(image_url)
-        i2v_inputs = {
-            "prompt": prompt,
-            "image":  image_obj,
+        # I2V 모드: 레퍼런스 이미지를 BytesIO로 다운로드 후 전달
+        image_file = _fetch_image_as_fileobj(image_url)
+        inputs = {
+            "prompt":           prompt,
+            "first_frame_image": image_file,
+            "prompt_optimizer": True,
         }
         print(
-            f"[video_replicate] I2V 시도: {WAN_I2V_MODEL} | prompt={prompt[:60]}…",
+            f"[video_replicate] I2V 실행: {MINIMAX_MODEL} | prompt={prompt[:60]}…",
             flush=True,
         )
-        try:
-            return _run_model_with_retry(WAN_I2V_MODEL, i2v_inputs)
-        except Exception as e:
-            if "E002" in str(e):
-                # I2V 모델 내부 오류(E002) → T2V 자동 전환
-                print(
-                    f"[video_replicate] I2V E002 발생 → T2V 모드로 자동 전환",
-                    flush=True,
-                )
-            else:
-                raise   # E002 외 오류는 그대로 전파
+    else:
+        # T2V 모드: 텍스트 프롬프트만 전달
+        inputs = {
+            "prompt":           prompt,
+            "prompt_optimizer": True,
+        }
+        print(
+            f"[video_replicate] T2V 실행: {MINIMAX_MODEL} | prompt={prompt[:60]}…",
+            flush=True,
+        )
 
-    # ── T2V (I2V 없음 또는 E002 폴백) ─────────────────────────────────────────
-    t2v_inputs = {
-        "prompt":       prompt,
-        "aspect_ratio": DEFAULT_ASPECT,
-        "num_frames":   DEFAULT_NUM_FRAMES,
-        "fps":          DEFAULT_FPS,
-    }
-    print(
-        f"[video_replicate] T2V 실행: {WAN_T2V_MODEL} | prompt={prompt[:60]}…",
-        flush=True,
-    )
-    return _run_model_with_retry(WAN_T2V_MODEL, t2v_inputs)
+    return _run_model_with_retry(MINIMAX_MODEL, inputs)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 다중 씬 순차 생성 — CDN URL 저장
-# (병렬 처리 제거 — $5 미만 계정 burst=1 rate limit 대응)
+# (병렬 처리 제거 — rate limit 대응, 순차 처리)
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_clips_parallel_cdn(
     replicate_token: str,
     scenes: list,
-    max_workers: int = 1,     # burst=1 계정 대응: 항상 순차 처리
+    max_workers: int = 1,     # 항상 순차 처리 (하위 호환용 파라미터 유지)
     progress_callback=None,
 ) -> list:
     """
     여러 씬을 순차로 생성하고 CDN URL을 scene["video_url"]에 기록한다.
 
     ※ max_workers 파라미터는 하위 호환을 위해 유지하지만 항상 1로 동작합니다.
-       Replicate $5 미만 계정은 burst=1 제한이 있어 병렬 처리 시 전부 429.
 
     Args:
         replicate_token   : REPLICATE_API_TOKEN
