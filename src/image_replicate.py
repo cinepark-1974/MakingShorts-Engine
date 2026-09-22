@@ -9,9 +9,9 @@ import os
 import replicate
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
-FLUX_DEV_MODEL     = "black-forest-labs/flux-dev"
-FLUX_PRO_MODEL     = "black-forest-labs/flux-1.1-pro"
-FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"   # 고속·저비용 (레퍼런스 이미지 기본값)
+FLUX_DEV_MODEL     = "black-forest-labs/flux-dev"          # 고품질 (ASSEMBLY·일러스트)
+FLUX_PRO_MODEL     = "black-forest-labs/flux-1.1-pro"      # 미사용 (width/height 스키마 불일치)
+FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"       # 고속·저비용 (레퍼런스 이미지 기본값)
 
 # 9:16 세로 영상 기준 해상도
 DEFAULT_WIDTH  = 576
@@ -21,11 +21,27 @@ DEFAULT_HEIGHT = 1024
 # ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────
 def _to_url(output) -> str:
     """FileOutput / 리스트 / 이터레이터 / 문자열 모두 대응해 URL을 반환한다."""
+    # 1) FileOutput 객체: .url 속성 우선 (Replicate Python client >= 1.0)
+    if hasattr(output, "url"):
+        url = str(output.url).strip()
+        if url.startswith("http"):
+            return url
+
+    # 2) 리스트나 이터레이터: 첫 번째 항목
     if hasattr(output, "__iter__") and not isinstance(output, (str, bytes)):
         items = list(output)
         if not items:
             raise ValueError("Replicate 이미지 출력이 비어 있습니다.")
-        output = items[0]   # 이미지는 첫 번째 항목
+        first = items[0]
+        # 첫 항목이 FileOutput이면 .url 시도, 아니면 str()
+        if hasattr(first, "url"):
+            url = str(first.url).strip()
+        else:
+            url = str(first).strip()
+        if url.startswith("http"):
+            return url
+
+    # 3) 문자열 / 기타 직접 변환
     url = str(output).strip()
     if not url.startswith("http"):
         raise ValueError(f"유효하지 않은 Replicate 출력 URL: {url!r}")
@@ -48,9 +64,8 @@ def _build_inputs(model: str, prompt: str) -> dict:
         base["num_inference_steps"] = 28
         base["guidance"] = 3.5
         base["num_outputs"] = 1
-    elif "1.1-pro" in model or "flux-pro" in model:
-        # flux-1.1-pro는 num_outputs 없음
-        pass
+    # flux-1.1-pro: 사용 중단 (width/height 파라미터 스키마 불일치 + 느림)
+    # ASSEMBLY 씬은 flux-dev로 처리
     return base
 
 
