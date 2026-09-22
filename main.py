@@ -473,7 +473,7 @@ def load_api_keys():
         "ELEVENLABS_API_KEY",
         "ELEVENLABS_VOICE_ID",
         "FAL_KEY",
-        "REPLICATE_API_TOKEN",     # Replicate Wan 2.1 (fal.ai 대안 비디오 백엔드)
+        "REPLICATE_API_TOKEN",     # Replicate MiniMax Video-01 (fal.ai 대안 비디오 백엔드)
         "UNSPLASH_ACCESS_KEY",     # Unsplash 라이센스 프리 사진 검색용
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용 (폴백)
         "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID (폴백)
@@ -627,7 +627,7 @@ with st.sidebar:
     st.markdown(
         '<div style="text-align:center; color:rgba(255,255,255,0.4); '
         'font-size:10px; line-height:1.7; padding:4px 0 8px;">'
-        'Claude API · ElevenLabs · Replicate Wan 2.1<br>'
+        'Claude API · ElevenLabs · Replicate MiniMax Video-01<br>'
         '<span style="color:rgba(219,161,44,0.6);">You & I Know Coffee</span>'
         '</div>',
         unsafe_allow_html=True,
@@ -1272,7 +1272,7 @@ elif not step3_audio_locked:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — 컷별 영상 생성 (Replicate Wan 2.1)
+# STEP 4 — 컷별 영상 생성 (Replicate MiniMax Video-01)
 # ─────────────────────────────────────────────────────────────────────────────
 # 이미지가 모두 '시도됨' (done 또는 error) 이면 STEP 4 진행 허용.
 # error 컷은 reference_image_url이 없으므로 Kling이 text-to-video 모드로 자동 처리.
@@ -1812,6 +1812,6 @@ if any_generating:
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="factory-footer">
-  너도나도아는커피 숏폼 팩토리 · Powered by Claude API · ElevenLabs · Replicate Wan 2.1
+  너도나도아는커피 숏폼 팩토리 · Powered by Claude API · ElevenLabs · Replicate MiniMax Video-01
 </div>
 """, unsafe_allow_html=True)
