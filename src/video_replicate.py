@@ -70,13 +70,20 @@ def _fetch_image_as_fileobj(url: str) -> io.BytesIO:
     Replicate Python client는 BytesIO를 받으면 자체 스토리지에 업로드한 뒤
     추론 서버에 내부 URL을 전달하므로 외부 접근 문제가 없어진다.
     """
+    print(f"[video_replicate] 이미지 다운로드 시작 → {url[:80]}", flush=True)
     try:
         resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
         buf = io.BytesIO(resp.content)
         buf.name = "image.jpg"   # Replicate client가 Content-Type 추론에 사용
+        print(
+            f"[video_replicate] 이미지 다운로드 완료 — {len(resp.content):,} bytes "
+            f"| Content-Type: {resp.headers.get('Content-Type', 'unknown')}",
+            flush=True,
+        )
         return buf
     except Exception as e:
+        print(f"[video_replicate] 이미지 다운로드 실패: {e}", flush=True)
         raise RuntimeError(f"레퍼런스 이미지 다운로드 실패 ({url[:60]}…): {e}") from e
 
 
