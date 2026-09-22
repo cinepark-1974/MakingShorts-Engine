@@ -1341,6 +1341,10 @@ else:
                     + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
                 )
 
+    # ── 직전 배치 오류 원인 표시 (rerun 후에도 유지) ─────────────────────────
+    if st.session_state.get("video_error_msg"):
+        st.error(f"직전 영상 생성 실패 원인: {st.session_state.video_error_msg}")
+
     # ── 비디오 백엔드 선택: Replicate 우선 (fal.ai 접속 불가로 비활성화) ─────────
     _fal_key        = api_keys.get("FAL_KEY", "")
     _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
@@ -1349,6 +1353,7 @@ else:
     # 배치 생성 — 병렬 실행 (CDN URL 저장, 리부트 후에도 유지)
     if all_gen_btn and not st.session_state.gen_running and not st.session_state.get("stop_requested"):
         st.session_state.stop_requested = False  # 생성 시작 시 중단 플래그 초기화
+        st.session_state.video_error_msg = ""    # 이전 오류 메시지 초기화
         st.session_state.gen_running = True
         all_ok  = True
         _err_ph = st.empty()   # 에러 전용 placeholder
@@ -1399,6 +1404,8 @@ else:
                     all_ok = False
                     _status_ctx.update(label=f"❌ Replicate 오류: {ex}", state="error")
                     _err_ph.error(f"Replicate 생성 실패: {ex}")
+                    # rerun 후에도 원인이 화면에 남도록 세션에 보관
+                    st.session_state.video_error_msg = str(ex)
 
             # ── Fal.ai 백엔드 ─────────────────────────────────────────────────
             else:
