@@ -54,7 +54,7 @@ def _build_inputs(model: str, prompt: str) -> dict:
         "prompt":         prompt,
         "width":          DEFAULT_WIDTH,
         "height":         DEFAULT_HEIGHT,
-        "output_format":  "webp",
+        "output_format":  "jpeg",   # webp → jpeg: Wan 2.1 I2V WebP 미지원으로 E002 발생
         "output_quality": 90,
     }
     if "schnell" in model:
