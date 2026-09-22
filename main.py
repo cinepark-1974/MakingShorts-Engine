@@ -1288,8 +1288,8 @@ st.markdown(f"""
     {"✓" if done_cnt == total_cnt and total_cnt > 0 else "4"}
   </div>
   <div>
-    <div class="step-title">STEP 4 · 컷별 영상 생성 (Replicate Wan 2.1)</div>
-    <div class="step-sub">9:16 세로 · 5초 · Flux 이미지 첫 프레임 자동 사용 · 컷별 재생성 가능</div>
+    <div class="step-title">STEP 4 · 컷별 영상 생성 (MiniMax Video-01)</div>
+    <div class="step-sub">9:16 세로 · Flux 이미지 첫 프레임 자동 사용 · 클립당 3~5분 · 컷별 재생성 가능</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1345,8 +1345,8 @@ else:
         all_ok  = True
         _err_ph = st.empty()   # 에러 전용 placeholder
 
-        _backend_label = "Replicate Wan 2.1" if _use_replicate else "Fal.ai Kling"
-        _status_label  = f"🎬 {len(next_vid_batch)}컷 병렬 생성 중… ({_backend_label} · 약 3~5분)"
+        _backend_label = "MiniMax Video-01" if _use_replicate else "Fal.ai Kling"
+        _status_label  = f"🎬 {len(next_vid_batch)}컷 생성 중… ({_backend_label} · 클립당 3~5분)"
 
         with st.status(_status_label, expanded=True) as _status_ctx:
             # ── 씬별 진행상황을 st.status 내부에 실시간 표시 ──
@@ -1359,12 +1359,20 @@ else:
                 _scene_ph[_sno].markdown(f"⏳ 씬 #{_sno:02d} &nbsp; 대기 중…")
 
             def _progress_cb(scene_no: int, scene_status: str) -> None:
-                """generate_clips_parallel_cdn 의 progress_callback 으로 전달됩니다."""
+                """완료·오류 시 씬 카드 상태를 업데이트한다."""
                 if scene_no in _scene_ph:
                     if scene_status == "done":
                         _scene_ph[scene_no].markdown(f"✅ 씬 #{scene_no:02d} &nbsp; 완료")
                     else:
                         _scene_ph[scene_no].markdown(f"❌ 씬 #{scene_no:02d} &nbsp; 오류")
+
+            def _poll_cb(scene_no: int, elapsed: int) -> None:
+                """폴링 중간마다 경과 시간을 표시 — Streamlit WebSocket 연결 유지 핵심."""
+                if scene_no in _scene_ph:
+                    mins, secs = divmod(elapsed, 60)
+                    _scene_ph[scene_no].markdown(
+                        f"🎬 씬 #{scene_no:02d} &nbsp; 생성 중… ({mins}분 {secs:02d}초 경과)"
+                    )
 
             # ── Replicate 백엔드 ──────────────────────────────────────────────
             if _use_replicate:
@@ -1375,6 +1383,7 @@ else:
                         scenes=next_vid_batch,
                         max_workers=4,
                         progress_callback=_progress_cb,
+                        poll_callback=_poll_cb,
                     )
                     # next_vid_batch는 state["scenes"] 참조 — 이미 수정됨
                     all_ok = all(s.get("status") == "done" for s in next_vid_batch)
