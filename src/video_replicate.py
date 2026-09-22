@@ -48,6 +48,16 @@ def _to_url(output) -> str:
     return url
 
 
+class InsufficientCreditError(RuntimeError):
+    """Replicate 크레딧 부족(402) — 재시도해도 소용없으므로 배치 전체를 즉시 중단한다."""
+
+
+def _is_credit_error(e: Exception) -> bool:
+    """402 크레딧 부족 오류 여부 판별."""
+    msg = str(e)
+    return "402" in msg or "Insufficient credit" in msg or "insufficient credit" in msg
+
+
 def _is_rate_limit_error(e: Exception) -> bool:
     """429 rate limit 오류 여부 판별."""
     msg = str(e)
@@ -148,6 +158,12 @@ def _run_model_with_polling(
 
         except Exception as e:
             last_error = e
+            if _is_credit_error(e):
+                raise InsufficientCreditError(
+                    "Replicate 크레딧이 부족합니다. "
+                    "https://replicate.com/account/billing 에서 크레딧을 충전한 뒤 "
+                    "몇 분 후 다시 시도하세요."
+                ) from e
             if _is_rate_limit_error(e):
                 wait = _RETRY_DELAY * attempt
                 print(
@@ -257,6 +273,12 @@ def generate_clips_parallel_cdn(
                 poll_cb=_poll_cb,
             )
             result = {"scene_no": sno, "status": "done", "video_url": cdn_url}
+
+        except InsufficientCreditError as e:
+            # 크레딧 부족: 현재 씬은 '대기'로 되돌리고 배치 전체 중단 (남은 씬 헛시도 방지)
+            print(f"[video_replicate] 크레딧 부족 — 배치 중단", file=sys.stderr, flush=True)
+            scene_map[sno]["status"] = "pending"
+            raise
 
         except Exception as e:
             print(f"[video_replicate] 씬 #{sno:02d} 오류: {e}", file=sys.stderr, flush=True)
