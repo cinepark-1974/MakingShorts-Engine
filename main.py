@@ -460,10 +460,11 @@ def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
         )
         return url, "flux-illust"
 
-    # ASSEMBLY → FLUX 1.1 Pro (고품질 조립 장면), 그 외 → Schnell (빠른 레퍼런스)
-    chosen_model = FLUX_PRO_MODEL if scene_type == "ASSEMBLY" else FLUX_SCHNELL_MODEL
+    # ASSEMBLY → FLUX Dev (고품질 조립 장면 · Pro보다 빠르고 안정적)
+    # 그 외    → FLUX Schnell (빠른 레퍼런스)
+    chosen_model = FLUX_DEV_MODEL if scene_type == "ASSEMBLY" else FLUX_SCHNELL_MODEL
     url = generate_reference_image(replicate_token, prompt, model=chosen_model)
-    label = "flux-pro" if scene_type == "ASSEMBLY" else "flux"
+    label = "flux-dev" if scene_type == "ASSEMBLY" else "flux"
     return url, label
 
 # ── API 키 로드 ───────────────────────────────────────────────────────────────
