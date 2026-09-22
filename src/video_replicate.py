@@ -15,10 +15,11 @@ import replicate
 MINIMAX_MODEL = "minimax/video-01"   # I2V(first_frame_image) + T2V 통합 모델
 
 # 재시도 및 폴링 설정
-_MAX_RETRIES   = 5       # 최대 재시도 횟수 (429 전용)
-_RETRY_DELAY   = 15      # 429 대기 기본값 (초)
-_INTER_SCENE   = 5       # 씬 간 간격 (초)
-_POLL_INTERVAL = 10      # 폴링 간격 (초) — minimax 평균 3~5분 소요
+_MAX_RETRIES      = 5    # 최대 재시도 횟수 (429 전용)
+_RETRY_DELAY      = 15   # 429 대기 기본값 (초)
+_INTER_SCENE      = 5    # 씬 간 간격 (초)
+_POLL_INTERVAL    = 10   # 폴링 간격 (초) — minimax 평균 3~5분 소요
+_MAX_POLL_SECONDS = 600  # 폴링 타임아웃 (10분) — 초과 시 해당 씬 error 처리 후 다음 씬으로
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +111,21 @@ def _run_model_with_polling(
             # 폴링 루프
             elapsed = 0
             while prediction.status not in ("succeeded", "failed", "canceled"):
+                # 타임아웃: 10분 초과 시 예측 취소 후 오류로 처리
+                if elapsed >= _MAX_POLL_SECONDS:
+                    print(
+                        f"[video_replicate] ⏰ 타임아웃 ({_MAX_POLL_SECONDS}초) "
+                        f"— 예측 취소: id={prediction.id}",
+                        flush=True,
+                    )
+                    try:
+                        prediction.cancel()
+                    except Exception:
+                        pass
+                    raise RuntimeError(
+                        f"폴링 타임아웃 {_MAX_POLL_SECONDS}초 초과 "
+                        f"(Replicate id={prediction.id})"
+                    )
                 time.sleep(_POLL_INTERVAL)
                 elapsed += _POLL_INTERVAL
                 prediction.reload()
