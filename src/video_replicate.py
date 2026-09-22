@@ -81,13 +81,14 @@ def generate_single_clip_url(
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # Image-to-Video: aspect_ratio 대신 max_area로 해상도 지정
+        # Image-to-Video: T2V와 동일하게 num_frames 사용
+        # ※ "frames"는 모델이 인식 못해 무시됨 → OOM → E002 크래시
+        # ※ max_area는 i2v-480p 모델에서 미지원 → 제거
         inputs = {
-            "prompt":    prompt,
-            "image":     image_url,
-            "frames":    DEFAULT_NUM_FRAMES,
-            "max_area":  DEFAULT_MAX_AREA,
-            "fps":       DEFAULT_FPS,
+            "prompt":     prompt,
+            "image":      image_url,
+            "num_frames": DEFAULT_NUM_FRAMES,
+            "fps":        DEFAULT_FPS,
         }
         model = WAN_I2V_MODEL
     else:
