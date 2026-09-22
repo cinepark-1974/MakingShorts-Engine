@@ -81,15 +81,12 @@ def generate_single_clip_url(
     use_image_mode = bool(image_url and image_url.strip())
 
     if use_image_mode:
-        # Image-to-Video: I2V 파라미터는 "frames" (T2V의 "num_frames"와 다름)
-        # 공식 스펙: frames 범위 5-100, max_area "480x832"(세로) or "832x480"(가로)
-        # 출처: replicate.com/wavespeedai/wan-2.1-i2v-480p 공식 API 스키마
+        # Image-to-Video: 필수 파라미터는 image + prompt 만 (공식 Replicate 블로그 확인)
+        # frames / max_area / fps 는 이 모델에 없는 파라미터 → E002 원인
+        # 출처: replicate.com/blog/wan-21-generate-videos-with-an-api
         inputs = {
-            "prompt":   prompt,
-            "image":    image_url,
-            "frames":   DEFAULT_NUM_FRAMES,
-            "max_area": DEFAULT_MAX_AREA,
-            "fps":      DEFAULT_FPS,
+            "prompt": prompt,
+            "image":  image_url,
         }
         model = WAN_I2V_MODEL
     else:
