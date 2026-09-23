@@ -610,10 +610,17 @@ with st.sidebar:
         key="json_upload",
         label_visibility="collapsed",
     )
-    if uploaded_json is not None:
+    # 업로드 파일은 업로더에 계속 남아 있으므로, 같은 파일은 한 번만 복구한다.
+    # (이 검사가 없으면 복구 → rerun → 다시 복구 → rerun … 무한 반복되어 대시보드가 안 뜸)
+    _upload_id = (
+        getattr(uploaded_json, "file_id", None)
+        or (f"{uploaded_json.name}:{uploaded_json.size}" if uploaded_json is not None else None)
+    ) if uploaded_json is not None else None
+    if uploaded_json is not None and st.session_state.get("_restored_upload_id") != _upload_id:
         import json as _json
         try:
-            restored = _json.loads(uploaded_json.read().decode("utf-8"))
+            st.session_state._restored_upload_id = _upload_id
+            restored = _json.loads(uploaded_json.getvalue().decode("utf-8"))
             # ① 세션 상태 먼저 설정 — 디스크 저장 실패와 무관하게 복구 보장
             st.session_state.current_project = restored
             # ② 디렉터리 생성 후 디스크 저장 시도 (실패해도 세션 복구는 유지)
@@ -856,6 +863,25 @@ if st.session_state.current_project is None:
 # 프로젝트 대시보드 (프로젝트 선택됨)
 # ─────────────────────────────────────────────────────────────────────────────
 state = st.session_state.current_project
+
+# ── 백그라운드 영상 작업이 있으면 그 작업이 갱신 중인 상태를 화면에 사용 ──────────
+from src import video_jobs
+PROJECT_KEY = state.get("project_id") or state.get("project_dir", "")
+_vjob = video_jobs.get_job(PROJECT_KEY)
+VIDEO_BUSY = video_jobs.is_running(PROJECT_KEY)
+if _vjob is not None and (VIDEO_BUSY or not _vjob.get("ui_done")):
+    state = _vjob["state"]
+    st.session_state.current_project = state
+    if not VIDEO_BUSY:
+        _vjob["ui_done"] = True
+        if _vjob.get("error"):
+            st.session_state.video_error_msg = _vjob["error"]
+if not VIDEO_BUSY:
+    # 작업이 없는데 '생성중'으로 남은 컷(끊긴 작업의 흔적)은 '대기'로 정리
+    for _s in state.get("scenes", []):
+        if _s.get("status") == "generating":
+            _s["status"] = "pending"
+
 scenes = state.get("scenes", [])
 done_cnt, total_cnt = calc_progress(scenes)
 
@@ -1307,159 +1333,118 @@ if step3_locked:
 elif not api_keys.get("REPLICATE_API_TOKEN"):
     st.warning("REPLICATE_API_TOKEN을 Streamlit Secrets에 등록하면 영상을 생성할 수 있습니다.")
 else:
-    # 영상: 3컷 × 4회 배치 생성
+    # 영상: 3컷씩 배치 생성 — 실제 생성은 백그라운드 작업(src/video_jobs.py)이 담당
     VIDEO_BATCH_SIZE  = 3
     pending_scenes    = [s for s in scenes if s.get("status") in ("pending", "error")]
     next_vid_batch    = pending_scenes[:VIDEO_BATCH_SIZE]
     vid_batch_nos     = [s["scene_no"] for s in next_vid_batch]
-    vid_batch_label   = f"{vid_batch_nos[0]}~{vid_batch_nos[-1]}컷" if vid_batch_nos else ""
+    vid_batch_label   = ", ".join(f"#{n:02d}" for n in vid_batch_nos)
+
+    # ── 비디오 백엔드: Replicate (fal.ai 접속 불가로 비활성화) ─────────────────
+    _fal_key        = api_keys.get("FAL_KEY", "")
+    _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
+    _use_replicate  = bool(_replicate_key)
 
     col_gen, col_stop, col_info2 = st.columns([2, 1, 4])
     with col_gen:
         all_gen_btn = st.button(
-            f"▶ 다음 {len(next_vid_batch)}컷 생성 ({vid_batch_label})" if next_vid_batch else "✅ 영상 완료",
-            disabled=(len(next_vid_batch) == 0 or st.session_state.gen_running),
+            "⏳ 영상 생성 중…" if VIDEO_BUSY
+            else (f"▶ 다음 {len(next_vid_batch)}컷 생성 ({vid_batch_label})" if next_vid_batch else "✅ 영상 완료"),
+            disabled=(len(next_vid_batch) == 0 or VIDEO_BUSY),
         )
     with col_stop:
         stop_btn = st.button(
             "⏹ 중단",
-            disabled=not st.session_state.gen_running,
-            help="현재 배치 완료 후 다음 배치를 시작하지 않습니다.",
+            disabled=not VIDEO_BUSY,
+            help="지금 생성 중인 컷은 마저 끝내고, 나머지 컷은 건너뜁니다.",
         )
-        if stop_btn:
-            st.session_state.stop_requested = True
-            st.info("다음 배치부터 중단됩니다.")
     with col_info2:
-        if st.session_state.gen_running:
-            st.info("영상 생성 중… (중단하려면 ⏹ 버튼 또는 브라우저 새로고침)")
-        else:
-            if st.session_state.get("stop_requested"):
-                st.warning("중단 요청됨 — ▶ 버튼을 누르면 이어서 생성합니다.")
-            else:
-                st.caption(
-                    f"{done_cnt}/{total_cnt}컷 완료"
-                    + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
-                )
+        if not VIDEO_BUSY:
+            st.caption(
+                f"{done_cnt}/{total_cnt}컷 완료"
+                + (f" · 남은 {len(pending_scenes)}컷" if pending_scenes else " — 모두 완료")
+            )
+
+    if stop_btn:
+        video_jobs.request_stop(PROJECT_KEY)
+        st.info("중단 요청됨 — 지금 생성 중인 컷까지만 완료합니다.")
 
     # ── 직전 배치 오류 원인 표시 (rerun 후에도 유지) ─────────────────────────
-    if st.session_state.get("video_error_msg"):
+    if st.session_state.get("video_error_msg") and not VIDEO_BUSY:
         st.error(f"직전 영상 생성 실패 원인: {st.session_state.video_error_msg}")
 
-    # ── 비디오 백엔드 선택: Replicate 우선 (fal.ai 접속 불가로 비활성화) ─────────
-    _fal_key        = api_keys.get("FAL_KEY", "")
-    _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
-    _use_replicate  = bool(_replicate_key)   # REPLICATE_API_TOKEN 있으면 항상 Replicate 사용
-
-    # 배치 생성 — 병렬 실행 (CDN URL 저장, 리부트 후에도 유지)
-    if all_gen_btn and not st.session_state.gen_running and not st.session_state.get("stop_requested"):
-        st.session_state.stop_requested = False  # 생성 시작 시 중단 플래그 초기화
-        st.session_state.video_error_msg = ""    # 이전 오류 메시지 초기화
-        st.session_state.gen_running = True
-        all_ok  = True
-        _err_ph = st.empty()   # 에러 전용 placeholder
-
-        _backend_label = "MiniMax Video-01" if _use_replicate else "Fal.ai Kling"
-        _status_label  = f"🎬 {len(next_vid_batch)}컷 생성 중… ({_backend_label} · 클립당 3~5분)"
-
-        with st.status(_status_label, expanded=True) as _status_ctx:
-            # ── 씬별 진행상황을 st.status 내부에 실시간 표시 ──
-            _scene_ph = {}   # scene_no → st.empty()
-
-            # 씬 placeholder 미리 생성 (생성 전 "⏳ 대기" 상태 표시)
-            for _s in next_vid_batch:
-                _sno = _s["scene_no"]
-                _scene_ph[_sno] = st.empty()
-                _scene_ph[_sno].markdown(f"⏳ 씬 #{_sno:02d} &nbsp; 대기 중…")
-
-            def _progress_cb(scene_no: int, scene_status: str) -> None:
-                """완료·오류 시 씬 카드 상태를 업데이트한다."""
-                if scene_no in _scene_ph:
-                    if scene_status == "done":
-                        _scene_ph[scene_no].markdown(f"✅ 씬 #{scene_no:02d} &nbsp; 완료")
-                    else:
-                        _scene_ph[scene_no].markdown(f"❌ 씬 #{scene_no:02d} &nbsp; 오류")
-
-            def _poll_cb(scene_no: int, elapsed: int) -> None:
-                """폴링 중간마다 경과 시간을 표시 — Streamlit WebSocket 연결 유지 핵심."""
-                if scene_no in _scene_ph:
-                    mins, secs = divmod(elapsed, 60)
-                    _scene_ph[scene_no].markdown(
-                        f"🎬 씬 #{scene_no:02d} &nbsp; 생성 중… ({mins}분 {secs:02d}초 경과)"
-                    )
-
-            # ── Replicate 백엔드 ──────────────────────────────────────────────
-            if _use_replicate:
-                try:
-                    from src.video_replicate import generate_clips_parallel_cdn
-                    generate_clips_parallel_cdn(
-                        replicate_token=_replicate_key,
-                        scenes=next_vid_batch,
-                        max_workers=4,
-                        progress_callback=_progress_cb,
-                        poll_callback=_poll_cb,
-                    )
-                    # next_vid_batch는 state["scenes"] 참조 — 이미 수정됨
-                    all_ok = all(s.get("status") == "done" for s in next_vid_batch)
-                except Exception as ex:
-                    all_ok = False
-                    _status_ctx.update(label=f"❌ Replicate 오류: {ex}", state="error")
-                    _err_ph.error(f"Replicate 생성 실패: {ex}")
-                    # rerun 후에도 원인이 화면에 남도록 세션에 보관
-                    st.session_state.video_error_msg = str(ex)
-
-            # ── Fal.ai 백엔드 ─────────────────────────────────────────────────
-            else:
-                try:
-                    from src.video_fal import generate_clips_parallel_cdn
-                    generate_clips_parallel_cdn(
-                        fal_key=_fal_key,
-                        scenes=next_vid_batch,
-                        max_workers=4,
-                        project_dir=state.get("project_dir", "/tmp"),
-                    )
-                    all_ok = all(s.get("status") == "done" for s in next_vid_batch)
-                except Exception as ex:
-                    all_ok = False
-                    _status_ctx.update(label=f"❌ Fal.ai 오류: {ex}", state="error")
-                    _err_ph.error(f"Fal.ai 생성 실패: {ex}")
-
-            # ── st.status 최종 상태 갱신 ─────────────────────────────────────
-            if all_ok:
-                done_n = len(next_vid_batch)
-                _status_ctx.update(
-                    label=f"✅ {done_n}컷 생성 완료 ({_backend_label})",
-                    state="complete",
-                    expanded=False,
-                )
-            else:
-                # 일부 오류 — except 블록이 이미 state="error" 로 업데이트했을 수 있음
-                err_cnt = sum(1 for s in next_vid_batch if s.get("status") == "error")
-                ok_cnt  = sum(1 for s in next_vid_batch if s.get("status") == "done")
-                _status_ctx.update(
-                    label=f"⚠️ {ok_cnt}컷 완료 / {err_cnt}컷 오류",
-                    state="error",
-                    expanded=True,
-                )
-
-        try:
-            manager.save_state(state)
-        except Exception as save_ex:
-            _err_ph.error(f"상태 저장 실패: {save_ex}")
-            all_ok = False
-
-        st.session_state.gen_running = False
-
-        try:
-            refreshed = manager.load_state(state["project_dir"])
-            st.session_state.current_project = refreshed
-        except Exception:
-            st.session_state.current_project = state
-
-        if all_ok:
-            st.success(f"{vid_batch_label} {len(next_vid_batch)}컷 영상 생성 완료!")
-        else:
-            st.warning("일부 컷에서 오류가 발생했습니다. 씬 카드에서 오류를 확인하세요.")
+    # ── 배치 시작: 백그라운드 작업으로 넘기고 즉시 화면 갱신 ────────────────────
+    if all_gen_btn and next_vid_batch and not VIDEO_BUSY:
+        st.session_state.video_error_msg = ""
+        video_jobs.start_job(
+            project_id=PROJECT_KEY,
+            state=state,
+            scene_nos=vid_batch_nos,
+            replicate_token=_replicate_key,
+            save_fn=manager.save_state,
+        )
         st.rerun()
+
+    # ── 컷별 실시간 진행 패널 (3초마다 자동 갱신) ─────────────────────────────
+    @st.fragment(run_every=3)
+    def _video_progress_panel(project_key: str):
+        job = video_jobs.get_job(project_key)
+        if job is None:
+            return
+        running = video_jobs.is_running(project_key)
+        now     = time.time()
+        prog    = job["progress"]
+
+        done_n  = sum(1 for n in job["scene_nos"] if prog[n]["state"] == "done")
+        total_n = len(job["scene_nos"])
+        with st.container(border=True):
+            if running:
+                st.markdown(f"**🎬 영상 생성 진행 중 — {done_n}/{total_n}컷 완료**")
+            else:
+                st.markdown(f"**작업 종료 — {done_n}/{total_n}컷 완료**")
+
+            for n in job["scene_nos"]:
+                p = prog[n]
+                s = p["state"]
+                if s == "queued":
+                    st.markdown(f"⏳ **#{n:02d}** 대기 중 — 앞 컷이 끝나면 시작합니다")
+                elif s == "generating":
+                    el = int(now - (p["started"] or now))
+                    m, sec = divmod(el, 60)
+                    if p["last_poll"]:
+                        ago = int(now - p["last_poll"])
+                        beat = f"Replicate 응답 {ago}초 전"
+                        if ago > 60:
+                            beat = f"⚠️ Replicate 응답 없음 {ago}초째"
+                    else:
+                        beat = "Replicate에 요청 전송 중"
+                    st.markdown(f"🎬 **#{n:02d}** 생성 중 · {m}분 {sec:02d}초 경과 · {beat}")
+                    st.progress(min(el / 180, 0.97), text="보통 2~3분 소요 · 10분 넘으면 자동으로 오류 처리")
+                elif s == "done":
+                    st.markdown(f"✅ **#{n:02d}** 완료")
+                elif s == "error":
+                    st.markdown(f"❌ **#{n:02d}** 오류 — {p.get('msg', '')[:200]}")
+                elif s == "skipped":
+                    st.markdown(f"⏸ **#{n:02d}** 건너뜀 (중단 또는 크레딧 부족)")
+
+            if job.get("stop") and running:
+                st.caption("중단 요청됨 — 지금 컷까지만 완료합니다.")
+            st.caption(f"마지막 확인 {time.strftime('%H:%M:%S', time.localtime(now))} · 화면을 새로고침해도 생성은 계속됩니다")
+
+        # 컷 상태가 바뀌면 전체 화면(씬 카드 배지·영상 미리보기)도 갱신
+        sig = tuple(prog[n]["state"] for n in job["scene_nos"]) + (running,)
+        if sig != job.get("ui_sig"):
+            first = job.get("ui_sig") is None
+            job["ui_sig"] = sig
+            if not first:
+                st.rerun(scope="app")
+
+    _recent_job = (
+        _vjob is not None and _vjob.get("finished_at")
+        and (time.time() - _vjob["finished_at"] < 60)
+    )
+    if VIDEO_BUSY or _recent_job:
+        _video_progress_panel(PROJECT_KEY)
 
     st.markdown("")
 
@@ -1705,48 +1690,24 @@ else:
                 elif status == "error":
                     st.error(scene.get("error_msg", "알 수 없는 오류"))
 
-                # 개별 재생성 버튼 — 동기식 (CDN URL 저장)
-                btn_disabled = (status == "generating" or st.session_state.gen_running)
+                # 개별 재생성 버튼 — 백그라운드 작업으로 실행 (진행 패널에 표시)
+                btn_disabled = (status == "generating" or VIDEO_BUSY or not _use_replicate)
                 if st.button(
                     f"🔄 #{sno:02d} 재생성",
                     key=f"regen_scene_{sno}",
                     disabled=btn_disabled,
                     use_container_width=True,
                 ):
-                    with st.spinner(f"#{sno:02d} 재생성 중… (약 2~3분)"):
-                        try:
-                            if _use_replicate:
-                                from src.video_replicate import generate_single_clip_url
-                                cdn_url = generate_single_clip_url(
-                                    replicate_token=_replicate_key,
-                                    prompt=scene.get("flow_prompt", ""),
-                                    image_url=scene.get("reference_image_url", ""),
-                                )
-                            else:
-                                from src.video_fal import generate_single_clip_url
-                                cdn_url = generate_single_clip_url(
-                                    fal_key=api_keys.get("FAL_KEY", ""),
-                                    prompt=scene.get("flow_prompt", ""),
-                                    image_url=scene.get("reference_image_url", ""),
-                                )
-                            for s in state["scenes"]:
-                                if s["scene_no"] == sno:
-                                    s["video_url"] = cdn_url
-                                    s["status"]    = "done"
-                                    s.pop("error_msg", None)
-                                    break
-                            manager.save_state(state)
-                            st.session_state.current_project = state
-                            st.success(f"#{sno:02d} 재생성 완료!")
-                            st.rerun()
-                        except Exception as ex:
-                            for s in state["scenes"]:
-                                if s["scene_no"] == sno:
-                                    s["status"]    = "error"
-                                    s["error_msg"] = str(ex)
-                                    break
-                            manager.save_state(state)
-                            st.error(f"#{sno:02d} 오류: {ex}")
+                    st.session_state.video_error_msg = ""
+                    video_jobs.start_job(
+                        project_id=PROJECT_KEY,
+                        state=state,
+                        scene_nos=[sno],
+                        replicate_token=_replicate_key,
+                        save_fn=manager.save_state,
+                    )
+                    st.rerun()
+
 
 st.markdown("---")
 
