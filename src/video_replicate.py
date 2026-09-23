@@ -180,6 +180,15 @@ def _run_model_with_polling(
     )
 
 
+# 스케치 화풍 고정 문구 (MACHINE / EXTRACTION / SCIENCE_DATA 씬)
+STYLE_LOCK_SUFFIX = (
+    "pen-and-ink watercolor sketch on paper in every frame, bold black ink contour lines "
+    "and watercolor washes stay drawn on the paper, the paper grain stays visible, "
+    "only the liquid and steam move gently, slow camera push-in, "
+    "no photorealism, no 3D render, no text"
+)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 단일 클립 생성
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +197,7 @@ def generate_single_clip_url(
     prompt: str,
     image_url: str = "",
     poll_cb=None,
+    style_lock: bool = False,
 ) -> str:
     """
     Replicate MiniMax Video-01로 MP4를 생성하고 공개 URL을 반환한다.
@@ -199,12 +209,21 @@ def generate_single_clip_url(
 
     use_image_mode = bool(image_url and image_url.strip())
 
+    # 스케치 일러스트 씬: 첫 프레임의 펜·잉크 수채화 화풍을 영상 내내 유지하도록 고정.
+    # prompt_optimizer 가 켜져 있으면 프롬프트가 '시네마틱 실사' 쪽으로 재작성되므로 끈다.
+    optimizer = True
+    if style_lock:
+        prompt = (
+            prompt.rstrip(" .,") + ", " + STYLE_LOCK_SUFFIX
+        )
+        optimizer = False
+
     if use_image_mode:
         image_file = _fetch_image_as_fileobj(image_url)
         inputs = {
             "prompt":            prompt,
             "first_frame_image": image_file,
-            "prompt_optimizer":  True,
+            "prompt_optimizer":  optimizer,
         }
         print(
             f"[video_replicate] I2V 시작: {MINIMAX_MODEL} | prompt={prompt[:60]}…",
@@ -213,7 +232,7 @@ def generate_single_clip_url(
     else:
         inputs = {
             "prompt":           prompt,
-            "prompt_optimizer": True,
+            "prompt_optimizer": optimizer,
         }
         print(
             f"[video_replicate] T2V 시작: {MINIMAX_MODEL} | prompt={prompt[:60]}…",

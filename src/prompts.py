@@ -347,8 +347,8 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 
 ▶ full_narration 작성 규칙
 
-full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물이다.
-별도로 다시 쓰지 않는다. 씬과 씬 사이 전환이 매끄럽도록 연결어를 추가해도 된다.
+full_narration은 12개 씬 narration을 순서대로 공백 하나로 이어붙인 것과 글자 하나까지 같아야 한다.
+연결어 추가·문장 수정 금지. (영상 합성 시 씬별 narration 분량으로 컷 길이를 배분하기 때문이다.)
 전체 낭독 시간 60~75초 기준 (한국어 기준 분당 약 300~350자).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -404,6 +404,30 @@ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물�
   → 한 씬에 모든 재료를 몰아넣지 않는다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[신비한 건축사전 도판 데이터 — data_points / callouts]
+
+이미지에는 글자를 넣지 않는다. 대신 합성 단계에서 정확한 한글 라벨과 수치를
+펜 선 지시선으로 그림 위에 얹는다. 그 재료가 data_points 와 callouts 다.
+
+▶ data_points (도판 우상단 SPEC 수치, 0~3개)
+  - visual_source "ai" 씬 중 수치가 있는 씬에 반드시 작성. 없으면 [].
+  - 형식: [{"label": "짧은 항목명", "value": "값+단위"}]
+  - label 6자 이내, value 10자 이내. SCA 기준 등 검증 가능한 사실만.
+  - 예: [{"label": "pH", "value": "5.0"}, {"label": "카페인", "value": "63mg"},
+         {"label": "추출 압력", "value": "9 bar"}]
+
+▶ callouts (그림 속 부위를 가리키는 지시선 라벨, 0~4개)
+  - MACHINE / EXTRACTION / SCIENCE_DATA / ASSEMBLY 씬에 2~4개 작성. photo 씬은 [].
+  - 형식: [{"text": "라벨", "x": 0.0~1.0, "y": 0.0~1.0}]
+  - text 8자 이내 명사형 (예: "크레마층", "포터필터", "찬물 150ml", "얼음").
+  - x, y 는 9:16 화면 기준 비율 좌표(좌상단 0,0 / 우하단 1,1)로, 그 부위가 있을 위치다.
+    image_prompt 에서 직접 지정한 구도와 반드시 일치시킨다.
+      · 피사체는 화면 위쪽 2/3 (y 0.15~0.58) 에 두도록 image_prompt 를 쓴다.
+      · 두 대상 나란히 비교 → 왼쪽 대상 x≈0.30, 오른쪽 대상 x≈0.70.
+      · 아래→위 층 구조 → 바닥층 y≈0.55, 가운데 y≈0.42, 윗층 y≈0.28.
+  - y 0.60 아래는 키워드·자막 자리이므로 쓰지 않는다.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [JSON 스키마]
 {
   "chapter": "챕터명",
@@ -420,6 +444,8 @@ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 결과물�
       "flow_prompt": "ice cubes, espresso, water floating and stacking into tall glass, slow elegant assembly motion, cinematic coffee commercial, 9:16 vertical 4K",
       "sfx": "impact_whoosh",
       "overlay_text": "화면 자막 키워드",
+      "data_points": [{"label": "순서", "value": "얼음→물→샷"}],
+      "callouts": [{"text": "에스프레소", "x": 0.5, "y": 0.28}, {"text": "찬물", "x": 0.5, "y": 0.42}, {"text": "얼음", "x": 0.5, "y": 0.55}],
       "image_path": "",
       "image_status": "pending",
       "video_url": "",
@@ -474,13 +500,14 @@ def generate_script_and_prompts(
         "   같은 표현을 2회 이상 반복하지 말 것.\n"
         "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
         "⑥ 구체적 수치·재료명·비교 대상을 실제로 채울 것 (추상적 표현 금지).\n"
-        "⑦ full_narration은 12개 씬 narration을 자연스럽게 이어붙인 텍스트.\n"
-        "   전체 낭독 시간 60~75초 분량으로 구성할 것."
+        "⑦ full_narration은 12개 씬 narration을 공백 하나로 그대로 이어붙인 텍스트 (수정·추가 금지).\n"
+        "   전체 낭독 시간 60~75초 분량으로 구성할 것.\n"
+        "⑧ 'ai' 씬은 data_points(수치)와 callouts(지시선 라벨+좌표)를 작성할 것. photo 씬은 둘 다 []."
     )
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=6000,
+        max_tokens=10000,   # data_points·callouts 추가로 출력이 길어짐
         system=SYSTEM_INSTRUCTION,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -513,10 +540,19 @@ def generate_script_and_prompts(
         scene.setdefault("image_status", "pending")
         scene.setdefault("video_url", "")
         scene.setdefault("status", "pending")
+        scene.setdefault("data_points", [])
+        scene.setdefault("callouts", [])
         # visual_source 폴백: scene_type 기반으로 자동 결정
         if not scene.get("visual_source"):
             scene["visual_source"] = (
                 "ai" if scene.get("scene_type", "") in _AI_TYPES else "photo"
             )
+
+    # full_narration 을 씬 narration 합본으로 강제 (컷 길이 배분 정확도 보장)
+    joined = " ".join(
+        (sc.get("narration") or "").strip() for sc in data["scenes"] if (sc.get("narration") or "").strip()
+    )
+    if joined:
+        data["full_narration"] = joined
 
     return data

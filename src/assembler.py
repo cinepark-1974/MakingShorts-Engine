@@ -1,29 +1,18 @@
 # src/assembler.py
-# 너도나도아는커피 숏폼 팩토리 — FFmpeg 최종 합성기 (오버레이 v3)
+# 너도나도아는커피 숏폼 팩토리 — FFmpeg 최종 합성기 (v4)
 #
-# 동작 순서:
-#   1. 씬별 video_url(CDN or 로컬) → /tmp 다운로드
-#   2. PIL로 씬별 어노테이션 PNG 생성 (과학 데이터, 코너 브래킷, 포커스링)
-#   3. FFmpeg filter_complex로 PNG 오버레이 + 텍스트 오버레이 적용
-#   4. FFmpeg concat → 하나의 MP4
-#   5. 나레이션 MP3 합성 (apad로 길이 보정, 엔딩 컷 방지)
-#   6. 최종 MP4 → fal.ai CDN 업로드
+# v4 변경 (2026-09-23)
+#   1) 길이: MiniMax 클립은 6초 고정이라 12컷 ≈ 70초. 나레이션(80초 이상)이 잘리던 문제 수정.
+#      → 나레이션 전체 길이를 씬별 대사 분량 비율로 나눠 각 컷 길이를 정하고,
+#        모자란 컷은 슬로모션(최대 1.35배) + 마지막 프레임 유지로 늘린다. 나레이션이 끝까지 들어간다.
+#   2) 박스 제거: 하단 검은 패널, KEY POINT 박스, 진행 바 박스를 모두 없앴다.
+#      자막은 박스 없이 외곽선 + 그림자만으로 읽히게 한다.
+#   3) 신비한 건축사전 톤 복구: 씬별 과학 데이터(SPEC)와 지시선 라벨(callouts)을
+#      펜 선처럼 얇은 골드 라인으로 그림 위에 얹는다. 박스 없음.
+#   4) 9:16 보정: 어떤 비율의 클립이 와도 1080×1920 으로 꽉 채워 중앙 크롭한다.
 #
-# 오버레이 디자인 (신비한 건축사전 v3):
-#   PIL 레이어:
-#     - 4 코너 골드 브래킷
-#     - 수평 스캔 라인 장식
-#     - 중앙 포커스 십자선 + 동심원 링 (3개)
-#     - SCIENCE/RECIPE/MECH 씬: 수치 데이터 레드아웃 박스 (우상단)
-#     - 데이터 → 포커스 연결 L자 라인
-#   FFmpeg 텍스트 레이어 (하단 패널, 클립 중간 구간만 표시):
-#     - 하단 다크 패널 + 황금 스파인 라인
-#     - KEY POINT 라벨 박스
-#     - overlay_text 키워드 (대형 볼드)
-#     - narration 자막
-#     - 채널명 (좌상단), 씬 번호/타입 (우상단)
-#     - SCIENCE 씬: SPEC 배지
-#     ※ 표시 구간: t=0.8 ~ t=4.0 (5초 클립 기준, fade in/out 0.3초)
+# 모든 그래픽(자막·라벨·데이터)은 PIL 로 투명 PNG 한 장에 그린 뒤 FFmpeg 로 얹는다.
+# (drawtext 이스케이프 문제·박스 잔상 문제를 원천 차단)
 
 import os
 import re
@@ -33,30 +22,59 @@ import subprocess
 import tempfile
 import requests
 
+W, H, FPS = 1080, 1920, 30
+MAX_SLOW   = 1.35      # 슬로모션 최대 배율 (이보다 더 필요하면 마지막 프레임 유지)
+MIN_SCENE  = 1.8       # 컷 최소 길이 (초)
+TAIL_SEC   = 0.8       # 나레이션 끝난 뒤 여운
+
+ILLUSTRATION_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 씬 타입 분류
+# 색상 / 폰트
 # ─────────────────────────────────────────────────────────────────────────────
-_SCENE_TYPE_KEYWORDS = {
-    "SCIENCE": ["science", "spec", "data", "extraction", "chemistry", "molecule",
-                "ratio", "temperature", "pressure", "bloom", "particle"],
-    "RECIPE":  ["recipe", "pour", "brew", "step", "process", "assembly", "grind"],
-    "MECH":    ["machine", "equipment", "mechanism", "mech", "cutaway", "part",
-                "component", "detail", "cross"],
-    "ORIGIN":  ["origin", "farm", "harvest", "region", "map", "history", "world"],
-    "STORY":   ["story", "opening", "hook", "emotion", "cinematic", "barista"],
+GOLD      = (214, 170, 72, 255)
+GOLD_SOFT = (214, 170, 72, 170)
+CREAM     = (250, 244, 230, 255)
+INK       = (18, 14, 10, 255)       # 외곽선
+
+# 배경 밝기에 따라 두 가지 인쇄 톤을 쓴다.
+#  - 어두운 실사 컷: 크림색 글자 + 짙은 외곽선
+#  - 밝은 종이 스케치 컷: 도감처럼 짙은 잉크 글자 + 얇은 종이색 테두리
+PALETTES = {
+    "dark": {"text": CREAM, "accent": GOLD, "line": GOLD, "line_soft": GOLD_SOFT,
+             "stroke": INK, "shadow": True, "sw": 1.0},
+    "light": {"text": (38, 26, 16, 255), "accent": (150, 98, 28, 255),
+              "line": (120, 78, 24, 255), "line_soft": (120, 78, 24, 150),
+              "stroke": (247, 240, 225, 235), "shadow": False, "sw": 0.8},
 }
 
-def _classify_scene_type(prompt: str) -> str:
-    p = prompt.lower()
-    for stype, keywords in _SCENE_TYPE_KEYWORDS.items():
-        if any(k in p for k in keywords):
-            return stype
-    return "STORY"
+_FONT_DIRS = ["/usr/share/fonts/truetype/nanum", "/usr/share/fonts/nanum"]
+
+
+def _font_path(names):
+    for d in _FONT_DIRS:
+        for n in names:
+            p = os.path.join(d, n)
+            if os.path.exists(p):
+                return p
+    return ""
+
+
+FONT_SANS_BOLD  = _font_path(["NanumBarunGothicBold.ttf", "NanumGothicBold.ttf", "NanumGothic.ttf"])
+FONT_SANS       = _font_path(["NanumBarunGothic.ttf", "NanumGothic.ttf"])
+FONT_SERIF_BOLD = _font_path(["NanumMyeongjoBold.ttf", "NanumMyeongjo.ttf"]) or FONT_SANS_BOLD
+
+
+def _font(path, size):
+    from PIL import ImageFont
+    try:
+        return ImageFont.truetype(path, size) if path else ImageFont.load_default()
+    except Exception:
+        return ImageFont.load_default()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 내부 헬퍼 — 파일 다운로드 / 복사
+# 파일 / ffprobe 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
 def _download_to(url: str, dest_path: str, timeout: int = 180) -> bool:
     try:
@@ -69,6 +87,7 @@ def _download_to(url: str, dest_path: str, timeout: int = 180) -> bool:
     except Exception:
         return False
 
+
 def _copy_or_download(src: str, dest_path: str) -> bool:
     if src.startswith("http"):
         return _download_to(src, dest_path)
@@ -78,591 +97,413 @@ def _copy_or_download(src: str, dest_path: str) -> bool:
     return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 폰트 탐색
-# ─────────────────────────────────────────────────────────────────────────────
-def _find_font(bold: bool = False) -> str:
-    candidates = []
-    if bold:
-        candidates = [
-            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
-            "/usr/share/fonts/nanum/NanumGothicBold.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/nanum/NanumGothic.ttf",
-        ]
-    else:
-        candidates = [
-            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
-        ]
-    for p in candidates:
-        if os.path.exists(p):
-            return p
-    return ""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ffprobe
-# ─────────────────────────────────────────────────────────────────────────────
-def _probe_video(path: str) -> dict:
+def _media_duration(path: str) -> float:
     try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_streams", "-select_streams", "v:0", path],
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path],
             capture_output=True,
         )
-        data = json.loads(result.stdout.decode())
-        stream = data["streams"][0]
-        w   = int(stream.get("width", 1080))
-        h   = int(stream.get("height", 1920))
-        dur = float(stream.get("duration", 5.0))
-        return {"w": w, "h": h, "dur": dur}
+        return float(json.loads(r.stdout.decode())["format"]["duration"])
     except Exception:
-        return {"w": 1080, "h": 1920, "dur": 5.0}
+        return 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# textfile 헬퍼 (FFmpeg drawtext용 UTF-8 파일)
+# 씬 타입 / 데이터 추출
 # ─────────────────────────────────────────────────────────────────────────────
-def _write_textfile(tmpdir: str, name: str, text: str) -> str:
-    path = os.path.join(tmpdir, name)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    return path
+_TYPE_KEYWORDS = {
+    "SCIENCE_DATA": ["science", "data", "ratio", "temperature", "pressure", "compare", "side by side", "beaker"],
+    "EXTRACTION":   ["extraction", "crema", "stream", "pour", "brew", "drip"],
+    "MACHINE":      ["machine", "cutaway", "cross-section", "component", "mechanism", "portafilter"],
+}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 나레이션에서 과학 수치 추출 (최대 3개)
-# ─────────────────────────────────────────────────────────────────────────────
-def _extract_science_data(narration: str) -> list:
-    """나레이션 텍스트에서 숫자+단위 조합을 추출하여 반환."""
-    results = []
-    seen_units: set = set()
+def _scene_type(scene: dict) -> str:
+    st = (scene.get("scene_type") or "").strip().upper()
+    if st:
+        return st
+    p = (scene.get("flow_prompt", "") + " " + scene.get("image_prompt", "")).lower()
+    for t, kws in _TYPE_KEYWORDS.items():
+        if any(k in p for k in kws):
+            return t
+    return "CINEMATIC"
 
-    checks = [
-        (r"(\d+(?:\.\d+)?)\s*(?:°C|도씨|℃)",      "°C"),
-        (r"(\d+(?:\.\d+)?)\s*(?:bar|기압|바)",       "BAR"),
-        (r"(\d+(?:\.\d+)?)\s*초\b",                  "SEC"),
-        (r"(\d+(?:\.\d+)?)\s*(?:그램\b|g\b)",        "g"),
-        (r"(\d+(?:\.\d+)?)\s*(?:ml\b|mL\b|밀리리터)", "ml"),
-        (r"(\d+(?:\.\d+)?)\s*%",                      "%"),
-        (r"1\s*[：:]\s*(\d+(?:\.\d+)?)",             "RATIO"),
+
+def _extract_data_from_narration(narration: str) -> list:
+    """data_points 가 없는 옛 대본용 — 나레이션에서 수치를 찾아 [{label, value}] 로 반환."""
+    rules = [
+        (r"pH\s*(\d+(?:\.\d+)?)",                         lambda m: ("pH", m.group(1))),
+        (r"(\d+(?:\.\d+)?)\s*(?:mg|밀리그램)",            lambda m: ("카페인" if "카페인" in narration else "함량", f"{m.group(1)}mg")),
+        (r"(\d+(?:\.\d+)?)\s*(?:°C|℃|도씨|도\b)",         lambda m: ("온도", f"{m.group(1)}°C")),
+        (r"(\d+(?:\.\d+)?)\s*(?:bar|바|기압)",            lambda m: ("압력", f"{m.group(1)} bar")),
+        (r"(\d+(?:\.\d+)?)\s*(?:ml|mL|밀리리터)",          lambda m: ("용량", f"{m.group(1)}ml")),
+        (r"(\d+(?:\.\d+)?)\s*(?:g|그램)\b",               lambda m: ("무게", f"{m.group(1)}g")),
+        (r"(\d+(?:\.\d+)?)\s*초",                          lambda m: ("시간", f"{m.group(1)}초")),
+        (r"(\d+(?:\.\d+)?)\s*%",                           lambda m: ("비율", f"{m.group(1)}%")),
+        (r"(\d+)\s*(?:대|:)\s*(\d+)",                      lambda m: ("비율", f"{m.group(1)} : {m.group(2)}")),
     ]
-
-    for pattern, unit in checks:
-        if unit in seen_units:
-            continue
-        m = re.search(pattern, narration, re.IGNORECASE)
-        if m:
-            raw = m.group(1)
-            if unit == "RATIO":
-                display_val  = f"1:{raw}"
-                display_unit = "RATIO"
-            else:
-                display_val  = raw
-                display_unit = unit
-            results.append({"value": display_val, "unit": display_unit})
-            seen_units.add(unit)
-        if len(results) >= 3:
-            break
-
-    return results
+    out, seen = [], set()
+    for pat, fn in rules:
+        for m in re.finditer(pat, narration):
+            label, value = fn(m)
+            if value in seen:
+                continue
+            seen.add(value)
+            out.append({"label": label, "value": value})
+            if len(out) >= 3:
+                return out
+    return out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PIL 어노테이션 PNG 생성 (과학 그래픽 오버레이)
-# ─────────────────────────────────────────────────────────────────────────────
-def _generate_annotation_png(scene: dict, info: dict, tmpdir: str, scene_no: int) -> str:
-    """
-    PIL로 투명 어노테이션 PNG 생성.
-    - 4 코너 골드 브래킷
-    - 수평 스캔 라인 장식
-    - 포커스 십자선 + 동심원 링
-    - 과학 수치 레드아웃 박스 + 연결 L자 라인 (SCIENCE/RECIPE/MECH)
-    PIL 미설치 시 FFmpeg 명령으로 빈 투명 PNG 생성.
-    """
-    png_path = os.path.join(tmpdir, f"ann_{scene_no:02d}.png")
+def _data_points(scene: dict) -> list:
+    dp = scene.get("data_points")
+    if isinstance(dp, list) and dp:
+        clean = []
+        for d in dp[:3]:
+            if isinstance(d, dict) and str(d.get("value", "")).strip():
+                clean.append({"label": str(d.get("label", "")).strip(),
+                              "value": str(d.get("value", "")).strip()})
+        if clean:
+            return clean
+    return _extract_data_from_narration(scene.get("narration", ""))
 
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        # PIL 없으면 ffmpeg로 투명 1프레임 PNG 생성
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi",
-             f"-i", f"color=c=white@0:s={info['w']}x{info['h']}:r=1",
-             "-vframes", "1", png_path],
-            capture_output=True,
-        )
-        return png_path
 
-    w, h         = info["w"], info["h"]
-    scene_type   = _classify_scene_type(scene.get("flow_prompt", ""))
-    narration    = scene.get("narration", "")
-
-    GOLD         = (212, 168,  67, 210)
-    GOLD_DIM     = (212, 168,  67, 100)
-    GOLD_BORDER  = (212, 168,  67, 255)
-    WHITE_BRIGHT = (255, 255, 255, 235)
-    DARK_BG      = (  9,   9,   9, 200)
-
-    margin  = int(w * 0.04)
-    panel_h = int(h * 0.28)     # 하단 텍스트 패널 높이 (FFmpeg drawbox와 동일 비율)
-    panel_y = h - panel_h
-
-    img  = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # ── A. 코너 브래킷 ──────────────────────────────────────────────────────
-    bkt   = int(w * 0.07)   # 브래킷 길이
-    thick = 2
-    bot_y = panel_y - margin  # 하단 브래킷 Y (패널 위)
-
-    for (cx, cy, dx, dy) in [
-        (margin,      margin, +bkt, +bkt),   # 좌상
-        (w - margin,  margin, -bkt, +bkt),   # 우상
-        (margin,      bot_y,  +bkt, -bkt),   # 좌하
-        (w - margin,  bot_y,  -bkt, -bkt),   # 우하
-    ]:
-        draw.line([(cx, cy), (cx + dx, cy)], fill=GOLD, width=thick)
-        draw.line([(cx, cy), (cx, cy + dy)], fill=GOLD, width=thick)
-
-    # ── B. 수평 스캔 라인 장식 ───────────────────────────────────────────────
-    for sy, sx_end_ratio in [(int(h * 0.085), 0.28), (int(h * 0.100), 0.16)]:
-        sx_end = int(w * sx_end_ratio)
-        draw.line([(margin, sy), (sx_end, sy)],     fill=GOLD_DIM, width=1)
-        draw.line([(w - margin, sy), (w - sx_end, sy)], fill=GOLD_DIM, width=1)
-
-    # ── C. 포커스 십자선 + 동심원 링 ─────────────────────────────────────────
-    fp_x = w // 2
-    fp_y = int(h * 0.40)
-
-    cross_len = int(w * 0.025)
-    gap       = int(w * 0.012)
-
-    # 십자선 (중심 갭 있는 스코프 스타일)
-    draw.line([(fp_x - cross_len - gap, fp_y), (fp_x - gap, fp_y)], fill=GOLD, width=1)
-    draw.line([(fp_x + gap, fp_y), (fp_x + cross_len + gap, fp_y)], fill=GOLD, width=1)
-    draw.line([(fp_x, fp_y - cross_len - gap), (fp_x, fp_y - gap)], fill=GOLD, width=1)
-    draw.line([(fp_x, fp_y + gap), (fp_x, fp_y + cross_len + gap)], fill=GOLD, width=1)
-
-    # 동심원 링 3개 (점점 희미)
-    for r, alpha in [(int(w * 0.025), 170), (int(w * 0.043), 90), (int(w * 0.068), 45)]:
-        draw.ellipse([fp_x - r, fp_y - r, fp_x + r, fp_y + r],
-                     outline=(212, 168, 67, alpha), width=1)
-
-    # ── D. 과학 데이터 레드아웃 박스 (SCIENCE / RECIPE / MECH) ──────────────
-    science_data = _extract_science_data(narration)
-
-    if science_data and scene_type in ("SCIENCE", "RECIPE", "MECH"):
-        rd_w   = int(w * 0.38)
-        rd_x   = w - rd_w - margin
-        rd_y   = int(h * 0.115)
-        line_h = int(h * 0.046)
-        pad_x  = int(w * 0.025)
-        pad_y  = int(h * 0.016)
-        rd_h   = len(science_data) * line_h + pad_y * 2
-
-        # 배경 박스
-        draw.rectangle([rd_x, rd_y, rd_x + rd_w, rd_y + rd_h], fill=DARK_BG)
-        # 좌측 골드 보더 (3px)
-        draw.rectangle([rd_x, rd_y, rd_x + 3, rd_y + rd_h], fill=GOLD_BORDER)
-        # 상단 얇은 골드 라인
-        draw.rectangle([rd_x, rd_y, rd_x + rd_w, rd_y + 1], fill=(212, 168, 67, 140))
-
-        # 폰트 로드
-        nanum_bold   = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
-        nanum_normal = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
+def _callouts(scene: dict) -> list:
+    out = []
+    for c in (scene.get("callouts") or [])[:4]:
         try:
-            fnt_val  = ImageFont.truetype(
-                nanum_bold if os.path.exists(nanum_bold) else nanum_normal,
-                int(h * 0.030),
-            )
-            fnt_unit = ImageFont.truetype(
-                nanum_bold if os.path.exists(nanum_bold) else nanum_normal,
-                int(h * 0.020),
-            )
+            text = str(c.get("text", "")).strip()
+            x, y = float(c.get("x")), float(c.get("y"))
         except Exception:
-            fnt_val = fnt_unit = ImageFont.load_default()
-
-        # 각 수치 행
-        for i, d in enumerate(science_data):
-            ty = rd_y + pad_y + i * line_h
-            draw.text((rd_x + pad_x, ty), d["value"],
-                      fill=WHITE_BRIGHT, font=fnt_val)
-            # 단위는 값 오른쪽에, 골드색, 살짝 아래
-            try:
-                val_bbox = draw.textbbox((rd_x + pad_x, ty), d["value"], font=fnt_val)
-                val_w    = val_bbox[2] - val_bbox[0]
-            except AttributeError:
-                val_w = int(len(d["value"]) * h * 0.018)
-            draw.text(
-                (rd_x + pad_x + val_w + int(w * 0.012), ty + int(h * 0.007)),
-                d["unit"],
-                fill=(212, 168, 67, 210),
-                font=fnt_unit,
-            )
-
-        # ── E. 포커스 → 레드아웃 L자 연결선 ────────────────────────────────
-        conn_color = (212, 168, 67, 110)
-        start_x   = fp_x + int(w * 0.068)      # 포커스 링 오른쪽 끝 근처
-        start_y   = fp_y
-        mid_x     = fp_x + int(w * 0.10)
-        end_x     = rd_x
-        end_y     = rd_y + rd_h // 2
-
-        draw.line([(start_x, start_y), (mid_x, start_y)], fill=conn_color, width=1)
-        draw.line([(mid_x, start_y), (mid_x, end_y)],    fill=conn_color, width=1)
-        draw.line([(mid_x, end_y), (end_x, end_y)],      fill=conn_color, width=1)
-
-        # 연결 시작점 작은 점
-        dot = 3
-        draw.ellipse(
-            [start_x - dot, start_y - dot, start_x + dot, start_y + dot],
-            fill=(212, 168, 67, 190),
-        )
-
-    img.save(png_path, "PNG")
-    return png_path
+            continue
+        if text and 0 <= x <= 1 and 0 <= y <= 1:
+            out.append({"text": text, "x": x, "y": y})
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FFmpeg 텍스트 오버레이 필터 (하단 패널, 표시 구간 제한)
+# 텍스트 유틸
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_text_filtergraph(
-    scene: dict,
-    scene_no: int,
-    total: int,
-    info: dict,
-    tmpdir: str,
-    font: str,
-    font_bold: str,
-    show_start: float,
-    show_end: float,
-) -> str:
-    """
-    하단 패널 텍스트 필터그래프 문자열 반환.
-    show_start ~ show_end 구간에만 표시 (fade in/out 0.3초).
-    """
-    w   = info["w"]
-    h   = info["h"]
+def _wrap(draw, text: str, font, max_w: int, max_lines: int = 2) -> list:
+    """띄어쓰기 기준 줄바꿈 (한글 어절 유지). 넘치면 글자 단위로 자른다."""
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        if draw.textlength(test, font=font) <= max_w:
+            cur = test
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+            while draw.textlength(cur, font=font) > max_w and len(cur) > 1:   # 아주 긴 어절
+                cut = len(cur)
+                while cut > 1 and draw.textlength(cur[:cut], font=font) > max_w:
+                    cut -= 1
+                lines.append(cur[:cut])
+                cur = cur[cut:]
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip() + "…"
+    return lines
 
-    # ── 사이즈 ────────────────────────────────────────────────────────────────
-    panel_h      = int(h * 0.28)
-    panel_y      = h - panel_h
-    spine_w      = 4
-    margin_l     = spine_w + int(w * 0.04)
-    margin_r     = int(w * 0.04)
-    font_size_kw = max(38, int(h * 0.038))
-    font_size_nr = max(26, int(h * 0.026))
-    font_size_lb = max(22, int(h * 0.022))
-    font_size_ch = max(20, int(h * 0.020))
 
-    # ── 색상 ─────────────────────────────────────────────────────────────────
-    GOLD   = "0xD4A843"
-    WHITE  = "0xFFFFFF"
-    DARK   = "0x090909@0.82"
-    GOLD_A = "0xD4A843@0.90"
+_PAL = PALETTES["dark"]   # render_overlay_png 가 컷마다 교체
 
-    # ── 씬 타입 ──────────────────────────────────────────────────────────────
-    scene_type  = _classify_scene_type(scene.get("flow_prompt", ""))
-    overlay_kw  = scene.get("overlay_text", "").strip() or scene.get("name", "").strip()
-    narration   = scene.get("narration", "").strip()
 
-    # narration 2줄 분할
-    if len(narration) > 32:
-        mid      = len(narration) // 2
-        split_at = narration.rfind(" ", 0, mid + 4)
-        if split_at < 5:
-            split_at = mid
-        narration_display = narration[:split_at] + "\n" + narration[split_at:].strip()
-    else:
-        narration_display = narration
-
-    channel_name = "너도나도아는커피"
-    scene_label  = f"{scene_type}  {scene_no:02d} / {total:02d}"
-
-    # ── textfile ─────────────────────────────────────────────────────────────
-    tf_kw  = _write_textfile(tmpdir, f"kw_{scene_no:02d}.txt", overlay_kw)
-    tf_nr  = _write_textfile(tmpdir, f"nr_{scene_no:02d}.txt", narration_display)
-    tf_ch  = _write_textfile(tmpdir, f"ch_{scene_no:02d}.txt", channel_name)
-    tf_lb  = _write_textfile(tmpdir, f"lb_{scene_no:02d}.txt", scene_label)
-    tf_kp  = _write_textfile(tmpdir, f"kp_{scene_no:02d}.txt", "KEY POINT")
-
-    # ── 페이드 (show_start ~ show_end, 각 0.3초 fade) ────────────────────────
-    fd = 0.3
-    alpha_expr = (
-        f"if(lt(t,{show_start}),0,"
-        f"if(lt(t,{show_start + fd}),(t-{show_start})/{fd},"
-        f"if(lt(t,{show_end - fd}),1,"
-        f"if(lt(t,{show_end}),({show_end}-t)/{fd},0))))"
-    )
-
-    def fopt(bold: bool = False) -> str:
-        fp = font_bold if (bold and font_bold) else font
-        return f"fontfile='{fp}':" if fp else ""
-
-    # ── 좌표 ─────────────────────────────────────────────────────────────────
-    prog_h     = 3
-    prog_y     = panel_y - prog_h - 2
-    prog_w     = int(w * (scene_no / total))
-
-    kp_box_x = margin_l
-    kp_box_y = panel_y + int(panel_h * 0.12)
-    kp_box_w = int(w * 0.22)
-    kp_box_h = font_size_lb + 8
-    kw_y     = kp_box_y + kp_box_h + int(h * 0.012)
-    nr_y     = panel_y + int(panel_h * 0.62)
-
-    spec_box_x = w - int(w * 0.22) - margin_r
-    spec_box_y = int(h * 0.04)
-    spec_box_w = int(w * 0.22)
-    spec_box_h = font_size_lb + 8
-
-    # ── 필터 조각 ─────────────────────────────────────────────────────────────
-    parts = []
-
-    # 하단 다크 패널
-    parts.append(f"drawbox=x=0:y={panel_y}:w={w}:h={panel_h}:color={DARK}:t=fill")
-    # 황금 스파인
-    parts.append(f"drawbox=x=0:y={panel_y}:w={spine_w}:h={panel_h}:color={GOLD_A}:t=fill")
-    # 진행 바
-    if prog_w > 0:
-        parts.append(f"drawbox=x=0:y={prog_y}:w={prog_w}:h={prog_h}:color={GOLD_A}:t=fill")
-    # KEY POINT 박스
-    parts.append(
-        f"drawbox=x={kp_box_x}:y={kp_box_y}:w={kp_box_w}:h={kp_box_h}:color={GOLD_A}:t=fill"
-    )
-    parts.append(
-        f"drawtext={fopt(True)}textfile='{tf_kp}'"
-        f":x={kp_box_x + 6}:y={kp_box_y + 4}"
-        f":fontsize={font_size_lb}:fontcolor=0x0A0A0A:alpha='{alpha_expr}'"
-    )
-    # overlay_text 키워드
-    parts.append(
-        f"drawtext={fopt(True)}textfile='{tf_kw}'"
-        f":x={margin_l}:y={kw_y}"
-        f":fontsize={font_size_kw}:fontcolor={WHITE}:alpha='{alpha_expr}'"
-    )
-    # 나레이션 자막
-    parts.append(
-        f"drawtext={fopt(False)}textfile='{tf_nr}'"
-        f":x=(w-text_w)/2:y={nr_y}"
-        f":fontsize={font_size_nr}:fontcolor={WHITE}:line_spacing=6:alpha='{alpha_expr}'"
-    )
-    # 채널명 (좌상단)
-    parts.append(
-        f"drawtext={fopt(False)}textfile='{tf_ch}'"
-        f":x={int(w * 0.04)}:y={int(h * 0.04)}"
-        f":fontsize={font_size_ch}:fontcolor={GOLD}:alpha='{alpha_expr}'"
-    )
-    # 씬 타입 라벨 (우상단)
-    parts.append(
-        f"drawtext={fopt(False)}textfile='{tf_lb}'"
-        f":x=w-text_w-{margin_r}:y={int(h * 0.04)}"
-        f":fontsize={font_size_ch}:fontcolor={WHITE}:alpha='{alpha_expr}'"
-    )
-    # SCIENCE SPEC 배지
-    if scene_type == "SCIENCE":
-        tf_sp = _write_textfile(tmpdir, f"sp_{scene_no:02d}.txt", "SPEC")
-        parts.append(
-            f"drawbox=x={spec_box_x}:y={spec_box_y}"
-            f":w={spec_box_w}:h={spec_box_h}:color={GOLD_A}:t=fill"
-        )
-        parts.append(
-            f"drawtext={fopt(True)}textfile='{tf_sp}'"
-            f":x={spec_box_x + int(spec_box_w * 0.25)}:y={spec_box_y + 4}"
-            f":fontsize={font_size_lb}:fontcolor=0x0A0A0A:alpha='{alpha_expr}'"
-        )
-
-    return ",".join(parts)
+def _text(draw, xy, text, font, fill=None, stroke=5, anchor="la", shadow=None):
+    x, y = xy
+    fill = fill or _PAL["text"]
+    sw = max(2, int(round(stroke * _PAL["sw"])))
+    if _PAL["shadow"] if shadow is None else shadow:
+        draw.text((x + 3, y + 4), text, font=font, fill=(0, 0, 0, 110), anchor=anchor,
+                  stroke_width=sw, stroke_fill=(0, 0, 0, 110))
+    draw.text((x, y), text, font=font, fill=fill, anchor=anchor,
+              stroke_width=sw, stroke_fill=_PAL["stroke"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 씬별 오버레이 적용 (PIL PNG + FFmpeg 텍스트, filter_complex)
+# 씬 오버레이 PNG (신비한 건축사전 스타일, 박스 없음)
 # ─────────────────────────────────────────────────────────────────────────────
-def _apply_overlay_to_clip(
-    src_path: str,
-    out_path: str,
-    scene: dict,
-    scene_no: int,
-    total: int,
-    tmpdir: str,
-    font: str,
-    font_bold: str,
-) -> bool:
-    """
-    단일 클립에 PIL 어노테이션 PNG + FFmpeg 텍스트 오버레이 적용.
-    성공 True, 실패 False.
-    """
-    info = _probe_video(src_path)
-    dur  = info["dur"]
+def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
+                       light: bool = False) -> str:
+    """light=True 이면 밝은 종이 배경용 잉크 톤으로 그린다."""
+    from PIL import Image, ImageDraw
+    global _PAL
+    _PAL = PALETTES["light" if light else "dark"]
+    GOLD, GOLD_SOFT, CREAM = _PAL["line"], _PAL["line_soft"], _PAL["text"]
+    ACCENT = _PAL["accent"]
 
-    # 오버레이 표시 구간: t=0.8 ~ t=(dur-0.6), 단 최대 3.5초 노출
-    show_start = 0.8
-    show_end   = min(dur - 0.6, show_start + 3.5)
-    if show_end <= show_start + 0.6:
-        # 클립이 너무 짧으면 단순 표시
-        show_start = 0.2
-        show_end   = dur - 0.2
+    img  = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d    = ImageDraw.Draw(img)
+    stype = _scene_type(scene)
+    is_illust = stype in ILLUSTRATION_TYPES
+    m = 56                                           # 외곽 여백
 
-    # PIL 어노테이션 PNG 생성
-    ann_png = _generate_annotation_png(scene, info, tmpdir, scene_no)
+    # ── 1. 코너 브래킷 (도면 프레임) ──────────────────────────────────────
+    L = 70
+    for cx, cy, dx, dy in [(m, m, 1, 1), (W - m, m, -1, 1),
+                           (m, int(H * 0.60), 1, -1), (W - m, int(H * 0.60), -1, -1)]:
+        d.line([(cx, cy), (cx + dx * L, cy)], fill=GOLD_SOFT, width=3)
+        d.line([(cx, cy), (cx, cy + dy * L)], fill=GOLD_SOFT, width=3)
 
-    # 텍스트 필터그래프
-    text_fg = _build_text_filtergraph(
-        scene, scene_no, total, info, tmpdir, font, font_bold,
-        show_start, show_end,
+    # ── 2. 헤더: 채널명 / 도판 번호 ──────────────────────────────────────
+    f_head = _font(FONT_SANS_BOLD, 30)
+    _text(d, (m + 8, m + 18), "너도나도아는커피", f_head, fill=ACCENT, stroke=3)
+    plate = f"PLATE {scene_no:02d} / {total:02d}"
+    _text(d, (W - m - 8, m + 18), plate, f_head, fill=CREAM, stroke=3, anchor="ra")
+
+    # ── 3. 데이터 SPEC (우상단, 박스 없이 헤어라인만) ─────────────────────
+    data = _data_points(scene)
+    if data:
+        f_lab = _font(FONT_SANS_BOLD, 30)
+        f_val = _font(FONT_SERIF_BOLD, 64)
+        x_r   = W - m - 8
+        y     = m + 90
+        rule_top = y
+        for dp in data:
+            if dp["label"]:
+                _text(d, (x_r, y), dp["label"], f_lab, fill=ACCENT, stroke=3, anchor="ra")
+                y += 40
+            _text(d, (x_r, y), dp["value"], f_val, fill=CREAM, stroke=5, anchor="ra")
+            y += 84
+        # 오른쪽 세로 헤어라인 (도면 치수선 느낌)
+        d.line([(W - m + 14, rule_top), (W - m + 14, y - 12)], fill=GOLD_SOFT, width=2)
+        for ty in (rule_top, y - 12):
+            d.line([(W - m + 4, ty), (W - m + 24, ty)], fill=GOLD_SOFT, width=2)
+
+    # ── 4. 지시선 라벨 (callouts) ────────────────────────────────────────
+    callouts = _callouts(scene)
+    if callouts:
+        f_co = _font(FONT_SERIF_BOLD, 40)
+        y_min, y_max, gap = int(H * 0.16), int(H * 0.56), 92
+        placed = {"L": [], "R": []}
+        for c in sorted(callouts, key=lambda c: c["y"]):
+            side = "L" if c["x"] < 0.5 else "R"
+            ax, ay = int(c["x"] * W), int(c["y"] * H)
+            ay = max(y_min, min(y_max, ay))
+            ly = ay
+            for py in placed[side]:
+                if abs(ly - py) < gap:
+                    ly = py + gap
+            ly = min(ly, y_max)
+            placed[side].append(ly)
+
+            # 앵커 점 + 링
+            d.ellipse([ax - 7, ay - 7, ax + 7, ay + 7], fill=GOLD)
+            d.ellipse([ax - 18, ay - 18, ax + 18, ay + 18], outline=GOLD_SOFT, width=2)
+            # 꺾인 지시선 → 라벨
+            tw = int(d.textlength(c["text"], font=f_co))
+            # 앵커가 여백 라벨 자리와 겹치면: 라벨을 앵커 바로 위에 올리고 짧은 세로 지시선
+            crowded = (side == "L" and ax - 18 < m + 20 + tw + 40) or                       (side == "R" and ax + 18 > W - m - 20 - tw - 40)
+            if crowded:
+                lx = max(m + 20 + tw // 2, min(W - m - 20 - tw // 2, ax))
+                ty = ay - 78
+                d.line([(ax, ay - 18), (ax, ty + 12)], fill=GOLD, width=3)
+                d.line([(lx - tw // 2, ty + 12), (lx + tw // 2, ty + 12)], fill=GOLD_SOFT, width=2)
+                _text(d, (lx, ty + 4), c["text"], f_co, stroke=4, anchor="ms")
+                continue
+            if side == "L":
+                ex = m + 20 + tw + 16
+                d.line([(ax - 18, ay), (ex + 40, ay), (ex, ly)] if ly != ay else [(ax - 18, ay), (ex, ly)],
+                       fill=GOLD, width=3, joint="curve")
+                d.line([(m + 20, ly + 30), (ex, ly + 30)], fill=GOLD_SOFT, width=2)
+                _text(d, (m + 20, ly + 22), c["text"], f_co, fill=CREAM, stroke=4, anchor="ls")
+            else:
+                sx = W - m - 20 - tw - 16
+                d.line([(ax + 18, ay), (sx - 40, ay), (sx, ly)] if ly != ay else [(ax + 18, ay), (sx, ly)],
+                       fill=GOLD, width=3, joint="curve")
+                d.line([(sx, ly + 30), (W - m - 20, ly + 30)], fill=GOLD_SOFT, width=2)
+                _text(d, (W - m - 20, ly + 22), c["text"], f_co, fill=CREAM, stroke=4, anchor="rs")
+    elif is_illust and not data:
+        # 라벨·데이터가 전혀 없을 때만 조준 링 (빈 도판 방지)
+        fx, fy = W // 2, int(H * 0.38)
+        for r, a in [(22, 190), (40, 110), (64, 60)]:
+            d.ellipse([fx - r, fy - r, fx + r, fy + r], outline=GOLD[:3] + (a,), width=2)
+
+    # ── 5. 키워드 (명조, 박스 없음) ──────────────────────────────────────
+    kw = (scene.get("overlay_text") or "").strip()
+    y_sub = int(H * 0.755)
+    if kw:
+        f_kw = _font(FONT_SERIF_BOLD, 76)
+        kw_lines = _wrap(d, kw, f_kw, W - 2 * m - 40, max_lines=2)
+        ky = int(H * 0.645) - (len(kw_lines) - 1) * 88
+        d.line([(m + 20, ky - 26), (m + 120, ky - 26)], fill=GOLD, width=4)   # 짧은 골드 룰
+        for i, line in enumerate(kw_lines):
+            _text(d, (m + 20, ky + i * 88), line, f_kw, fill=ACCENT, stroke=6, anchor="la")
+
+    # ── 6. 나레이션 자막 (박스 없음, 외곽선) ─────────────────────────────
+    narr = (scene.get("narration") or "").strip()
+    if narr:
+        f_sub = _font(FONT_SANS_BOLD, 58)
+        lines = _wrap(d, narr, f_sub, W - 2 * m - 40, max_lines=3)
+        for i, line in enumerate(lines):
+            _text(d, (W // 2, y_sub + i * 76), line, f_sub, fill=CREAM, stroke=7, anchor="ma")
+
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def _is_light_clip(path: str, tmpdir: str) -> bool:
+    """클립 중간 프레임의 평균 밝기로 '밝은 종이 배경' 여부를 판단한다."""
+    frame = os.path.join(tmpdir, "probe_frame.png")
+    try:
+        mid = max(0.1, (_media_duration(path) or 6.0) / 2)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{mid:.2f}", "-i", path,
+                        "-frames:v", "1", "-vf", "scale=90:160", frame], capture_output=True)
+        from PIL import Image
+        g = Image.open(frame).convert("L")
+        return (sum(g.getdata()) / (g.width * g.height)) > 150
+    except Exception:
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 길이 배분
+# ─────────────────────────────────────────────────────────────────────────────
+def plan_durations(scenes: list, clip_durs: list, audio_dur: float) -> list:
+    """나레이션 분량 비율로 컷 길이를 나눈다. 오디오가 없으면 원본 클립 길이 그대로."""
+    if audio_dur <= 0:
+        return list(clip_durs)
+    total = audio_dur + TAIL_SEC
+    weights = [max(len(re.sub(r"\s", "", s.get("narration", ""))), 6) for s in scenes]
+    durs = [total * w / sum(weights) for w in weights]
+    # 최소 길이 보장 후 나머지 재분배
+    for _ in range(3):
+        short = [i for i, x in enumerate(durs) if x < MIN_SCENE]
+        if not short:
+            break
+        deficit = sum(MIN_SCENE - durs[i] for i in short)
+        for i in short:
+            durs[i] = MIN_SCENE
+        rest = [i for i in range(len(durs)) if i not in short]
+        rest_sum = sum(durs[i] for i in rest) or 1
+        for i in rest:
+            durs[i] -= deficit * durs[i] / rest_sum
+    return [round(x, 3) for x in durs]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 컷 하나 렌더링: 9:16 크롭 → 길이 맞춤 → 오버레이
+# ─────────────────────────────────────────────────────────────────────────────
+def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str) -> None:
+    src_dur = _media_duration(src) or 6.0
+    chain = [
+        f"scale={W}:{H}:force_original_aspect_ratio=increase",
+        f"crop={W}:{H}",
+        "setsar=1",
+        f"fps={FPS}",
+        "setpts=PTS-STARTPTS",
+    ]
+    if target > src_dur:
+        slow = min(target / src_dur, MAX_SLOW)
+        chain.append(f"setpts={slow:.4f}*PTS")
+        remain = target - src_dur * slow
+        if remain > 0.02:
+            chain.append(f"tpad=stop_mode=clone:stop_duration={remain:.3f}")
+    fade_in = 0.35
+    fc = (
+        f"[0:v]{','.join(chain)}[base];"
+        f"[1:v]format=rgba,fade=t=in:st=0.15:d={fade_in}:alpha=1[ov];"
+        f"[base][ov]overlay=0:0:format=auto,format=yuv420p[out]"
     )
-
-    # filter_complex 구성
-    # [1:v] = 어노테이션 PNG (루프 확장됨)
-    ann_fade = (
-        f"[1:v]format=rgba,"
-        f"fade=t=in:st={show_start}:d=0.3:alpha=1,"
-        f"fade=t=out:st={show_end - 0.3}:d=0.3:alpha=1[ann];"
-    )
-    overlay_chain = f"[0:v][ann]overlay=0:0[base];"
-    text_chain    = f"[base]{text_fg}[out]"
-
-    filter_complex = ann_fade + overlay_chain + text_chain
-
-    cmd = (
-        ["ffmpeg", "-y",
-         "-i", src_path,
-         "-loop", "1", "-t", str(dur), "-i", ann_png,
-         "-filter_complex", filter_complex,
-         "-map", "[out]",
-         "-map", "0:a?",
-         "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-         "-c:a", "copy",
-         out_path]
-    )
-    proc = subprocess.run(cmd, capture_output=True)
-    return proc.returncode == 0
+    cmd = [
+        "ffmpeg", "-y", "-i", src,
+        "-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", overlay_png,
+        "-filter_complex", fc, "-map", "[out]", "-an",
+        "-t", f"{target:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-r", str(FPS), "-pix_fmt", "yuv420p",
+        out_path,
+    ]
+    p = subprocess.run(cmd, capture_output=True)
+    if p.returncode != 0:
+        raise ValueError(f"컷 렌더링 실패: {p.stderr.decode(errors='replace')[-800:]}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API
 # ─────────────────────────────────────────────────────────────────────────────
-def assemble_final_video(
-    state: dict,
-    fal_key: str = "",       # 하위 호환 유지 (미사용)
-    apply_overlay: bool = True,
-) -> str:
+def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = True) -> str:
     """
-    state의 모든 씬 video_url + audio_path → 최종 숏폼 MP4 합성 → 로컬 파일 경로 반환.
-
-    Args:
-        state         : 프로젝트 상태 dict (scenes, audio_path, project_dir 포함)
-        fal_key       : 미사용 (하위 호환용 파라미터 유지)
-        apply_overlay : True면 "신비한 건축사전" 오버레이 적용
-
-    Returns:
-        str : 최종 MP4 로컬 파일 경로 (project_dir/final.mp4)
-
-    Raises:
-        ValueError : 합성할 클립이 없거나 FFmpeg 실패 시
+    모든 컷 영상 + 나레이션 → 1080×1920 최종 MP4 (project_dir/final.mp4) 경로 반환.
+    나레이션은 끝까지 들어가고, 영상 길이는 나레이션 + 여운 0.8초.
     """
+    scenes    = sorted(state.get("scenes", []), key=lambda s: s.get("scene_no", 0))
+    audio_src = (state.get("audio_path") or "").strip()
 
-    scenes    = state.get("scenes", [])
-    audio_src = state.get("audio_path", "").strip()
-    total     = len([s for s in scenes if s.get("video_url", "").strip()])
-
-    font      = _find_font(bold=False)
-    font_bold = _find_font(bold=True)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-
-        # ── 1. 비디오 클립 다운로드 ─────────────────────────────────────────
-        clip_items = []
-        for scene in sorted(scenes, key=lambda s: s.get("scene_no", 0)):
-            video_src = scene.get("video_url", "").strip()
-            if not video_src:
+    with tempfile.TemporaryDirectory() as tmp:
+        # 1. 클립 확보
+        items = []
+        for s in scenes:
+            url = (s.get("video_url") or "").strip()
+            if not url:
                 continue
-            sno       = scene.get("scene_no", 0)
-            clip_path = os.path.join(tmpdir, f"clip_{sno:02d}.mp4")
-            if _copy_or_download(video_src, clip_path):
-                clip_items.append((clip_path, scene, sno))
+            p = os.path.join(tmp, f"clip_{s.get('scene_no', 0):02d}.mp4")
+            if _copy_or_download(url, p):
+                items.append((s, p))
+        if not items:
+            raise ValueError("합성할 영상 클립이 없습니다. STEP 4에서 컷 영상을 먼저 생성해 주세요.")
 
-        if not clip_items:
-            raise ValueError(
-                "합성할 영상 클립이 없습니다. STEP 4에서 모든 컷 영상을 먼저 생성해 주세요."
-            )
-
-        # ── 2. 씬별 오버레이 적용 ────────────────────────────────────────────
-        final_clips = []
-        for clip_path, scene, sno in clip_items:
-            if apply_overlay:
-                ov_path = os.path.join(tmpdir, f"ov_{sno:02d}.mp4")
-                ok = _apply_overlay_to_clip(
-                    clip_path, ov_path, scene, sno, total,
-                    tmpdir, font, font_bold,
-                )
-                final_clips.append(ov_path if ok else clip_path)
-            else:
-                final_clips.append(clip_path)
-
-        # ── 3. FFmpeg 클립 리스트 파일 ──────────────────────────────────────
-        list_file = os.path.join(tmpdir, "clips.txt")
-        with open(list_file, "w", encoding="utf-8") as f:
-            for p in final_clips:
-                escaped = p.replace("\\", "\\\\").replace("'", "\\'")
-                f.write(f"file '{escaped}'\n")
-
-        # ── 4. 클립 이어붙이기 ──────────────────────────────────────────────
-        concat_path = os.path.join(tmpdir, "concat.mp4")
-        proc = subprocess.run(
-            ["ffmpeg", "-y",
-             "-f", "concat", "-safe", "0",
-             "-i", list_file,
-             "-c", "copy",
-             concat_path],
-            capture_output=True,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.decode(errors="replace")[-1000:]
-            raise ValueError(f"FFmpeg concat 실패:\n{err}")
-
-        # ── 5. 비디오 정확한 길이 확인 ──────────────────────────────────────
-        video_dur_info = _probe_video(concat_path)
-        video_dur      = video_dur_info["dur"]
-
-        # ── 6. 나레이션 오디오 준비 ─────────────────────────────────────────
+        # 2. 나레이션 길이 → 컷별 목표 길이
         audio_path = ""
         if audio_src:
-            audio_path = os.path.join(tmpdir, "narration.mp3")
+            audio_path = os.path.join(tmp, "narration.mp3")
             if not _copy_or_download(audio_src, audio_path):
                 audio_path = ""
+        audio_dur = _media_duration(audio_path) if audio_path else 0.0
+        clip_durs = [_media_duration(p) or 6.0 for _, p in items]
+        targets   = plan_durations([s for s, _ in items], clip_durs, audio_dur)
+        print(f"[assembler] 나레이션 {audio_dur:.1f}초 · 원본 클립 합 {sum(clip_durs):.1f}초 "
+              f"→ 최종 {sum(targets):.1f}초", flush=True)
 
-        # ── 7. 오디오 합성 ──────────────────────────────────────────────────
-        #    apad: 오디오가 영상보다 짧을 때 무음으로 패딩
-        #    -t video_dur: 정확히 영상 길이에 맞춰 컷 (엔딩 컷 방지)
-        final_path = os.path.join(tmpdir, "final.mp4")
+        # 3. 컷별 렌더링
+        total = len(items)
+        rendered = []
+        for i, ((s, p), tgt) in enumerate(zip(items, targets), start=1):
+            sno = s.get("scene_no", i)
+            png = os.path.join(tmp, f"ov_{sno:02d}.png")
+            if apply_overlay:
+                render_overlay_png(s, sno, total, png, light=_is_light_clip(p, tmp))
+            else:
+                from PIL import Image
+                Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(png)
+            out = os.path.join(tmp, f"r_{sno:02d}.mp4")
+            render_scene_clip(p, png, tgt, out)
+            rendered.append(out)
+            print(f"[assembler] 컷 #{sno:02d} {tgt:.1f}초 완료", flush=True)
 
-        if audio_path and os.path.exists(audio_path):
-            proc = subprocess.run(
-                ["ffmpeg", "-y",
-                 "-i", concat_path,
-                 "-i", audio_path,
-                 "-c:v", "copy",
-                 "-c:a", "aac", "-b:a", "128k",
-                 "-map", "0:v:0",
-                 "-map", "1:a:0",
-                 "-af", "apad",          # 오디오 짧으면 무음 패딩
-                 "-t", str(video_dur),   # 영상 길이에 맞춰 정확히 컷
-                 final_path],
+        # 4. 이어붙이기 (모든 컷이 같은 규격이라 재인코딩 없이 연결)
+        lst = os.path.join(tmp, "list.txt")
+        with open(lst, "w", encoding="utf-8") as f:
+            for r in rendered:
+                f.write(f"file '{r}'\n")
+        concat = os.path.join(tmp, "concat.mp4")
+        p = subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst,
+                            "-c", "copy", concat], capture_output=True)
+        if p.returncode != 0:
+            raise ValueError(f"FFmpeg concat 실패:\n{p.stderr.decode(errors='replace')[-800:]}")
+        video_dur = _media_duration(concat)
+
+        # 5. 나레이션 합치기 (끝까지 들어가도록 영상 길이 기준 + 무음 패딩)
+        final = os.path.join(tmp, "final.mp4")
+        if audio_path:
+            p = subprocess.run(
+                ["ffmpeg", "-y", "-i", concat, "-i", audio_path,
+                 "-map", "0:v:0", "-map", "1:a:0",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                 "-af", "apad", "-t", f"{video_dur:.3f}",
+                 "-movflags", "+faststart", final],
                 capture_output=True,
             )
-            if proc.returncode != 0:
-                err = proc.stderr.decode(errors="replace")[-1000:]
-                raise ValueError(f"FFmpeg 오디오 합성 실패:\n{err}")
+            if p.returncode != 0:
+                raise ValueError(f"FFmpeg 오디오 합성 실패:\n{p.stderr.decode(errors='replace')[-800:]}")
         else:
-            shutil.copy2(concat_path, final_path)
+            shutil.copy2(concat, final)
 
-        # ── 8. 최종 파일 저장 (project_dir/final.mp4) ───────────────────────
         project_dir = state.get("project_dir", "/tmp")
         os.makedirs(project_dir, exist_ok=True)
-        dest_path = os.path.join(project_dir, "final.mp4")
-        shutil.copy2(final_path, dest_path)
-        return dest_path
+        dest = os.path.join(project_dir, "final.mp4")
+        shutil.copy2(final, dest)
+        return dest

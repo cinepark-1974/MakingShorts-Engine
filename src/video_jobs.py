@@ -19,6 +19,7 @@ _JOBS: dict = {}            # project_id → job dict (서버 프로세스가 �
 _LOCK = threading.Lock()
 
 INTER_SCENE_SEC = 5         # 컷 사이 간격 (rate limit 예방)
+STYLE_LOCK_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}   # 스케치 화풍 유지 씬
 
 
 def get_job(project_id: str):
@@ -115,6 +116,7 @@ def _worker(job: dict, replicate_token: str, save_fn) -> None:
                     prompt=scene.get("flow_prompt", ""),
                     image_url=scene.get("reference_image_url", ""),
                     poll_cb=_poll_cb,
+                    style_lock=scene.get("scene_type", "") in STYLE_LOCK_TYPES,
                 )
                 scene["video_url"] = url
                 scene["status"]    = "done"
