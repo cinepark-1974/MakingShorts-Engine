@@ -4,6 +4,7 @@
 
 import anthropic
 import json
+import re
 
 
 SYSTEM_INSTRUCTION = """
@@ -303,53 +304,48 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      film grain visible, 9:16 vertical 4K"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[나레이션 작성 원칙 — 핵심]
+[나레이션 작성 원칙 — ElevenLabs 더빙용 해설 대본]
 
-이 채널의 나레이션은 팟캐스트가 아니다. 화면이 설명하고 나레이션이 보조한다.
+이 채널의 나레이션은 한 사람이 60~75초 동안 이어서 들려주는 '짧은 과학 해설'이다.
+12개 씬 narration 을 순서대로 이어 읽었을 때 하나의 이야기로 들려야 한다.
 
-▶ 씬별 narration 작성 규칙
+▶ 이야기 구조 (반드시 이 흐름)
+  훅(의외의 사실) → 궁금증 → 차이가 생기는 지점 → 왜 그런가(원리) → 그래서 무엇이 달라지나 → 한 줄 결론 → 브랜드 멘트
+  - "다르다"만 반복하지 말고, 반드시 "왜" 다른지 인과를 설명한다. (예: 무엇을 먼저 붓기 때문에 → 무엇이 어떻게 되고 → 그래서 맛·향이 어떻다)
+  - 각 씬은 앞 씬을 받아 이어진다. 필요한 곳에 이음말을 씬 첫머리에 넣는다.
+    (그런데 / 그래서 / 바로 이 때문에 / 반대로 / 결국 / 여기서 재미있는 건)
 
-1. 분량: 씬당 1~2문장, 15~25자 이내. 짧고 강하게.
-   나쁜 예: "아이스 아메리카노와 아이스 롱블랙은 둘 다 에스프레소에 물을 더한 음료인데 순서 하나로 맛이 완전히 달라집니다."
-   좋은 예: "순서 하나. 그게 전부입니다."
+▶ 분량
+  - 씬당 공백 제외 18~40자, 1~2문장.
+  - 12씬 narration_tts 합계 공백 제외 310~380자 (ElevenLabs 실측 초당 약 4.9자 → 65~75초).
 
-2. 인포그래픽 씬(visual_source: "ai")의 narration은 반드시 화면을 가리킨다.
-   화면에 무언가 보이고 있다는 걸 나레이션이 연동해야 한다.
+▶ 화면을 가리키는 말은 12씬 전체에서 최대 3번
+  ("왼쪽이 ~, 오른쪽이 ~", "단면을 보면", "보시다시피", "숫자로 보면" 등)
+  - 실사(photo) 씬에서는 화면을 가리키는 말을 쓰지 않는다.
+  - 나머지 씬은 해설 문장으로 쓴다. 화면 설명은 그림 위 라벨·데이터가 대신한다.
 
-   ★★ 반복 금지 규칙 ★★
-   동일한 화면 지시 표현을 12컷 전체에서 2회 이상 쓰지 않는다.
-   "보시다시피"는 전체 12컷 중 최대 1회만 허용한다.
-   같은 표현을 연속 두 씬에 연달아 쓰지 않는다.
+▶ 말투 (귀로 듣는 문장)
+  - 한 문장에 한 가지 정보만. 주어를 빠뜨리지 않는다. ("롱블랙은 ~", "아메리카노는 ~")
+  - '~입니다.'로 끝나는 문장이 세 씬 연속 나오지 않게 종결을 섞는다.
+    (~죠. / ~거든요. / ~습니다. / ~예요. / 명사로 끝맺기)
+  - 괄호, 슬래시, 화살표, 기호(→ / : + ~ %)를 쓰지 않는다.
+  - 줄표(—)는 전체에서 2번 이하.
 
-   화면 지시 표현 풀 — 씬마다 다른 것을 골라 사용할 것:
-     ① "보시다시피 — " (도표·비교 씬. 전체에서 딱 1번만)
-     ② "왼쪽이 ~, 오른쪽이 ~입니다." (나란히 비교 씬)
-     ③ "이 순서대로입니다." (레시피·ASSEMBLY 씬)
-     ④ "숫자로 보면 — [수치]." (수치 씬)
-     ⑤ "단면을 보면 ~" (EXTRACTION 씬)
-     ⑥ "이 부품이 핵심입니다." (MACHINE 씬)
-     ⑦ "위에서부터 순서대로 —" (폭발 분해도 씬)
-     ⑧ "이 비율입니다." (비율 시각화 씬)
-     ⑨ "두 잔의 차이는 여기서 납니다." (비교 결론 씬)
-     ⑩ "여기서 결정됩니다." (핵심 포인트 강조 씬)
-     ⑪ "[수치] 대 [수치]. 이게 답입니다." (대비 수치 씬)
-     ⑫ "핵심은 이 층입니다." (레이어 구조 씬)
+▶ 사실 정확성 (가장 중요)
+  - SCA 기준·백과사전 수준에서 확인되는 사실만 쓴다.
+  - 출처를 댈 수 없는 수치(두께 mm, pH, 지속 시간 등)는 쓰지 않는다. 모르면 수치 없이 설명한다.
+  - 주제와 관계없는 곁가지 사실(예: 원두 원산지)을 끼워 넣지 않는다.
 
-3. 실사 씬(visual_source: "photo")의 narration은 분위기·감성·훅.
-   화면 설명 대신 감탄·궁금증·여운을 담는다.
-   예: "같은 듯 다른 두 잔." / "커피 한 잔이 이렇게 다를 수 있습니다."
+▶ narration 과 narration_tts — 두 필드를 모두 쓴다
+  - narration     : 화면 자막용. 숫자·단위를 그대로 써도 된다. (예: "물 150ml에 샷 하나")
+  - narration_tts : ElevenLabs 가 읽을 문장. narration 과 내용이 같고 표기만 다르다.
+      · 숫자·단위·영문을 모두 한글 읽는 소리로 쓴다.
+        예) 150ml → 백오십 밀리리터 / 9 bar → 구 바 / 1950년대 → 천구백오십년대 / pH → 피에이치
+      · 아라비아 숫자와 영문 알파벳을 한 글자도 쓰지 않는다.
+      · 쉼표는 실제로 숨을 쉬는 자리에만 찍는다.
 
-4. 오프닝(컷1): 강한 훅 질문 또는 반전 사실. 시청자를 멈추게 한다.
-   예: "당신이 마신 아메리카노, 사실 롱블랙이었을 수도 있습니다."
-
-5. 클로징(컷12): 브랜드 콜투액션.
-   반드시 포함: "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다."
-
-▶ full_narration 작성 규칙
-
-full_narration은 12개 씬 narration을 순서대로 공백 하나로 이어붙인 것과 글자 하나까지 같아야 한다.
-연결어 추가·문장 수정 금지. (영상 합성 시 씬별 narration 분량으로 컷 길이를 배분하기 때문이다.)
-전체 낭독 시간 60~75초 기준 (한국어 기준 분당 약 300~350자).
+▶ 오프닝(1씬): 멈춰 서게 만드는 의외의 사실이나 질문.
+▶ 클로징(12씬): 반드시 "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다." 로 끝낸다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [12컷 구성 원칙]
@@ -371,7 +367,7 @@ full_narration은 12개 씬 narration을 순서대로 공백 하나로 이어붙
 주제에 'vs', '차이', '비교', '아메리카노', '롱블랙', '두 가지' 등이 포함되면:
   → TYPE E (SCIENCE_DATA) 씬을 최소 3컷 이상 배치한다.
   → 각 비교 씬은 서로 다른 각도: 물 비율 / 추출 순서 / 맛 프로파일 / 카페인 수치 등.
-  → 각 씬 narration은 반드시 "왼쪽이 ~, 오른쪽이 ~" 또는 "보시다시피 ~" 형식.
+  → 화면을 가리키는 말은 12씬 전체 최대 3번 규칙을 그대로 지킨다.
 
 [레시피 주제 특칙]
 주제에 '레시피', '만들기', '방법', '만드는 법' 등이 포함되면:
@@ -384,11 +380,11 @@ full_narration은 12개 씬 narration을 순서대로 공백 하나로 이어붙
     image_prompt: 하위패턴 1 — Macro hero shot of [핵심 재료] single ingredient floating...
 
   ASSEMBLY 컷 2 (비율 시각화): 재료 간 양적 비율 — 하위패턴 2 사용
-    narration 예시: "비율로 보면 — 얼음 1, 물 1, 에스프레소 0.5."
+    narration 예시: "양으로 보면 물이 에스프레소의 다섯 배쯤 들어갑니다."
     image_prompt: 하위패턴 2 — Three vessels of different heights...
 
   ASSEMBLY 컷 3 (폭발 분해도): BASE AT BOTTOM 원칙으로 5재료 수직 분해 — 하위패턴 3 사용
-    narration 예시: "이 순서대로입니다. 얼음 먼저, 물 다음, 마지막 에스프레소."
+    narration 예시: "순서는 얼음이 먼저, 그다음 물, 마지막이 에스프레소예요."
     image_prompt: 하위패턴 3 — Premium exploded breakdown, BASE AT BOTTOM,
                   Ice Cubes at very bottom → Cold Water → Espresso Shot at top,
                   EXTRA LARGE scale, thin indicator lines only (zero text zero labels),
@@ -439,7 +435,8 @@ full_narration은 12개 씬 narration을 순서대로 공백 하나로 이어붙
       "scene_type": "ASSEMBLY",
       "visual_source": "ai",
       "name": "오프닝 훅",
-      "narration": "이 순서대로입니다. 얼음, 물, 그리고 에스프레소.",
+      "narration": "롱블랙은 물 150ml를 먼저 채우고 샷을 얹습니다.",
+      "narration_tts": "롱블랙은 물 백오십 밀리리터를 먼저 채우고 샷을 얹습니다.",
       "image_prompt": "Exploded flat-lay of ice cubes, espresso shot glass, cold water splash arranged vertically from bottom to top — ice at very bottom, each element floating with subtle separation, thin elegant dark guide lines, warm off-white background #FFF8F0, commercial food photography, Hasselblad 80mm f2.8, shallow depth of field, pure visual zero text zero labels zero words, no people, 9:16 vertical 4K",
       "flow_prompt": "ice cubes, espresso, water floating and stacking into tall glass, slow elegant assembly motion, cinematic coffee commercial, 9:16 vertical 4K",
       "sfx": "impact_whoosh",
@@ -465,28 +462,214 @@ impact_whoosh | tech_beep | steam_hiss | coffee_pour | ambient_cafe | deep_bass 
 """
 
 
-def generate_script_and_prompts(
-    api_key: str,
-    chapter: str,
-    topic: str,
-) -> dict:
+SCRIPT_MODEL = "claude-sonnet-4-6"
+CLOSING_LINE = "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다."
+POINTER_PHRASES = ["보시다시피", "왼쪽이", "오른쪽이", "단면을 보면", "위에서부터",
+                   "숫자로 보면", "이 비율입니다", "이 순서대로", "화면을 보면", "여기를 보면"]
+TTS_CHARS_PER_SEC = 4.9          # ElevenLabs 실측 (project_10: 236자 / 48.5초)
+TOTAL_MIN, TOTAL_MAX = 310, 380  # 약 65~75초
+SCENE_MIN, SCENE_MAX = 18, 40
+_AI_TYPES = {"ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공통 헬퍼
+# ─────────────────────────────────────────────────────────────────────────────
+def _nchars(t: str) -> int:
+    return len(re.sub(r"\s", "", t or ""))
+
+
+def _text_of(response) -> str:
+    """응답의 text 블록을 모두 이어 붙인다 (웹검색 결과 블록은 건너뜀)."""
+    return "".join(getattr(b, "text", "") for b in response.content if getattr(b, "type", "") == "text")
+
+
+def _extract_json(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:]
+    a, b = raw.find("{"), raw.rfind("}")
+    if a == -1 or b == -1:
+        raise ValueError("응답에서 JSON 을 찾지 못했습니다.")
+    return json.loads(raw[a:b + 1])
+
+
+def _call_json(client, system: str, user: str, max_tokens: int = 12000, retries: int = 1) -> dict:
+    last = None
+    for _ in range(retries + 1):
+        resp = client.messages.create(
+            model=SCRIPT_MODEL, max_tokens=max_tokens, system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        try:
+            return _extract_json(_text_of(resp))
+        except Exception as e:      # JSON 이 깨졌으면 한 번 더
+            last = e
+    raise ValueError(f"대본 JSON 파싱 실패: {last}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1) 규칙 검사 (코드로 확실하게 잡을 수 있는 것)
+# ─────────────────────────────────────────────────────────────────────────────
+def lint_script(data: dict) -> list:
+    """대본 규칙 위반 목록을 돌려준다. 빈 리스트면 통과."""
+    issues = []
+    scenes = data.get("scenes") or []
+    if len(scenes) != 12:
+        issues.append(f"씬이 12개가 아니라 {len(scenes)}개입니다.")
+    total = 0
+    pointer_hits = []
+    endings = []
+    for sc in scenes:
+        n = sc.get("scene_no")
+        tts = (sc.get("narration_tts") or "").strip()
+        if not (sc.get("narration") or "").strip():
+            issues.append(f"{n}씬: narration 이 비어 있습니다.")
+        if not tts:
+            issues.append(f"{n}씬: narration_tts 가 비어 있습니다.")
+            continue
+        c = _nchars(tts)
+        total += c
+        if c < SCENE_MIN or c > SCENE_MAX:
+            issues.append(f"{n}씬: 낭독 분량 {c}자 (허용 {SCENE_MIN}~{SCENE_MAX}자).")
+        if re.search(r"[0-9A-Za-z]", tts):
+            issues.append(f"{n}씬: narration_tts 에 숫자·영문이 남아 있습니다 → 한글 소리로: \"{tts}\"")
+        if re.search(r"[()/→:+~%<>]", tts):
+            issues.append(f"{n}씬: narration_tts 에 기호가 있습니다: \"{tts}\"")
+        for ph in POINTER_PHRASES:
+            if ph in (sc.get("narration") or ""):
+                pointer_hits.append(n)
+                if sc.get("visual_source") == "photo":
+                    issues.append(f"{n}씬: 실사 씬에 화면 지시어 '{ph}' 가 있습니다.")
+                break
+        endings.append(tts.rstrip().endswith("니다."))
+    if total and not (TOTAL_MIN <= total <= TOTAL_MAX):
+        issues.append(f"전체 낭독 {total}자 ≈ {total / TTS_CHARS_PER_SEC:.0f}초 "
+                      f"(목표 {TOTAL_MIN}~{TOTAL_MAX}자 ≈ 65~75초).")
+    if len(pointer_hits) > 3:
+        issues.append(f"화면 지시어가 {len(pointer_hits)}번 (씬 {pointer_hits}) — 최대 3번.")
+    run = 0
+    for i, e in enumerate(endings, start=1):
+        run = run + 1 if e else 0
+        if run == 3:
+            issues.append(f"'~니다.' 종결이 {i - 2}~{i}씬에서 세 번 연속입니다.")
+    em = sum((sc.get("narration_tts") or "").count("—") for sc in scenes)
+    if em > 2:
+        issues.append(f"줄표(—)가 {em}번 — 최대 2번.")
+    if scenes and CLOSING_LINE not in (scenes[-1].get("narration_tts") or ""):
+        issues.append(f"12씬이 '{CLOSING_LINE}' 로 끝나지 않습니다.")
+    return issues
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) 사실 검증 (웹 검색)
+# ─────────────────────────────────────────────────────────────────────────────
+FACT_SYSTEM = """당신은 커피 과학 팩트체커입니다. SCA 기준, 백과사전, 신뢰할 수 있는 커피 전문 자료로 확인합니다.
+대본 속 모든 사실 주장(나레이션, 화면 키워드, 데이터 수치, 라벨)을 하나씩 검증하세요.
+확인되지 않거나 출처를 찾을 수 없는 수치는 '근거없음'으로 판정합니다.
+마지막에 아래 JSON 만 출력하세요 (설명 문장 금지).
+{"claims": [{"scene_no": 1, "claim": "검증한 문장 또는 수치", "verdict": "확인|수정필요|근거없음",
+             "correction": "수정필요·근거없음일 때 고쳐 쓸 내용 (없으면 빈 문자열)", "source": "근거 URL"}]}"""
+
+
+def _fact_payload(data: dict) -> str:
+    rows = []
+    for sc in data.get("scenes", []):
+        rows.append({
+            "scene_no": sc.get("scene_no"), "narration": sc.get("narration"),
+            "overlay_text": sc.get("overlay_text"), "data_points": sc.get("data_points"),
+            "callouts": [c.get("text") for c in (sc.get("callouts") or []) if isinstance(c, dict)],
+        })
+    return json.dumps(rows, ensure_ascii=False, indent=1)
+
+
+def fact_check(client, topic: str, data: dict) -> dict:
+    """웹 검색으로 사실 검증. 웹 검색을 쓸 수 없으면 모델 지식으로만 검증하고 표시한다."""
+    user = f"주제: {topic}\n\n검증할 대본:\n{_fact_payload(data)}"
+    messages = [{"role": "user", "content": user}]
+    try:
+        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
+        resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=8000, system=FACT_SYSTEM,
+                                      messages=messages, tools=tools)
+        for _ in range(3):   # 긴 검색은 pause_turn 으로 멈춘다 → 이어서 요청
+            if getattr(resp, "stop_reason", "") != "pause_turn":
+                break
+            messages = messages + [{"role": "assistant", "content": resp.content}]
+            resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=8000, system=FACT_SYSTEM,
+                                          messages=messages, tools=tools)
+        result = _extract_json(_text_of(resp))
+        result["web_search"] = True
+        return result
+    except Exception as e:
+        print(f"[prompts] 웹 검색 검증 실패 → 모델 지식으로 검증: {e}", flush=True)
+    try:
+        result = _call_json(client, FACT_SYSTEM, user, max_tokens=6000)
+        result["web_search"] = False
+        return result
+    except Exception as e:
+        return {"claims": [], "web_search": False, "error": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3) 자동 수정
+# ─────────────────────────────────────────────────────────────────────────────
+REVISE_RULES = """당신은 '너도나도아는커피' 대본 수석 에디터입니다.
+초안 JSON 을 받아, 규칙 위반과 팩트체크 결과를 모두 반영한 최종 JSON 전체를 출력합니다.
+- 팩트체크에서 '수정필요'는 correction 대로 고치고, '근거없음' 수치는 삭제하거나 확인된 사실로 바꿉니다.
+- data_points 에는 '확인' 판정을 받은 수치만 남깁니다. 없으면 [].
+- 12씬 narration 이 하나의 해설로 이어지게 다듬습니다 (훅 → 차이 → 왜 → 그래서 → 결론).
+- narration_tts 는 narration 과 같은 내용을 ElevenLabs 가 읽기 좋게: 숫자·영문·기호 없이 한글 소리로.
+- scene_no, scene_type, visual_source, image_prompt, flow_prompt, sfx 는 사실 오류가 없는 한 그대로 둡니다.
+- 설명 없이 JSON 전체만 출력합니다."""
+
+
+def revise_script(client, data: dict, issues: list, facts: dict) -> dict:
+    user = (
+        "[규칙 위반]\n" + ("\n".join(f"- {i}" for i in issues) or "- 없음") +
+        "\n\n[팩트체크 결과]\n" + json.dumps(facts.get("claims", []), ensure_ascii=False, indent=1) +
+        "\n\n[초안 JSON]\n" + json.dumps(data, ensure_ascii=False)
+    )
+    return _call_json(client, SYSTEM_INSTRUCTION + "\n\n" + REVISE_RULES, user, max_tokens=14000)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API
+# ─────────────────────────────────────────────────────────────────────────────
+def _finalize(data: dict) -> dict:
+    required = {"chapter", "title", "scenes"}
+    missing = required - data.keys()
+    if missing:
+        raise ValueError(f"Claude 응답에 필수 키가 없습니다: {missing}")
+    if not isinstance(data["scenes"], list) or not data["scenes"]:
+        raise ValueError("scenes 배열이 비어 있습니다.")
+    for sc in data["scenes"]:
+        sc.setdefault("image_path", "")
+        sc.setdefault("image_status", "pending")
+        sc.setdefault("video_url", "")
+        sc.setdefault("status", "pending")
+        sc.setdefault("data_points", [])
+        sc.setdefault("callouts", [])
+        if not (sc.get("narration_tts") or "").strip():
+            sc["narration_tts"] = sc.get("narration", "")
+        if not sc.get("visual_source"):
+            sc["visual_source"] = "ai" if sc.get("scene_type", "") in _AI_TYPES else "photo"
+    # 음성은 narration_tts 합본으로 만든다 (컷 길이 배분도 이 텍스트 기준)
+    data["full_narration"] = " ".join(
+        (sc.get("narration_tts") or "").strip() for sc in data["scenes"]
+        if (sc.get("narration_tts") or "").strip()
+    )
+    return data
+
+
+def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress=None) -> dict:
     """
-    Claude API를 호출하여 12컷 숏폼 대본과
-    FLUX 이미지 프롬프트(image_prompt), Kling 영상 프롬프트(flow_prompt),
-    이미지 소스 판단(visual_source)을 JSON으로 반환한다.
-
-    Args:
-        api_key  : ANTHROPIC_API_KEY
-        chapter  : 챕터명  (예: "CH01 커피의 탄생")
-        topic    : 주제명  (예: "아이스아메리카노와 롱블랙의 차이")
-
-    Returns:
-        dict : JSON 스키마 형태의 파이썬 딕셔너리
-
-    Raises:
-        json.JSONDecodeError : Claude 응답이 유효한 JSON이 아닐 때
-        anthropic.APIError   : API 호출 자체가 실패했을 때
+    12컷 대본 생성 → 규칙 검사 → 웹 검색 팩트체크 → 자동 수정 → 재검사(필요 시 1회 더 수정).
+    반환 dict 의 "verification" 에 검증 기록(판정·출처·남은 문제)을 담는다.
+    progress: 선택 — progress(메시지) 로 진행 단계를 화면에 알린다.
     """
+    say = progress or (lambda m: None)
     client = anthropic.Anthropic(api_key=api_key)
 
     user_prompt = (
@@ -494,65 +677,44 @@ def generate_script_and_prompts(
         "아래 조건을 모두 지켜서 12컷 대본을 JSON으로 출력해줘.\n\n"
         "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것.\n"
         "② 인포그래픽(visual_source: 'ai') 씬이 최소 7컷 이상 포함될 것.\n"
-        "③ 각 씬 narration은 1~2문장, 15~25자 이내로 짧고 강하게.\n"
-        "④ 인포그래픽 씬(ai)의 narration은 반드시 화면을 가리키는 표현 사용.\n"
-        "   표현 풀에서 씬마다 다른 것을 골라 쓸 것. '보시다시피'는 전체 12컷 중 최대 1회만 허용.\n"
-        "   같은 표현을 2회 이상 반복하지 말 것.\n"
+        "③ narration 은 12씬이 한 편의 해설로 이어지게: 훅 → 차이 → 왜(원리) → 그래서 → 결론.\n"
+        "   씬당 공백 제외 18~40자, 합계 310~380자. 화면을 가리키는 말은 전체 최대 3번.\n"
+        "④ 모든 씬에 narration(자막용)과 narration_tts(ElevenLabs 낭독용, 숫자·영문을 한글 소리로)를 함께 쓸 것.\n"
+        "   확인할 수 없는 수치는 쓰지 말 것.\n"
         "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
-        "⑥ 구체적 수치·재료명·비교 대상을 실제로 채울 것 (추상적 표현 금지).\n"
-        "⑦ full_narration은 12개 씬 narration을 공백 하나로 그대로 이어붙인 텍스트 (수정·추가 금지).\n"
-        "   전체 낭독 시간 60~75초 분량으로 구성할 것.\n"
-        "⑧ 'ai' 씬은 data_points(수치)와 callouts(지시선 라벨+좌표)를 작성할 것. photo 씬은 둘 다 []."
+        "⑥ 'ai' 씬은 data_points(확인된 수치만)와 callouts(지시선 라벨+좌표)를 작성할 것. photo 씬은 둘 다 []."
     )
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=10000,   # data_points·callouts 추가로 출력이 길어짐
-        system=SYSTEM_INSTRUCTION,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    say("① 초안 작성 중…")
+    draft = _call_json(client, SYSTEM_INSTRUCTION, user_prompt, max_tokens=12000)
+    draft_issues = lint_script(draft)
 
-    raw_text = response.content[0].text.strip()
+    say("② 사실 검증 중 (웹 검색)…")
+    facts = fact_check(client, topic, draft)
+    flagged = [c for c in facts.get("claims", []) if c.get("verdict") in ("수정필요", "근거없음")]
 
-    # 방어 파싱: ```json ... ``` 코드블록으로 감싸져 오는 경우 처리
-    if raw_text.startswith("```"):
-        raw_text = raw_text.strip("`")
-        if raw_text.lower().startswith("json"):
-            raw_text = raw_text[4:]
-        raw_text = raw_text.strip()
+    data, rounds = draft, 0
+    if draft_issues or flagged:
+        say("③ 검증 결과 반영해 자동 수정 중…")
+        data = revise_script(client, draft, draft_issues, facts)
+        rounds = 1
+        remaining = lint_script(data)
+        if remaining:
+            say("④ 남은 문제 한 번 더 수정 중…")
+            data = revise_script(client, data, remaining, {"claims": []})
+            rounds = 2
+    data = _finalize(data)
 
-    data = json.loads(raw_text)
-
-    # 스키마 최소 검증
-    required_keys = {"chapter", "title", "full_narration", "scenes"}
-    missing = required_keys - data.keys()
-    if missing:
-        raise ValueError(f"Claude 응답에 필수 키가 없습니다: {missing}")
-
-    if not isinstance(data["scenes"], list) or len(data["scenes"]) == 0:
-        raise ValueError("scenes 배열이 비어 있습니다.")
-
-    # 씬별 기본값 보장
-    # visual_source 누락 시 scene_type으로 폴백 결정
-    _AI_TYPES = {"ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
-    for scene in data["scenes"]:
-        scene.setdefault("image_path", "")
-        scene.setdefault("image_status", "pending")
-        scene.setdefault("video_url", "")
-        scene.setdefault("status", "pending")
-        scene.setdefault("data_points", [])
-        scene.setdefault("callouts", [])
-        # visual_source 폴백: scene_type 기반으로 자동 결정
-        if not scene.get("visual_source"):
-            scene["visual_source"] = (
-                "ai" if scene.get("scene_type", "") in _AI_TYPES else "photo"
-            )
-
-    # full_narration 을 씬 narration 합본으로 강제 (컷 길이 배분 정확도 보장)
-    joined = " ".join(
-        (sc.get("narration") or "").strip() for sc in data["scenes"] if (sc.get("narration") or "").strip()
-    )
-    if joined:
-        data["full_narration"] = joined
-
+    final_issues = lint_script(data)
+    total = sum(_nchars(sc.get("narration_tts", "")) for sc in data["scenes"])
+    data["verification"] = {
+        "web_search":      facts.get("web_search", False),
+        "claims":          facts.get("claims", []),
+        "draft_issues":    draft_issues,
+        "revise_rounds":   rounds,
+        "remaining_issues": final_issues,
+        "tts_chars":       total,
+        "est_seconds":     round(total / TTS_CHARS_PER_SEC),
+    }
+    say("✅ 대본 완성")
     return data

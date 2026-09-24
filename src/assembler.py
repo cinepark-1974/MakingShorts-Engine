@@ -254,30 +254,36 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
     plate = f"PLATE {scene_no:02d} / {total:02d}"
     _text(d, (W - m - 8, m + 18), plate, f_head, fill=CREAM, stroke=3, anchor="ra")
 
-    # ── 3. 데이터 SPEC (우상단, 박스 없이 헤어라인만) ─────────────────────
+    # ── 3. 데이터 SPEC 띠 (헤더 바로 아래 가로 한 줄, 박스 없음) ──────────
+    # 그림 위 지시선 영역(y 0.16H 아래)과 겹치지 않도록 맨 위 띠에만 놓는다.
     data = _data_points(scene)
+    data_bottom = 0
     if data:
-        f_lab = _font(FONT_SANS_BOLD, 30)
-        f_val = _font(FONT_SERIF_BOLD, 64)
-        x_r   = W - m - 8
-        y     = m + 90
-        rule_top = y
-        for dp in data:
+        f_lab = _font(FONT_SANS_BOLD, 26)
+        n_col = len(data)
+        col_w = (W - 2 * m - 16) // n_col
+        y_lab, y_val = m + 74, m + 108
+        for i, dp in enumerate(data):
+            x0 = m + 8 + i * (col_w + 8)
+            size = 56
+            f_val = _font(FONT_SERIF_BOLD, size)
+            while size > 30 and d.textlength(dp["value"], font=f_val) > col_w - 16:
+                size -= 2
+                f_val = _font(FONT_SERIF_BOLD, size)
+            if i:   # 칸 사이 세로 헤어라인
+                d.line([(x0 - 6, y_lab - 4), (x0 - 6, y_val + 60)], fill=GOLD_SOFT, width=2)
             if dp["label"]:
-                _text(d, (x_r, y), dp["label"], f_lab, fill=ACCENT, stroke=3, anchor="ra")
-                y += 40
-            _text(d, (x_r, y), dp["value"], f_val, fill=CREAM, stroke=5, anchor="ra")
-            y += 84
-        # 오른쪽 세로 헤어라인 (도면 치수선 느낌)
-        d.line([(W - m + 14, rule_top), (W - m + 14, y - 12)], fill=GOLD_SOFT, width=2)
-        for ty in (rule_top, y - 12):
-            d.line([(W - m + 4, ty), (W - m + 24, ty)], fill=GOLD_SOFT, width=2)
+                _text(d, (x0 + 8, y_lab), dp["label"], f_lab, fill=ACCENT, stroke=3)
+            _text(d, (x0 + 8, y_val), dp["value"], f_val, stroke=5)
+        data_bottom = y_val + 72
+        d.line([(m + 8, data_bottom), (W - m - 8, data_bottom)], fill=GOLD_SOFT, width=2)
 
     # ── 4. 지시선 라벨 (callouts) ────────────────────────────────────────
-    callouts = _callouts(scene)
+    # 사진(Unsplash)으로 바뀐 컷은 그림 구도를 알 수 없으므로 지시선을 그리지 않는다
+    callouts = [] if scene.get("_img_source") == "unsplash" else _callouts(scene)
     if callouts:
         f_co = _font(FONT_SERIF_BOLD, 40)
-        y_min, y_max, gap = int(H * 0.16), int(H * 0.56), 92
+        y_min, y_max, gap = max(int(H * 0.16), data_bottom + 110), int(H * 0.56), 92
         placed = {"L": [], "R": []}
         for c in sorted(callouts, key=lambda c: c["y"]):
             side = "L" if c["x"] < 0.5 else "R"
@@ -287,6 +293,8 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
             for py in placed[side]:
                 if abs(ly - py) < gap:
                     ly = py + gap
+            if side == "R" and ly < data_bottom:
+                ly = data_bottom
             ly = min(ly, y_max)
             placed[side].append(ly)
 
@@ -300,7 +308,12 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
             if crowded:
                 lx = max(m + 20 + tw // 2, min(W - m - 20 - tw // 2, ax))
                 ty = ay - 78
-                d.line([(ax, ay - 18), (ax, ty + 12)], fill=GOLD, width=3)
+                if lx + tw // 2 > W - m - 300 and ty - 40 < data_bottom:   # 데이터 블록과 겹치면 앵커 아래로
+                    ty = ay + 70
+                if ty > ay:     # 라벨이 앵커 아래
+                    d.line([(ax, ay + 18), (ax, ty - 36)], fill=GOLD, width=3)
+                else:
+                    d.line([(ax, ay - 18), (ax, ty + 12)], fill=GOLD, width=3)
                 d.line([(lx - tw // 2, ty + 12), (lx + tw // 2, ty + 12)], fill=GOLD_SOFT, width=2)
                 _text(d, (lx, ty + 4), c["text"], f_co, stroke=4, anchor="ms")
                 continue
@@ -367,7 +380,9 @@ def plan_durations(scenes: list, clip_durs: list, audio_dur: float) -> list:
     if audio_dur <= 0:
         return list(clip_durs)
     total = audio_dur + TAIL_SEC
-    weights = [max(len(re.sub(r"\s", "", s.get("narration", ""))), 6) for s in scenes]
+    # 실제로 읽히는 문장(narration_tts) 기준으로 배분 — 없으면 자막용 narration
+    weights = [max(len(re.sub(r"\s", "", s.get("narration_tts") or s.get("narration", ""))), 6)
+               for s in scenes]
     durs = [total * w / sum(weights) for w in weights]
     # 최소 길이 보장 후 나머지 재분배
     for _ in range(3):
