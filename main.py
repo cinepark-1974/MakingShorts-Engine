@@ -867,7 +867,7 @@ if st.session_state.current_project is None:
 state = st.session_state.current_project
 
 # ── 백그라운드 영상 작업이 있으면 그 작업이 갱신 중인 상태를 화면에 사용 ──────────
-from src import video_jobs
+from src import video_jobs, media_store
 PROJECT_KEY = state.get("project_id") or state.get("project_dir", "")
 _vjob = video_jobs.get_job(PROJECT_KEY)
 VIDEO_BUSY = video_jobs.is_running(PROJECT_KEY)
@@ -1227,6 +1227,8 @@ if not step2_locked:
 
                 # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
                 scene["image_path"]          = url
+                media_store.forget_image(scene)
+                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                 scene["image_status"]        = "done"
                 scene["reference_image_url"] = url
                 scene.pop("image_error", None)
@@ -1266,7 +1268,7 @@ if not step2_locked:
         with st.expander(f"생성된 이미지 미리보기 ({img_done_cnt}컷)", expanded=False):
             thumb_cols = st.columns(4)
             for i, scene in enumerate(scenes):
-                img_path = scene.get("image_path", "")
+                img_path = media_store.image_source(scene)
                 if not img_path:
                     continue
                 is_url = img_path.startswith("http")
@@ -1492,7 +1494,7 @@ else:
             prompt = scene.get("flow_prompt", "")
             sfx    = scene.get("sfx", "")
             overlay= scene.get("overlay_text", "")
-            vid_url= scene.get("video_url", "")
+            vid_url= media_store.video_source(scene)
 
             with col:
                 st.markdown(f"""
@@ -1514,7 +1516,7 @@ else:
                 """, unsafe_allow_html=True)
 
                 # ── 레퍼런스 이미지 (Flux 자동생성 우선 / 드라이브 폴백) ──────
-                img_path   = scene.get("image_path", "")
+                img_path   = media_store.image_source(scene)
                 img_status = scene.get("image_status", "pending")
                 current_ref = scene.get("reference_image_url", "")
 
@@ -1534,7 +1536,7 @@ else:
                     _img_src_caption = _src_display + (f" · {_type_tag}" if _type_tag else "")
                     st.image(img_path, use_container_width=True,
                              caption=f"{_img_src_caption} · {img_status}")
-                    new_ref = img_path  # Kling 첫 프레임으로 자동 사용
+                    new_ref = scene.get("image_path", "")  # 원본 주소 유지 (로컬 사본은 image_local 에 따로 보관)
 
                     # ── 이미지 교체 옵션 ────────────────────────────────────
                     if _unsplash_key:
@@ -1569,6 +1571,8 @@ else:
                                 )
                                 scene["_unsplash_page"]      = _pg
                                 scene["image_path"]          = url
+                                media_store.forget_image(scene)
+                                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
                                 scene["_img_source"]         = "unsplash"
@@ -1586,6 +1590,8 @@ else:
                                     scene, api_keys.get("REPLICATE_API_TOKEN", ""), api_keys.get("GOOGLE_API_KEY", "")
                                 )
                                 scene["image_path"]          = url
+                                media_store.forget_image(scene)
+                                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
                                 scene["_img_source"]         = _ai_src
@@ -1606,6 +1612,8 @@ else:
                     ).strip()
                     if _custom_url and _custom_url != img_path:
                         scene["image_path"]          = _custom_url
+                        media_store.forget_image(scene)
+                        media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                         scene["image_status"]        = "done"
                         scene["reference_image_url"] = _custom_url
                         new_ref = _custom_url
@@ -1647,6 +1655,8 @@ else:
                                 from src.image_search import search_unsplash, scene_to_query
                                 url = search_unsplash(scene_to_query(scene), _unsplash_key)
                                 scene["image_path"]          = url
+                                media_store.forget_image(scene)
+                                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
                                 scene["_img_source"]         = "unsplash"
@@ -1667,6 +1677,8 @@ else:
                                     scene, api_keys.get("REPLICATE_API_TOKEN", ""), api_keys.get("GOOGLE_API_KEY", "")
                                 )
                                 scene["image_path"]          = url
+                                media_store.forget_image(scene)
+                                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
                                 scene["image_status"]        = "done"
                                 scene["reference_image_url"] = url
                                 scene["_img_source"]         = _ai_src
