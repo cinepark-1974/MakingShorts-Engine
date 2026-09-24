@@ -15,6 +15,8 @@
 import threading
 import time
 
+from src import media_store
+
 _JOBS: dict = {}            # project_id → job dict (서버 프로세스가 살아있는 동안 유지)
 _LOCK = threading.Lock()
 
@@ -74,6 +76,28 @@ def start_job(project_id: str, state: dict, scene_nos: list,
         return True
 
 
+_ILLUST_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}
+
+
+def _is_expired_ai_image(scene: dict) -> bool:
+    """Replicate 에서 만든 이미지인데 주소를 더 이상 받을 수 없는 경우."""
+    url = scene.get("reference_image_url") or scene.get("image_path") or ""
+    return "replicate.delivery" in url
+
+
+def _regenerate_image(scene: dict, replicate_token: str) -> None:
+    from src.image_replicate import generate_reference_image
+    prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+    url = generate_reference_image(
+        replicate_token, prompt,
+        illust_mode=scene.get("scene_type", "") in _ILLUST_TYPES,
+    )
+    scene["image_path"] = url
+    scene["reference_image_url"] = url
+    scene["image_status"] = "done"
+    media_store.forget_image(scene)
+
+
 def _safe_save(save_fn, state):
     try:
         save_fn(state)
@@ -107,6 +131,18 @@ def _worker(job: dict, replicate_token: str, save_fn) -> None:
             p["started"] = time.time()
             scene["status"] = "generating"
 
+            # 첫 프레임 이미지 확보: 로컬 보관본 → 원본 주소 → (만료된 AI 이미지면) 다시 생성
+            project_dir = state.get("project_dir", "projects/tmp")
+            img = media_store.keep_image(scene, project_dir)
+            if not img and _is_expired_ai_image(scene):
+                p["msg"] = "이미지 주소 만료(1시간) → 이미지 다시 생성 중"
+                try:
+                    _regenerate_image(scene, replicate_token)
+                    img = media_store.keep_image(scene, project_dir)
+                except Exception as e:
+                    print(f"[video_jobs] 이미지 재생성 실패 #{sno}: {e}", flush=True)
+            p["msg"] = ""
+
             def _poll_cb(elapsed, _p=p):
                 _p["last_poll"] = time.time()
 
@@ -114,11 +150,13 @@ def _worker(job: dict, replicate_token: str, save_fn) -> None:
                 url = generate_single_clip_url(
                     replicate_token=replicate_token,
                     prompt=scene.get("flow_prompt", ""),
-                    image_url=scene.get("reference_image_url", ""),
+                    image_url=img or scene.get("reference_image_url", ""),
                     poll_cb=_poll_cb,
                     style_lock=scene.get("scene_type", "") in STYLE_LOCK_TYPES,
                 )
                 scene["video_url"] = url
+                media_store.forget_clip(scene)
+                media_store.keep_clip(scene, project_dir)   # 1시간 뒤 삭제되기 전에 보관
                 scene["status"]    = "done"
                 scene.pop("error_msg", None)
                 p["state"] = "done"

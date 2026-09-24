@@ -69,6 +69,12 @@ def _fetch_image_as_fileobj(url: str) -> io.BytesIO:
     이미지 URL을 서버에서 직접 다운로드해 BytesIO로 반환한다.
     Replicate 추론 서버가 외부 URL에 직접 접근하지 못하는 경우를 방지한다.
     """
+    if url and not url.startswith("http") and os.path.exists(url):   # 로컬 보관본
+        with open(url, "rb") as f:
+            buf = io.BytesIO(f.read())
+        buf.name = os.path.basename(url)
+        print(f"[video_replicate] 로컬 이미지 사용 → {url}", flush=True)
+        return buf
     print(f"[video_replicate] 이미지 다운로드 시작 → {url[:80]}", flush=True)
     try:
         resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})

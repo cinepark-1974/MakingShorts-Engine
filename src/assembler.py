@@ -511,7 +511,8 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
         # 1. 클립 확보
         items = []
         for s in scenes:
-            url = (s.get("video_url") or "").strip()
+            local = s.get("video_local") or ""
+            url = local if (local and os.path.exists(local)) else (s.get("video_url") or "").strip()
             if not url:
                 continue
             p = os.path.join(tmp, f"clip_{s.get('scene_no', 0):02d}.mp4")
