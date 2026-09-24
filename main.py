@@ -830,7 +830,7 @@ if st.session_state.current_project is None:
             st.error("주제를 입력해 주세요.")
         else:
             chapter_for_api = chapter.strip() if chapter.strip() else "MISC"
-            with st.spinner("Claude AI가 12컷 대본을 작성하고 있습니다… (약 20~40초)"):
+            with st.status("Claude AI가 대본을 쓰고 스스로 검증합니다… (약 1~3분)", expanded=True) as _sst:
                 try:
                     # 프로젝트 디렉터리 생성
                     new_state = manager.create_new_project(
@@ -842,10 +842,12 @@ if st.session_state.current_project is None:
                         api_key=api_keys["ANTHROPIC_API_KEY"],
                         chapter=chapter_for_api,
                         topic=topic.strip(),
+                        progress=st.write,
                     )
                     # state 업데이트
                     new_state["full_narration"] = result.get("full_narration", "")
                     new_state["scenes"] = result.get("scenes", [])
+                    new_state["verification"] = result.get("verification", {})
                     new_state["status"] = "script_ready"
                     manager.save_state(new_state)
 
@@ -1012,6 +1014,32 @@ if step1_done:
         ">{state.get('full_narration','(없음)')}</div>
         """, unsafe_allow_html=True)
 
+    # 대본 자동 검증 리포트
+    _ver = state.get("verification") or {}
+    if _ver:
+        _rem = _ver.get("remaining_issues") or []
+        _bad = [c for c in (_ver.get("claims") or []) if c.get("verdict") in ("수정필요", "근거없음")]
+        _title = (
+            f"🔎 대본 자동 검증 — 예상 길이 약 {_ver.get('est_seconds', '?')}초 · "
+            f"{'웹 검색 팩트체크' if _ver.get('web_search') else '모델 지식 검증 (웹 검색 불가)'} · "
+            f"자동 수정 {_ver.get('revise_rounds', 0)}회"
+            + (f" · ⚠️ 남은 문제 {len(_rem)}건" if _rem else " · 규칙 통과")
+        )
+        with st.expander(_title, expanded=bool(_rem)):
+            for _r in _rem:
+                st.warning(_r)
+            if _bad:
+                st.markdown("**초안에서 고친 사실 오류**")
+                for _c in _bad:
+                    _src = f" — [출처]({_c['source']})" if str(_c.get("source", "")).startswith("http") else ""
+                    st.markdown(f"- {_c.get('scene_no', '')}씬 · {_c.get('verdict')}: {_c.get('claim', '')} → {_c.get('correction', '')}{_src}")
+            _ok = [c for c in (_ver.get("claims") or []) if c.get("verdict") == "확인"]
+            if _ok:
+                st.markdown("**확인된 사실**")
+                for _c in _ok:
+                    _src = f" — [출처]({_c['source']})" if str(_c.get("source", "")).startswith("http") else ""
+                    st.markdown(f"- {_c.get('scene_no', '')}씬 · {_c.get('claim', '')}{_src}")
+
     # 대본 재생성 버튼 (경고 모달)
     with st.expander("⚠️ 대본 전체 재생성"):
         st.warning("대본을 다시 생성하면 모든 씬 상태가 초기화됩니다.")
@@ -1019,15 +1047,17 @@ if step1_done:
             if not api_keys.get("ANTHROPIC_API_KEY"):
                 st.error("ANTHROPIC_API_KEY가 없습니다.")
             else:
-                with st.spinner("재생성 중…"):
+                with st.status("대본 재생성 + 자동 검증 중… (약 1~3분)", expanded=True):
                     try:
                         result = generate_script_and_prompts(
                             api_key=api_keys["ANTHROPIC_API_KEY"],
                             chapter=state["chapter"],
                             topic=state["topic"],
+                            progress=st.write,
                         )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
+                        state["verification"] = result.get("verification", {})
                         state["status"] = "script_ready"
                         state["audio_path"] = ""
                         state["final_video_path"] = ""
