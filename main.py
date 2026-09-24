@@ -1753,7 +1753,7 @@ st.markdown(f"""
     {"✓" if step4_done else "5"}
   </div>
   <div>
-    <div class="step-title">STEP 5 · 최종 합성 (FFmpeg + Whisper 자막)</div>
+    <div class="step-title">STEP 5 · 최종 합성 (자막 · 효과음 · 배경음악)</div>
     <div class="step-sub">
       {"최종 영상 완성!" if step4_done
         else ("STEP 2 음성 + STEP 3 전체 영상 완료 후 실행 가능" if step4_locked
@@ -1762,6 +1762,37 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+def _assemble_controls(label: str, key: str) -> None:
+    """효과음·배경음악 옵션 + 합성 버튼 (처음 합성 / 다시 합성 공용)."""
+    c1, c2 = st.columns(2)
+    with c1:
+        use_sfx = st.checkbox("🔊 효과음 넣기", value=True, key=f"{key}_sfx",
+                              help="컷이 바뀔 때마다 대본의 SFX 태그에 맞는 효과음을 넣습니다.")
+    with c2:
+        use_bgm = st.checkbox("🎵 배경음악 넣기", value=True, key=f"{key}_bgm",
+                              help="영상 길이에 맞춘 연주곡을 깔고, 나레이션이 나올 때는 자동으로 작아집니다.")
+    if (use_sfx or use_bgm) and not api_keys.get("ELEVENLABS_API_KEY"):
+        st.caption("ELEVENLABS_API_KEY 가 없어 소리를 만들 수 없습니다. assets/sfx, assets/bgm 에 올린 파일만 사용됩니다.")
+    if st.button(label, key=key):
+        with st.spinner("합성 중… 처음 한 번은 효과음·배경음악 생성까지 포함해 약 3~6분 걸립니다. 화면을 누르지 마세요."):
+            try:
+                from src.assembler import assemble_final_video
+                local_path = assemble_final_video(
+                    state,
+                    elevenlabs_key=api_keys.get("ELEVENLABS_API_KEY", ""),
+                    with_sfx=use_sfx,
+                    with_bgm=use_bgm,
+                )
+                state["final_video_path"] = local_path
+                state["status"] = "done"
+                manager.save_state(state)
+                st.session_state.current_project = state
+                st.success("최종 합성 완료!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"합성 실패: {e}")
+
 
 if step4_done:
     final_path = state["final_video_path"]
@@ -1780,21 +1811,12 @@ if step4_done:
                 )
     else:
         st.caption(f"파일 경로: `{final_path}`")
+    if not step4_locked:
+        with st.expander("🔁 다시 합성 (효과음·배경음악 설정 변경)"):
+            _assemble_controls("🎬 다시 합성", "reassemble_btn")
 elif not step4_locked:
     st.info("영상 클립과 나레이션 음성이 준비되면 아래 버튼으로 최종 영상을 합성합니다.")
-    if st.button("🎬 최종 합성 실행", key="assemble_btn"):
-        with st.spinner("FFmpeg로 합성 중… 클립 다운로드 포함 약 2~5분 소요됩니다."):
-            try:
-                from src.assembler import assemble_final_video
-                local_path = assemble_final_video(state)   # project_dir/final.mp4 반환
-                state["final_video_path"] = local_path
-                state["status"] = "done"
-                manager.save_state(state)
-                st.session_state.current_project = state
-                st.success("최종 합성 완료!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"합성 실패: {e}")
+    _assemble_controls("🎬 최종 합성 실행", "assemble_btn")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
