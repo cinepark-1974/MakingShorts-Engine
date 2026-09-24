@@ -440,7 +440,66 @@ def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str) 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API
 # ─────────────────────────────────────────────────────────────────────────────
-def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = True) -> str:
+def build_audio_mix(video_path: str, narration: str, bgm: str, sfx_events: list,
+                    video_dur: float, out_path: str) -> None:
+    """
+    나레이션 + 배경음악 + 효과음을 섞어 영상에 붙인다.
+      - 나레이션: 기준 음량
+      - 배경음악: 낮게 깔고, 나레이션이 나오는 동안 자동으로 더 작아짐(ducking), 끝 2초 페이드아웃
+      - 효과음  : 각 컷이 시작하는 순간에 한 번
+    sfx_events: [(시작 초, 파일 경로), ...]
+    """
+    inputs = ["-i", video_path]
+    chains, mix = [], []
+    idx = 1
+    nar_label = None
+    if narration:
+        inputs += ["-i", narration]
+        chains.append(f"[{idx}:a]aresample=44100,aformat=channel_layouts=stereo,apad[nar]")
+        nar_label, idx = "nar", idx + 1
+    if bgm:
+        inputs += ["-stream_loop", "-1", "-i", bgm]
+        fade_st = max(0.0, video_dur - 2.0)
+        chains.append(
+            f"[{idx}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{video_dur:.3f},"
+            f"volume=0.30,afade=t=in:d=1.0,afade=t=out:st={fade_st:.3f}:d=2.0[bgmraw]"
+        )
+        if nar_label:
+            chains.append("[nar]asplit=2[nar_mix][nar_key]")
+            chains.append("[bgmraw][nar_key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=400[bgm]")
+            nar_label = "nar_mix"
+        else:
+            chains.append("[bgmraw]anull[bgm]")
+        mix.append("[bgm]")
+        idx += 1
+    if nar_label:
+        mix.append(f"[{nar_label}]")
+    for k, (start, path) in enumerate(sfx_events):
+        inputs += ["-i", path]
+        ms = int(max(0.0, start) * 1000)
+        chains.append(f"[{idx}:a]aresample=44100,aformat=channel_layouts=stereo,"
+                      f"volume=0.55,adelay={ms}|{ms}[sfx{k}]")
+        mix.append(f"[sfx{k}]")
+        idx += 1
+    if not mix:
+        shutil.copy2(video_path, out_path)
+        return
+    chains.append(
+        f"{''.join(mix)}amix=inputs={len(mix)}:duration=longest:normalize=0,"
+        f"alimiter=limit=0.95,atrim=0:{video_dur:.3f}[aout]"
+    )
+    cmd = (["ffmpeg", "-y"] + inputs +
+           ["-filter_complex", ";".join(chains),
+            "-map", "0:v:0", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{video_dur:.3f}", "-movflags", "+faststart", out_path])
+    p = subprocess.run(cmd, capture_output=True)
+    if p.returncode != 0:
+        raise ValueError(f"FFmpeg 오디오 믹스 실패:\n{p.stderr.decode(errors='replace')[-800:]}")
+
+
+def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = True,
+                         elevenlabs_key: str = "", with_sfx: bool = True, with_bgm: bool = True) -> str:
     """
     모든 컷 영상 + 나레이션 → 1080×1920 최종 MP4 (project_dir/final.mp4) 경로 반환.
     나레이션은 끝까지 들어가고, 영상 길이는 나레이션 + 여운 0.8초.
@@ -501,24 +560,24 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
             raise ValueError(f"FFmpeg concat 실패:\n{p.stderr.decode(errors='replace')[-800:]}")
         video_dur = _media_duration(concat)
 
-        # 5. 나레이션 합치기 (끝까지 들어가도록 영상 길이 기준 + 무음 패딩)
-        final = os.path.join(tmp, "final.mp4")
-        if audio_path:
-            p = subprocess.run(
-                ["ffmpeg", "-y", "-i", concat, "-i", audio_path,
-                 "-map", "0:v:0", "-map", "1:a:0",
-                 "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-                 "-af", "apad", "-t", f"{video_dur:.3f}",
-                 "-movflags", "+faststart", final],
-                capture_output=True,
-            )
-            if p.returncode != 0:
-                raise ValueError(f"FFmpeg 오디오 합성 실패:\n{p.stderr.decode(errors='replace')[-800:]}")
-        else:
-            shutil.copy2(concat, final)
-
+        # 5. 소리 합치기: 나레이션(끝까지) + 배경음악 + 컷 시작마다 효과음
         project_dir = state.get("project_dir", "/tmp")
         os.makedirs(project_dir, exist_ok=True)
+        sound_dir = os.path.join(project_dir, "sound")      # 생성한 소리 캐시 (재합성 시 재사용)
+        from src import sound
+        bgm_path = sound.get_bgm(video_dur, elevenlabs_key, sound_dir) if with_bgm else None
+        sfx_events, t = [], 0.0
+        if with_sfx:
+            for (s, _), tgt in zip(items, targets):
+                path = sound.get_sfx(s.get("sfx", ""), elevenlabs_key, sound_dir)
+                if path:
+                    sfx_events.append((t, path))
+                t += tgt
+        print(f"[assembler] 소리: 배경음악 {'있음' if bgm_path else '없음'} · 효과음 {len(sfx_events)}개", flush=True)
+
+        final = os.path.join(tmp, "final.mp4")
+        build_audio_mix(concat, audio_path, bgm_path, sfx_events, video_dur, final)
+
         dest = os.path.join(project_dir, "final.mp4")
         shutil.copy2(final, dest)
         return dest
