@@ -1830,6 +1830,69 @@ elif not step4_locked:
     st.info("영상 클립과 나레이션 음성이 준비되면 아래 버튼으로 최종 영상을 합성합니다.")
     _assemble_controls("🎬 최종 합성 실행", "assemble_btn")
 
+st.markdown("---")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — 섬네일 (9:16, 1080×1920)
+# ─────────────────────────────────────────────────────────────────────────────
+_thumb_path = state.get("thumbnail_path", "")
+_thumb_done = bool(_thumb_path) and os.path.exists(_thumb_path)
+_thumb_locked = not any(
+    (s.get("image_local") and os.path.exists(s.get("image_local", ""))) for s in scenes
+) and not (state.get("final_video_path") and os.path.exists(state.get("final_video_path", "")))
+
+st.markdown(f"""
+<div class="step-header">
+  <div class="step-num {"done" if _thumb_done else ("locked" if _thumb_locked else "")}">
+    {"✓" if _thumb_done else "6"}
+  </div>
+  <div>
+    <div class="step-title">STEP 6 · 섬네일 (9:16)</div>
+    <div class="step-sub">스케치 도판 위에 두 줄 훅 문구 · 1080×1920 PNG</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+if _thumb_locked:
+    st.info("이미지 생성(STEP 2) 또는 최종 합성(STEP 5) 이후 만들 수 있습니다.")
+else:
+    _copy = state.get("thumbnail_copy") or {}
+    with st.expander("✏️ 섬네일 문구 (비워 두면 AI가 대본을 읽고 만듭니다)", expanded=False):
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _l1 = st.text_input("첫째 줄 (9자 이내)", value=_copy.get("line1", ""), key="thumb_l1")
+            _l2 = st.text_input("둘째 줄 (9자 이내)", value=_copy.get("line2", ""), key="thumb_l2")
+        with _c2:
+            _ac = st.text_input("골드로 강조할 단어", value=_copy.get("accent", ""), key="thumb_ac")
+            _sb = st.text_input("아래 설명 (16자 이내)", value=_copy.get("sub", ""), key="thumb_sb")
+    if st.button("🖼 섬네일 만들기" if not _thumb_done else "🔁 섬네일 다시 만들기", key="thumb_btn"):
+        with st.spinner("섬네일 만드는 중… (약 10~20초)"):
+            try:
+                from src.thumbnail import create_thumbnail
+                _manual = {"line1": _l1.strip(), "line2": _l2.strip(),
+                           "accent": _ac.strip(), "sub": _sb.strip()} if _l1.strip() else None
+                _p, _used = create_thumbnail(state, api_keys.get("ANTHROPIC_API_KEY", ""), copy=_manual)
+                state["thumbnail_path"] = _p
+                state["thumbnail_copy"] = _used
+                manager.save_state(state)
+                st.session_state.current_project = state
+                st.rerun()
+            except Exception as e:
+                st.error(f"섬네일 생성 실패: {e}")
+    if _thumb_done:
+        _tc1, _tc2 = st.columns([1, 2])
+        with _tc1:
+            st.image(_thumb_path, use_container_width=True)
+        with _tc2:
+            with open(_thumb_path, "rb") as _tf:
+                st.download_button(
+                    "⬇️ 섬네일 다운로드 (PNG)", data=_tf,
+                    file_name=f"{state.get('project_id', 'thumbnail')}_thumb.png",
+                    mime="image/png", key="thumb_dl",
+                )
+            st.caption("YouTube Studio(PC) 업로드 화면의 Shorts 맞춤 섬네일에 올립니다. "
+                       "현재 YouTube 파트너 프로그램 채널부터 순차 제공 중인 기능입니다.")
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
