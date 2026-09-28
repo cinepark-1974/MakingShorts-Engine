@@ -409,6 +409,7 @@ try:
     from src.seo_keywords import (
         get_keywords_for_chapter,
         get_trending_keywords,
+        get_daily_topics,
         GRADE_LABEL,
         ALL_CHAPTERS as SEO_CHAPTERS,
     )
@@ -430,6 +431,15 @@ def needs_ai_image(scene: dict) -> bool:
         return vs == "ai"
     # 폴백: scene_type 기반
     return scene.get("scene_type", "") in _AI_SCENE_TYPES
+
+
+def unsplash_for_scene(scene: dict, all_scenes: list, access_key: str) -> str:
+    """이 씬에 맞는 Unsplash 사진 — 다른 컷에서 이미 쓴 사진과 지금 사진은 건너뛴다."""
+    from src.image_search import search_unsplash_pick, scene_to_query
+    used = [s.get("_unsplash_id") for s in all_scenes if s.get("_unsplash_id")]
+    url, pid = search_unsplash_pick(scene_to_query(scene), access_key, exclude_ids=used)
+    scene["_unsplash_id"] = pid
+    return url
 
 
 def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
@@ -458,6 +468,11 @@ def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
             image_prompt=prompt,
         )
         return url, "flux-illust"
+
+    # 1컷 훅 → 고품질 포토리얼 히어로샷 (flux-dev)
+    if scene_type == "HOOK":
+        url = generate_reference_image(replicate_token, prompt, hero_mode=True)
+        return url, "flux-hero"
 
     # 그 외 (ASSEMBLY 포함) → FLUX Schnell (빠른 레퍼런스, 모든 씬 통일)
     url = generate_reference_image(replicate_token, prompt)
@@ -718,9 +733,10 @@ if st.session_state.current_project is None:
         del st.session_state["_seo_pending_topic"]
 
     # 주제 입력 — 가장 크게, 맨 위
+    if "topic_text_input" not in st.session_state:
+        st.session_state["topic_text_input"] = st.session_state.get("seo_selected_topic", "")
     topic = st.text_input(
         "어떤 커피 이야기를 만들까요?",
-        value=st.session_state.get("seo_selected_topic", ""),
         placeholder="예: 아이스아메리카노와 롱블랙의 차이   |   예가체프 내추럴 프로세싱의 비밀",
         help="구체적인 키워드나 질문 형태로 입력할수록 대본 품질이 높아집니다.",
         key="topic_text_input",
@@ -754,46 +770,35 @@ if st.session_state.current_project is None:
     if SEO_MODULE_OK:
         with st.expander("💡 SEO 인기 키워드 추천 (클릭하면 자동 입력됩니다)", expanded=False):
             # 탭: 큐레이션 / 실시간
-            tab_bank, tab_live = st.tabs(["📚 검증된 고검색 키워드", "📡 YouTube 실시간 트렌드"])
+            tab_bank, tab_live = st.tabs(["🗓 오늘의 추천 주제", "📡 YouTube 실시간 트렌드"])
 
             with tab_bank:
-                # 챕터가 선택된 경우 해당 챕터 키워드, 아니면 전체 랜덤 표시
-                if chapter and chapter in [v for v in CHAPTERS.values() if v and v != "MISC"]:
-                    # 선택된 챕터명으로 SEO 뱅크 조회
-                    _seo_chapter_key = chapter.split(" ", 1)[-1].strip() if " " in chapter else chapter
-                    _g_key = api_keys.get("GOOGLE_API_KEY", "")
-                    _kw_list = get_keywords_for_chapter(_seo_chapter_key, api_key=_g_key)
-                    if not _kw_list:
-                        # 직접 챕터 전체 이름으로 재시도
-                        _kw_list = get_keywords_for_chapter(chapter, api_key=_g_key)
-                else:
-                    # 챕터 미선택 → 모든 챕터에서 A등급만 모아서 표시
-                    _g_key   = api_keys.get("GOOGLE_API_KEY", "")
-                    _kw_list = []
-                    for _cat_kws in [get_keywords_for_chapter(c, api_key=_g_key) for c in SEO_CHAPTERS]:
-                        _kw_list.extend([k for k in _cat_kws if k["grade"] == "A"])
-
-                # 챕터 미선택 시 여러 챕터에서 동일 폴백 항목이 중복 추가될 수 있으므로 topic 기준 중복 제거
-                _seen_topics: set = set()
-                _kw_list_deduped = []
-                for _k in _kw_list:
-                    if _k["topic"] not in _seen_topics:
-                        _seen_topics.add(_k["topic"])
-                        _kw_list_deduped.append(_k)
-                _kw_list = _kw_list_deduped
-
-                if _kw_list:
-                    st.caption("아래 키워드를 클릭하면 주제 입력창에 자동으로 채워집니다.")
-                    _cols = st.columns(2)
-                    for _i, _kw in enumerate(_kw_list):
-                        _grade_tag = GRADE_LABEL.get(_kw["grade"], "")
-                        _label = f"{_grade_tag}  {_kw['topic']}"
-                        with _cols[_i % 2]:
-                            if st.button(_label, key=f"seo_bank_{_i}", use_container_width=True):
-                                st.session_state["_seo_pending_topic"] = _kw["topic"]
-                                st.rerun()
-                else:
-                    st.info("선택한 챕터에 해당하는 키워드 뱅크가 없습니다. 챕터를 선택하거나 직접 입력해 주세요.")
+                # 매일 바뀌는 추천 주제: YouTube 자동완성(실제 검색어) + Claude 기획, 이미 만든 주제 제외
+                _refresh = st.button("🔄 다른 주제 받기", key="seo_daily_refresh")
+                if _refresh or "seo_daily" not in st.session_state:
+                    with st.spinner("오늘의 주제를 고르는 중… (약 10초)"):
+                        st.session_state["seo_daily"] = get_daily_topics(
+                            api_keys.get("ANTHROPIC_API_KEY", ""),
+                            made_titles=[p["title"] for p in manager.list_projects()],
+                            refresh=_refresh,
+                        )
+                _daily = st.session_state["seo_daily"]
+                _kw_list = _daily.get("topics", [])
+                st.caption(
+                    f"{_daily.get('date', '')} 기준 · "
+                    + (f"YouTube 검색어 {_daily.get('signals', 0)}개 반영 · " if _daily.get("signals") else "검색어 수집 실패 → AI 기획만 반영 · ")
+                    + "📡 = 실제 검색어에서 나온 주제 · 이미 만든 주제는 제외"
+                )
+                if _daily.get("note"):
+                    st.caption(_daily["note"])
+                _cols = st.columns(2)
+                for _i, _kw in enumerate(_kw_list):
+                    _tag = "📡" if _kw.get("source") == "youtube" else GRADE_LABEL.get(_kw.get("grade", ""), "💡")
+                    with _cols[_i % 2]:
+                        if st.button(f"{_tag}  {_kw['topic']}", key=f"seo_bank_{_i}",
+                                     use_container_width=True, help=_kw.get("signal") or None):
+                            st.session_state["_seo_pending_topic"] = _kw["topic"]
+                            st.rerun()
 
             with tab_live:
                 # 씨앗 키워드: 챕터 첫 단어 or 기본값 "커피"
@@ -812,10 +817,23 @@ if st.session_state.current_project is None:
                         _label = f"{_src_tag}  {_kw['topic']}"
                         with _live_cols[_j % 2]:
                             if st.button(_label, key=f"seo_live_{_j}", use_container_width=True):
-                                st.session_state["seo_selected_topic"] = _kw["topic"]
+                                st.session_state["_seo_pending_topic"] = _kw["topic"]
                                 st.rerun()
+                elif "seo_live_keywords" in st.session_state:
+                    st.warning("YouTube 자동완성을 받아오지 못했습니다. 잠시 뒤 다시 조회해 주세요.")
                 else:
                     st.info("'실시간 조회' 버튼을 눌러 YouTube 트렌드 키워드를 가져오세요.")
+
+    # 엔딩 멘트 (12컷 고정 문장)
+    from src.prompts import CLOSING_PRESETS
+    _closing_opts = CLOSING_PRESETS + ["직접 입력"]
+    _closing_pick = st.selectbox("엔딩 멘트 (마지막 컷)", _closing_opts, index=0, key="closing_pick",
+                                 help="자막에는 '너도나도아는커피'로, 성우 낭독은 '너도나도 아는 커피'로 띄어 읽습니다.")
+    if _closing_pick == "직접 입력":
+        _closing_text = st.text_input("엔딩 멘트 직접 입력", value="", key="closing_custom",
+                                      placeholder="예: 알고 마시면 더 맛있습니다. 너도나도아는커피.").strip()
+    else:
+        _closing_text = _closing_pick
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
@@ -843,11 +861,13 @@ if st.session_state.current_project is None:
                         chapter=chapter_for_api,
                         topic=topic.strip(),
                         progress=st.write,
+                        closing=_closing_text,
                     )
                     # state 업데이트
                     new_state["full_narration"] = result.get("full_narration", "")
                     new_state["scenes"] = result.get("scenes", [])
                     new_state["verification"] = result.get("verification", {})
+                    new_state["closing"] = result.get("closing", _closing_text)
                     new_state["status"] = "script_ready"
                     manager.save_state(new_state)
 
@@ -1054,6 +1074,7 @@ if step1_done:
                             chapter=state["chapter"],
                             topic=state["topic"],
                             progress=st.write,
+                            closing=state.get("closing", ""),
                         )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
@@ -1219,8 +1240,7 @@ if not step2_locked:
                     )
                 else:
                     # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
-                    from src.image_search import search_unsplash, scene_to_query
-                    url = search_unsplash(scene_to_query(scene), _unsplash_key)
+                    url = unsplash_for_scene(scene, state["scenes"], _unsplash_key)
                     _ai_src = "unsplash"
                 # 어느 소스로 생성했는지 기록 (썸네일 캡션·수동 교체 참고용)
                 scene["_img_source"] = _ai_src
@@ -1539,37 +1559,39 @@ else:
                     new_ref = scene.get("image_path", "")  # 원본 주소 유지 (로컬 사본은 image_local 에 따로 보관)
 
                     # ── 이미지 교체 옵션 ────────────────────────────────────
+                    # AI 씬(훅·도판): 주 버튼 = AI 다시 생성, 보조 = 사진으로 교체
+                    # 사진 씬        : 주 버튼 = 다른 사진,     보조 = AI로 교체
+                    _is_ai_scene = needs_ai_image(scene)
+                    _swap_btn = _ai_swap_btn = False
                     if _unsplash_key:
                         _sw_c1, _sw_c2 = st.columns(2)
                         with _sw_c1:
-                            _swap_btn = st.button(
-                                "📷 다른 사진", key=f"swap_img_{sno}",
-                                use_container_width=True,
+                            _main_clicked = st.button(
+                                "🎨 다시 생성" if _is_ai_scene else "📷 다른 사진",
+                                key=f"swap_img_{sno}", use_container_width=True,
                                 disabled=st.session_state.gen_running,
                             )
                         with _sw_c2:
-                            _ai_swap_btn = st.button(
-                                "🤖 AI로 교체", key=f"ai_img_{sno}",
-                                use_container_width=True,
+                            _alt_clicked = st.button(
+                                "📷 사진으로 교체" if _is_ai_scene else "🤖 AI로 교체",
+                                key=f"ai_img_{sno}", use_container_width=True,
                                 disabled=st.session_state.gen_running,
                             )
+                        if _is_ai_scene:
+                            _ai_swap_btn, _swap_btn = _main_clicked, _alt_clicked
+                        else:
+                            _swap_btn, _ai_swap_btn = _main_clicked, _alt_clicked
                     else:
-                        _swap_btn = st.button(
-                            "🖼 다시 생성", key=f"swap_img_{sno}",
+                        _ai_swap_btn = st.button(
+                            "🎨 다시 생성", key=f"swap_img_{sno}",
                             use_container_width=True,
                             disabled=st.session_state.gen_running,
                         )
-                        _ai_swap_btn = False
 
                     if _swap_btn:
                         with st.spinner(f"#{sno:02d} 다른 사진 검색 중…"):
                             try:
-                                from src.image_search import search_unsplash, scene_to_query
-                                _pg = scene.get("_unsplash_page", 1) + 1
-                                url = search_unsplash(
-                                    scene_to_query(scene), _unsplash_key, page=_pg
-                                )
-                                scene["_unsplash_page"]      = _pg
+                                url = unsplash_for_scene(scene, state["scenes"], _unsplash_key)
                                 scene["image_path"]          = url
                                 media_store.forget_image(scene)
                                 media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
@@ -1652,8 +1674,7 @@ else:
                     if _unsplash_single:
                         with st.spinner(f"#{sno:02d} Unsplash 검색 중…"):
                             try:
-                                from src.image_search import search_unsplash, scene_to_query
-                                url = search_unsplash(scene_to_query(scene), _unsplash_key)
+                                url = unsplash_for_scene(scene, state["scenes"], _unsplash_key)
                                 scene["image_path"]          = url
                                 media_store.forget_image(scene)
                                 media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
