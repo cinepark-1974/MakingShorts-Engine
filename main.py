@@ -515,6 +515,12 @@ def init_session():
 
 init_session()
 
+# 생성 락이 걸린 채 화면이 다시 실행되면(버튼 클릭·새로고침·연결 재접속) 락이 풀리지 않아
+# 버튼이 계속 회색으로 멈춰 있던 문제 → 3분 넘은 락은 끊긴 작업으로 보고 푼다.
+if st.session_state.get("gen_running") and \
+        time.time() - st.session_state.get("gen_running_since", 0) > 180:
+    st.session_state.gen_running = False
+
 # ── StateManager 싱글턴 ───────────────────────────────────────────────────────
 @st.cache_resource
 def get_manager():
@@ -1192,80 +1198,85 @@ if not step2_locked:
 
     # ── 상태 새로고침 버튼 ────────────────────────────────────────────────────
     if st.button("🔄 상태 새로고침", key="img_state_refresh"):
+        st.session_state.gen_running = False     # 멈춘 락 해제
         try:
-            refreshed = manager.load_state(state["project_dir"])
-            st.session_state.current_project = refreshed
-            st.rerun()
+            st.session_state.current_project = manager.load_state(state["project_dir"])
         except Exception:
-            st.warning("상태 파일을 불러오지 못했습니다.")
+            pass                                  # 파일이 없으면 지금 화면의 상태를 그대로 쓴다
+        st.rerun()
 
     if img_gen_btn and not st.session_state.gen_running:
         st.session_state.gen_running = True
-        prog      = st.empty()
-        err_box   = st.empty()
-        done_cnt_local = 0
-        all_ok = True
+        st.session_state.gen_running_since = time.time()
+        try:
+            prog      = st.empty()
+            err_box   = st.empty()
+            done_cnt_local = 0
+            all_ok = True
 
-        for i, scene in enumerate(next_batch):
-            prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-            if not prompt:
-                continue
-            sno = scene["scene_no"]
-            prog.info(f"🖼 {sno}컷 생성 중… ({i+1}/{len(next_batch)}컷)")
+            for i, scene in enumerate(next_batch):
+                prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
+                if not prompt:
+                    continue
+                sno = scene["scene_no"]
+                prog.info(f"🖼 {sno}컷 생성 중… ({i+1}/{len(next_batch)}컷)")
 
-            try:
-                # 소스 결정:
-                #   "모두 FLUX AI"         → 항상 FLUX
-                #   "모두 Unsplash"        → 항상 Unsplash
-                #   "자동 판단" or 키없음  → visual_source / scene_type 기반 분기
-                _rep_key_ok = bool(api_keys.get("REPLICATE_API_TOKEN", ""))
-                if not _unsplash_key and _rep_key_ok:
-                    _use_flux = True
-                elif not _unsplash_key and not _rep_key_ok:
-                    # Replicate도 Unsplash도 없으면 오류 방지: 빈 URL → error 처리
-                    raise RuntimeError("이미지 생성 불가: REPLICATE_API_TOKEN 과 UNSPLASH_ACCESS_KEY 가 모두 없습니다.")
-                elif "FLUX" in _img_mode and "모두" in _img_mode:
-                    _use_flux = True
-                elif "Unsplash" in _img_mode and "모두" in _img_mode:
-                    _use_flux = False
-                else:  # 자동 판단
-                    _use_flux = needs_ai_image(scene)
+                try:
+                    # 소스 결정:
+                    #   "모두 FLUX AI"         → 항상 FLUX
+                    #   "모두 Unsplash"        → 항상 Unsplash
+                    #   "자동 판단" or 키없음  → visual_source / scene_type 기반 분기
+                    _rep_key_ok = bool(api_keys.get("REPLICATE_API_TOKEN", ""))
+                    if not _unsplash_key and _rep_key_ok:
+                        _use_flux = True
+                    elif not _unsplash_key and not _rep_key_ok:
+                        # Replicate도 Unsplash도 없으면 오류 방지: 빈 URL → error 처리
+                        raise RuntimeError("이미지 생성 불가: REPLICATE_API_TOKEN 과 UNSPLASH_ACCESS_KEY 가 모두 없습니다.")
+                    elif "FLUX" in _img_mode and "모두" in _img_mode:
+                        _use_flux = True
+                    elif "Unsplash" in _img_mode and "모두" in _img_mode:
+                        _use_flux = False
+                    else:  # 자동 판단
+                        _use_flux = needs_ai_image(scene)
 
-                if _use_flux:
-                    # AI 생성: 씬 타입에 따라 FLUX Schnell/Dev/Pro로 자동 분기 (Replicate)
-                    url, _ai_src = smart_ai_image(
-                        scene,
-                        api_keys.get("REPLICATE_API_TOKEN", ""),
-                        api_keys.get("GOOGLE_API_KEY", ""),
-                    )
-                else:
-                    # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
-                    url = unsplash_for_scene(scene, state["scenes"], _unsplash_key)
-                    _ai_src = "unsplash"
-                # 어느 소스로 생성했는지 기록 (썸네일 캡션·수동 교체 참고용)
-                scene["_img_source"] = _ai_src
+                    if _use_flux:
+                        # AI 생성: 씬 타입에 따라 FLUX Schnell/Dev/Pro로 자동 분기 (Replicate)
+                        url, _ai_src = smart_ai_image(
+                            scene,
+                            api_keys.get("REPLICATE_API_TOKEN", ""),
+                            api_keys.get("GOOGLE_API_KEY", ""),
+                        )
+                    else:
+                        # Unsplash 라이센스 프리 실사 사진 (산지·카페·분위기)
+                        url = unsplash_for_scene(scene, state["scenes"], _unsplash_key)
+                        _ai_src = "unsplash"
+                    # 어느 소스로 생성했는지 기록 (썸네일 캡션·수동 교체 참고용)
+                    scene["_img_source"] = _ai_src
 
-                # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
-                scene["image_path"]          = url
-                media_store.forget_image(scene)
-                media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
-                scene["image_status"]        = "done"
-                scene["reference_image_url"] = url
-                scene.pop("image_error", None)
-                done_cnt_local += 1
+                    # scene은 state["scenes"] 안의 같은 dict 참조 — 직접 수정
+                    scene["image_path"]          = url
+                    media_store.forget_image(scene)
+                    media_store.keep_image(scene, state.get("project_dir", "projects/tmp"))
+                    scene["image_status"]        = "done"
+                    scene["reference_image_url"] = url
+                    scene.pop("image_error", None)
+                    done_cnt_local += 1
 
-            except Exception as ex:
-                all_ok = False
-                scene["image_status"] = "error"
-                scene["image_error"]  = str(ex)
-                err_box.error(f"#{sno:02d} 수집 실패: {ex}")
+                except Exception as ex:
+                    all_ok = False
+                    scene["image_status"] = "error"
+                    scene["image_error"]  = str(ex)
+                    err_box.error(f"#{sno:02d} 수집 실패: {ex}")
 
-            # 씬마다 즉시 저장 — 에러는 화면에 표시
-            try:
-                manager.save_state(state)
-            except Exception as save_ex:
-                err_box.error(f"상태 저장 실패: {save_ex}")
-                all_ok = False
+                # 씬마다 즉시 저장 — 에러는 화면에 표시
+                try:
+                    manager.save_state(state)
+                except Exception as save_ex:
+                    err_box.error(f"상태 저장 실패: {save_ex}")
+                    all_ok = False
+        finally:
+            # 중간에 화면이 다시 실행돼 끊겨도 락은 반드시 푼다
+            st.session_state.gen_running = False
 
         prog.empty()
         st.session_state.gen_running = False
