@@ -130,19 +130,36 @@ def _get_titles(api_key: str) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부: YouTube 자동완성 (무료, API 키 불필요)
 # ─────────────────────────────────────────────────────────────────────────────
-def _autocomplete(seed: str, count: int = 10) -> list[str]:
-    try:
-        url = "https://suggestqueries.google.com/complete/search"
-        params = {"client": "youtube", "q": seed, "hl": "ko", "gl": "KR", "ds": "yt"}
-        resp = requests.get(url, params=params, timeout=5)
-        raw  = resp.text
-        # 응답 형식: function(["seed", [["kw1",...], ...]])
-        start = raw.index("[")
-        data  = json.loads(raw[start:])
-        suggestions = data[1]
-        return [s[0] for s in suggestions if isinstance(s, list)][:count]
-    except Exception:
+def _parse_suggest(raw: str) -> list[str]:
+    """자동완성 응답 파싱. JSONP(window.google.ac.h([...])) 와 순수 JSON 모두 처리."""
+    raw = (raw or "").strip()
+    a, b = raw.find("["), raw.rfind("]")
+    if a == -1 or b == -1:
         return []
+    data = json.loads(raw[a:b + 1])
+    out = []
+    for s in (data[1] if len(data) > 1 else []):
+        if isinstance(s, list) and s:
+            out.append(str(s[0]))
+        elif isinstance(s, str):
+            out.append(s)
+    return out
+
+
+def _autocomplete(seed: str, count: int = 10) -> list[str]:
+    """YouTube 검색창 자동완성 (비공식·무료). 실패하면 빈 리스트."""
+    url = "https://suggestqueries.google.com/complete/search"
+    for client in ("youtube", "firefox"):
+        try:
+            params = {"client": client, "q": seed, "hl": "ko", "gl": "KR", "ds": "yt"}
+            resp = requests.get(url, params=params, timeout=5,
+                                headers={"User-Agent": "Mozilla/5.0"})
+            items = [x for x in _parse_suggest(resp.text) if x.strip() and x.strip() != seed.strip()]
+            if items:
+                return items[:count]
+        except Exception as e:
+            print(f"[seo_keywords] 자동완성 실패 ({client}, {seed}): {e}", flush=True)
+    return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,3 +214,84 @@ def get_trending_keywords(seed: str, max_realtime: int = 8) -> list[dict]:
         {"topic": s, "grade": "A", "source": "youtube"}
         for s in suggestions
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 오늘의 추천 주제 (매일 바뀜, 이미 만든 주제는 제외)
+# ─────────────────────────────────────────────────────────────────────────────
+TOPIC_SEEDS = ["커피", "아메리카노", "라떼", "원두", "에스프레소", "핸드드립", "카페인",
+               "콜드브루", "디카페인", "로스팅", "스페셜티 커피", "커피 머신", "라떼아트", "카페"]
+
+_TOPIC_SYSTEM = """당신은 유튜브 쇼츠 채널 '너도나도아는커피'(커피 과학·역사 해설, 60~75초)의 기획자입니다.
+사람들이 실제로 검색하는 말(자동완성 목록)을 참고해, 쇼츠 한 편으로 만들 주제 10개를 제안하세요.
+- 주제는 "왜/어떻게/차이/비밀" 처럼 궁금증이 생기는 한 줄, 22자 이내.
+- SCA 기준 등 사실로 설명할 수 있는 주제만. 가격·매장 추천·제품 광고 주제는 제외.
+- [이미 만든 주제]와 겹치거나 비슷한 것은 제외.
+- 자동완성 목록에서 착안한 주제는 signal 에 그 검색어를 그대로 적고, 아니면 빈 문자열.
+JSON 만 출력: {"topics": [{"topic": "", "signal": ""}]}"""
+
+
+def _topics_cache_file(day: str) -> Path:
+    return Path(f"/tmp/coffee_topics_{day}.json")
+
+
+def get_daily_topics(anthropic_key: str, made_titles: list = None,
+                     refresh: bool = False, max_topics: int = 10) -> dict:
+    """
+    반환: {"date": "YYYY-MM-DD", "topics": [{"topic", "grade", "source", "signal"}], "signals": n, "note": ""}
+    - 매일 날짜가 바뀌면 새로 만든다. refresh=True 면 다른 검색어 묶음으로 다시 만든다.
+    - 자동완성을 못 받으면 AI 기획만으로, AI 도 실패하면 기본 목록.
+    """
+    import datetime
+    import random
+    day = datetime.date.today().isoformat()
+    cache = _topics_cache_file(day)
+    if cache.exists() and not refresh:
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    rnd = random.Random(time.time() if refresh else day)
+    seeds = rnd.sample(TOPIC_SEEDS, 5)
+    signals = []
+    for sd in seeds:
+        signals.extend(_autocomplete(sd, count=8))
+    signals = list(dict.fromkeys(signals))[:40]
+
+    result = {"date": day, "topics": [], "signals": len(signals), "note": ""}
+    if anthropic_key:
+        try:
+            import anthropic
+            made = "\n".join(f"- {t}" for t in (made_titles or [])[:40]) or "- 없음"
+            sig = "\n".join(f"- {t}" for t in signals) or "- (자동완성 없음: 커피 과학 상식에서 고르세요)"
+            user = f"[오늘 날짜] {day}\n[자동완성 검색어]\n{sig}\n\n[이미 만든 주제]\n{made}"
+            resp = anthropic.Anthropic(api_key=anthropic_key).messages.create(
+                model="claude-sonnet-4-6", max_tokens=1500, system=_TOPIC_SYSTEM,
+                messages=[{"role": "user", "content": user}],
+            )
+            raw = "".join(getattr(b, "text", "") for b in resp.content)
+            data = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+            for t in data.get("topics", [])[:max_topics]:
+                topic = str(t.get("topic", "")).strip()
+                if not topic:
+                    continue
+                signal = str(t.get("signal", "")).strip()
+                result["topics"].append({
+                    "topic": topic, "signal": signal,
+                    "grade": "A" if signal else "B",
+                    "source": "youtube" if signal else "ai",
+                })
+        except Exception as e:
+            result["note"] = f"AI 추천 실패: {e}"
+            print(f"[seo_keywords] 오늘의 주제 생성 실패: {e}", flush=True)
+    if not result["topics"]:
+        pool = _FALLBACK[:]
+        rnd.shuffle(pool)
+        result["topics"] = pool[:6]
+        result["note"] = result["note"] or "ANTHROPIC_API_KEY 없음 — 기본 목록"
+    try:
+        cache.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return result

@@ -30,6 +30,7 @@ scene_type에 따라 아래 규칙으로 자동 결정한다:
   EXTRACTION  → "ai"    (추출 장면, 크레마 — flux-dev 편집 일러스트)
   ORIGIN_MAP  → "photo" (실제 산지 풍경, 농장, 지형)
   CINEMATIC   → "photo" (카페 분위기, 역사 장면, 바리스타 실루엣)
+  HOOK        → "ai"    (1컷 전용. 스크롤을 멈추게 하는 극적인 첫 장면 — 포토리얼 히어로샷)
 
 [AI 이미지 작성 절대 규칙 — visual_source: "ai" 씬 전용]
 image_prompt는 FLUX AI 이미지 생성용 영문 프롬프트다.
@@ -58,7 +59,9 @@ image_prompt는 FLUX AI 이미지 생성용 영문 프롬프트다.
 
 [실사 씬 — visual_source: "photo" 씬]
 image_prompt는 Unsplash 검색어 역할을 한다.
-간결한 영문 키워드로 작성한다. 예: "coffee farm Ethiopia mountain misty"
+영문 명사 키워드 3~6개. 피사체를 맨 앞에 쓰고 카메라·움직임 표현은 쓰지 않는다.
+예: "coffee farm Ethiopia mountain misty" / "barista pouring espresso copper machine"
+photo 씬끼리 같은 검색어를 쓰지 않는다 (같은 사진이 반복된다).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [씬 유형 자동 분류 — 6가지]
@@ -294,6 +297,29 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
      color contrast becoming more vivid, condensation forming on glass,
      warm cinematic lighting, 9:16 vertical 4K"
 
+▶ TYPE H — HOOK (1컷 전용, 반드시 visual_source: "ai")
+  목적: 첫 1초에 스크롤을 멈추게 한다. 주제의 핵심 피사체를 가장 극적인 한 순간으로 보여준다.
+  image_prompt 작성 규칙 (영문, 사진 한 장을 확정적으로 묘사):
+    ① 피사체 하나를 정확히 지정한다. 비교 주제면 둘까지. 무엇이, 어떤 상태로, 어떤 동작 중인지 한 가지만 쓴다.
+    ② 주제에서만 나올 수 있는 결정적 순간 하나를 멈춘 장면으로 쓴다 (frozen mid-motion).
+       예) 롱블랙 → 에스프레소 줄기가 얼음물 표면에 닿아 갈색 구름으로 피어오르는 순간
+           디카페인 → 녹색 생두가 물속에서 부풀어 오르며 기포가 올라오는 순간
+    ③ 조명: single hard rim light from behind, deep black background, high contrast.
+    ④ 구도: extreme close-up 또는 low-angle hero shot, 피사체는 화면 위쪽 절반 중앙,
+       화면 아래 1/3은 빈 검은 공간 (자막 자리).
+    ⑤ 렌즈: macro 100mm lens, 1/8000s freeze motion, photorealistic.
+    ⑥ 금지: "A or B" 같은 선택지, 모호한 표현(slightly, kind of, maybe), 카페 실내 배경, 사람 얼굴, 글자, 로고.
+  예시 image_prompt:
+    "Extreme macro of a single espresso stream pouring into a tall glass of ice water, the dark stream
+     striking the surface and blooming into a swirling brown cloud inside the clear water, frozen
+     mid-motion at 1/8000s, glossy ice cubes catching the light, single hard rim light from behind,
+     deep black background, subject centered in the upper half, empty black space in the lower third,
+     macro 100mm lens, photorealistic, no text, no people"
+  flow_prompt 패턴:
+    "slow push-in, the brown cloud keeps unfurling through the water, ice cubes drift,
+     rim light glints on the glass, dark background stays black, 9:16 vertical"
+  overlay_text: 훅 질문을 8자 이내로 (예: "순서가 맛을 바꾼다?")
+
 ▶ TYPE F — CINEMATIC (역사 · 문화 · 스토리 · 분위기)
   트리거: 역사, 기원, 전설, 카페, 문화, 시대, 유래, 퍼졌다, 전파
   visual_source: "photo"
@@ -345,7 +371,8 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
       · 쉼표는 실제로 숨을 쉬는 자리에만 찍는다.
 
 ▶ 오프닝(1씬): 멈춰 서게 만드는 의외의 사실이나 질문.
-▶ 클로징(12씬): 반드시 "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다." 로 끝낸다.
+▶ 11씬: 전체를 한 문장으로 정리하는 결론.
+▶ 12씬: 엔딩 멘트 전용. narration 은 정확히 "{{CLOSING}}" 한 문장만 쓴다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [12컷 구성 원칙]
@@ -353,7 +380,7 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
 정보 전달이 목적이므로 12컷 중 최소 7컷은 반드시 인포그래픽(AI 생성) 씬이어야 한다.
 실사(photo) 씬은 오프닝·클로징 분위기 연출용으로 최대 4~5컷으로 제한한다.
 
-컷 1       : 오프닝 훅 — 강한 질문 or 반전 사실 (TYPE F or A, visual_source: "photo" or "ai")
+컷 1       : 오프닝 훅 — 강한 질문 or 반전 사실 (반드시 TYPE H — HOOK, visual_source: "ai")
 컷 2       : 핵심 비주얼 — 주제 전체 조감 (TYPE E or A, visual_source: "ai")
 컷 3       : 배경·원산지·역사 (TYPE C or F, visual_source: "photo")
 컷 4~5     : 핵심 과학·구조 설명 (TYPE B or D, visual_source: "ai")
@@ -451,7 +478,7 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
   ]
 }
 
-scene_type    : ASSEMBLY / MACHINE / ORIGIN_MAP / EXTRACTION / SCIENCE_DATA / CINEMATIC 중 하나
+scene_type    : HOOK(1컷 전용) / ASSEMBLY / MACHINE / ORIGIN_MAP / EXTRACTION / SCIENCE_DATA / CINEMATIC 중 하나
 visual_source : "ai" (FLUX AI 생성) | "photo" (Unsplash 실사) — scene_type 규칙에 따라 결정
 image_path    : 생성 전 빈 문자열, 시스템이 자동 채움
 image_status  : pending 고정 출력, 시스템이 자동 변경
@@ -463,13 +490,29 @@ impact_whoosh | tech_beep | steam_hiss | coffee_pour | ambient_cafe | deep_bass 
 
 
 SCRIPT_MODEL = "claude-sonnet-4-6"
-CLOSING_LINE = "너도나도아는커피, 오늘도 한 잔 더 알아갔습니다."
+# 엔딩 멘트 후보 (자막용, 낭독용). 낭독용은 브랜드명을 띄어 써서 자연스럽게 읽히게 한다.
+BRAND = "너도나도아는커피"
+BRAND_TTS = "너도나도 아는 커피"
+CLOSING_PRESETS = [
+    "알고 마시면 더 맛있습니다. 너도나도아는커피.",
+    "커피 한 잔의 과학, 너도나도아는커피였습니다.",
+    "오늘 이야기가 맛있었다면, 너도나도아는커피.",
+]
+DEFAULT_CLOSING = CLOSING_PRESETS[0]
+
+
+def closing_tts(text: str) -> str:
+    return (text or DEFAULT_CLOSING).replace(BRAND, BRAND_TTS)
+
+
+def _system(closing: str) -> str:
+    return SYSTEM_INSTRUCTION.replace("{{CLOSING}}", closing or DEFAULT_CLOSING)
 POINTER_PHRASES = ["보시다시피", "왼쪽이", "오른쪽이", "단면을 보면", "위에서부터",
                    "숫자로 보면", "이 비율입니다", "이 순서대로", "화면을 보면", "여기를 보면"]
 TTS_CHARS_PER_SEC = 4.9          # ElevenLabs 실측 (project_10: 236자 / 48.5초)
 TOTAL_MIN, TOTAL_MAX = 310, 380  # 약 65~75초
 SCENE_MIN, SCENE_MAX = 18, 40
-_AI_TYPES = {"ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
+_AI_TYPES = {"HOOK", "ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -513,7 +556,7 @@ def _call_json(client, system: str, user: str, max_tokens: int = 12000, retries:
 # ─────────────────────────────────────────────────────────────────────────────
 # 1) 규칙 검사 (코드로 확실하게 잡을 수 있는 것)
 # ─────────────────────────────────────────────────────────────────────────────
-def lint_script(data: dict) -> list:
+def lint_script(data: dict, closing: str = "") -> list:
     """대본 규칙 위반 목록을 돌려준다. 빈 리스트면 통과."""
     issues = []
     scenes = data.get("scenes") or []
@@ -558,8 +601,22 @@ def lint_script(data: dict) -> list:
     em = sum((sc.get("narration_tts") or "").count("—") for sc in scenes)
     if em > 2:
         issues.append(f"줄표(—)가 {em}번 — 최대 2번.")
-    if scenes and CLOSING_LINE not in (scenes[-1].get("narration_tts") or ""):
-        issues.append(f"12씬이 '{CLOSING_LINE}' 로 끝나지 않습니다.")
+    if scenes:
+        first = scenes[0]
+        if first.get("scene_type") != "HOOK" or first.get("visual_source") != "ai":
+            issues.append("1씬은 scene_type 'HOOK', visual_source 'ai' 여야 합니다 (훅 히어로샷 규칙).")
+        if re.search(r"\b(or|slightly|maybe|kind of)\b", first.get("image_prompt", ""), re.I):
+            issues.append("1씬 image_prompt 에 선택지·모호한 표현(or / slightly / maybe)이 있습니다.")
+    _photo_q = [(sc.get("scene_no"), (sc.get("image_prompt") or "").strip().lower())
+                for sc in scenes if sc.get("visual_source") == "photo"]
+    _seen_q = {}
+    for n, q in _photo_q:
+        if q and q in _seen_q:
+            issues.append(f"{_seen_q[q]}씬과 {n}씬의 사진 검색어가 같습니다 → 같은 사진이 나옵니다.")
+        _seen_q.setdefault(q, n)
+    want = closing_tts(closing)
+    if scenes and want not in (scenes[-1].get("narration_tts") or ""):
+        issues.append(f"12씬 낭독이 엔딩 멘트 '{want}' 가 아닙니다.")
     return issues
 
 
@@ -625,19 +682,19 @@ REVISE_RULES = """당신은 '너도나도아는커피' 대본 수석 에디터�
 - 설명 없이 JSON 전체만 출력합니다."""
 
 
-def revise_script(client, data: dict, issues: list, facts: dict) -> dict:
+def revise_script(client, data: dict, issues: list, facts: dict, closing: str = "") -> dict:
     user = (
         "[규칙 위반]\n" + ("\n".join(f"- {i}" for i in issues) or "- 없음") +
         "\n\n[팩트체크 결과]\n" + json.dumps(facts.get("claims", []), ensure_ascii=False, indent=1) +
         "\n\n[초안 JSON]\n" + json.dumps(data, ensure_ascii=False)
     )
-    return _call_json(client, SYSTEM_INSTRUCTION + "\n\n" + REVISE_RULES, user, max_tokens=14000)
+    return _call_json(client, _system(closing) + "\n\n" + REVISE_RULES, user, max_tokens=14000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API
 # ─────────────────────────────────────────────────────────────────────────────
-def _finalize(data: dict) -> dict:
+def _finalize(data: dict, closing: str = "") -> dict:
     required = {"chapter", "title", "scenes"}
     missing = required - data.keys()
     if missing:
@@ -655,6 +712,10 @@ def _finalize(data: dict) -> dict:
             sc["narration_tts"] = sc.get("narration", "")
         if not sc.get("visual_source"):
             sc["visual_source"] = "ai" if sc.get("scene_type", "") in _AI_TYPES else "photo"
+    # 12씬은 엔딩 멘트로 고정 (자막은 브랜드 표기, 낭독은 띄어 읽기)
+    last = data["scenes"][-1]
+    last["narration"] = closing or DEFAULT_CLOSING
+    last["narration_tts"] = closing_tts(closing)
     # 음성은 narration_tts 합본으로 만든다 (컷 길이 배분도 이 텍스트 기준)
     data["full_narration"] = " ".join(
         (sc.get("narration_tts") or "").strip() for sc in data["scenes"]
@@ -663,13 +724,15 @@ def _finalize(data: dict) -> dict:
     return data
 
 
-def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress=None) -> dict:
+def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress=None,
+                                closing: str = "") -> dict:
     """
     12컷 대본 생성 → 규칙 검사 → 웹 검색 팩트체크 → 자동 수정 → 재검사(필요 시 1회 더 수정).
     반환 dict 의 "verification" 에 검증 기록(판정·출처·남은 문제)을 담는다.
     progress: 선택 — progress(메시지) 로 진행 단계를 화면에 알린다.
     """
     say = progress or (lambda m: None)
+    closing = (closing or DEFAULT_CLOSING).strip()
     client = anthropic.Anthropic(api_key=api_key)
 
     user_prompt = (
@@ -686,8 +749,8 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     )
 
     say("① 초안 작성 중…")
-    draft = _call_json(client, SYSTEM_INSTRUCTION, user_prompt, max_tokens=12000)
-    draft_issues = lint_script(draft)
+    draft = _call_json(client, _system(closing), user_prompt, max_tokens=12000)
+    draft_issues = lint_script(draft, closing)
 
     say("② 사실 검증 중 (웹 검색)…")
     facts = fact_check(client, topic, draft)
@@ -696,16 +759,16 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     data, rounds = draft, 0
     if draft_issues or flagged:
         say("③ 검증 결과 반영해 자동 수정 중…")
-        data = revise_script(client, draft, draft_issues, facts)
+        data = revise_script(client, draft, draft_issues, facts, closing)
         rounds = 1
-        remaining = lint_script(data)
+        remaining = lint_script(data, closing)
         if remaining:
             say("④ 남은 문제 한 번 더 수정 중…")
-            data = revise_script(client, data, remaining, {"claims": []})
+            data = revise_script(client, data, remaining, {"claims": []}, closing)
             rounds = 2
-    data = _finalize(data)
+    data = _finalize(data, closing)
 
-    final_issues = lint_script(data)
+    final_issues = lint_script(data, closing)
     total = sum(_nchars(sc.get("narration_tts", "")) for sc in data["scenes"])
     data["verification"] = {
         "web_search":      facts.get("web_search", False),
@@ -716,5 +779,6 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
         "tts_chars":       total,
         "est_seconds":     round(total / TTS_CHARS_PER_SEC),
     }
+    data["closing"] = closing
     say("✅ 대본 완성")
     return data

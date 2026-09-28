@@ -132,6 +132,7 @@ def generate_reference_image(
     image_prompt: str,
     model: str = "",         # 하위 호환용 — 무시
     illust_mode: bool = False,
+    hero_mode: bool = False,
 ) -> str:
     """
     9:16 세로 레퍼런스 이미지를 생성하고 Replicate CDN URL을 반환한다.
@@ -148,6 +149,22 @@ def generate_reference_image(
             return url
         except Exception as e:
             print(f"[image_replicate] z-image-turbo 실패 → flux-dev 로 재시도: {e}", flush=True)
+
+    if hero_mode and not illust_mode:
+        # 1컷 훅: flux-dev 고품질 포토리얼 (스케치 접두사 없이 프롬프트 그대로)
+        inputs = {
+            "prompt":              image_prompt,
+            "aspect_ratio":        ASPECT_RATIO,
+            "num_inference_steps": 28,
+            "guidance":            3.5,
+            "output_format":       "jpg",
+            "output_quality":      92,
+            "num_outputs":         1,
+        }
+        print(f"[image_replicate] [hook/flux-dev] 9:16 | {image_prompt[:60]}…", flush=True)
+        url = _to_url(replicate.run(FLUX_DEV_MODEL, input=inputs))
+        print(f"[image_replicate] → {url[:80]}", flush=True)
+        return url
 
     model_id = FLUX_DEV_MODEL if illust_mode else FLUX_SCHNELL_MODEL
     inputs = _build_inputs(image_prompt, illust_mode=illust_mode)
