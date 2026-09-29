@@ -841,6 +841,15 @@ if st.session_state.current_project is None:
     else:
         _closing_text = _closing_pick
 
+    # 영상 길이 (컷 수·낭독 분량이 함께 바뀜)
+    from src.prompts import LENGTH_PRESETS, DEFAULT_LENGTH
+    _len_keys = list(LENGTH_PRESETS.keys())
+    _length_key = st.radio(
+        "영상 길이", _len_keys, index=_len_keys.index(DEFAULT_LENGTH), horizontal=True,
+        format_func=lambda k: LENGTH_PRESETS[k]["label"], key="length_pick",
+        help="같은 주제를 짧게도 만들어 '시청함 비율'을 비교해 보세요. 짧을수록 영상 생성 비용도 줄어듭니다.",
+    )
+
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
     start_btn = st.button(
@@ -868,12 +877,14 @@ if st.session_state.current_project is None:
                         topic=topic.strip(),
                         progress=st.write,
                         closing=_closing_text,
+                        length=_length_key,
                     )
                     # state 업데이트
                     new_state["full_narration"] = result.get("full_narration", "")
                     new_state["scenes"] = result.get("scenes", [])
                     new_state["verification"] = result.get("verification", {})
                     new_state["closing"] = result.get("closing", _closing_text)
+                    new_state["length"] = result.get("length", _length_key)
                     new_state["status"] = "script_ready"
                     manager.save_state(new_state)
 
@@ -1081,6 +1092,7 @@ if step1_done:
                             topic=state["topic"],
                             progress=st.write,
                             closing=state.get("closing", ""),
+                            length=state.get("length", ""),
                         )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
@@ -1865,65 +1877,69 @@ elif not step4_locked:
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 6 — 섬네일 (9:16, 1080×1920)
+# STEP 6 — 업로드 정보 · 성과 기록
 # ─────────────────────────────────────────────────────────────────────────────
-_thumb_path = state.get("thumbnail_path", "")
-_thumb_done = bool(_thumb_path) and os.path.exists(_thumb_path)
-_thumb_locked = not any(
-    (s.get("image_local") and os.path.exists(s.get("image_local", ""))) for s in scenes
-) and not (state.get("final_video_path") and os.path.exists(state.get("final_video_path", "")))
+from src import publish
 
-st.markdown(f"""
+st.markdown("""
 <div class="step-header">
-  <div class="step-num {"done" if _thumb_done else ("locked" if _thumb_locked else "")}">
-    {"✓" if _thumb_done else "6"}
-  </div>
+  <div class="step-num">6</div>
   <div>
-    <div class="step-title">STEP 6 · 섬네일 (9:16)</div>
-    <div class="step-sub">스케치 도판 위에 두 줄 훅 문구 · 1080×1920 PNG</div>
+    <div class="step-title">STEP 6 · 업로드 정보 · 성과 기록</div>
+    <div class="step-sub">제목 · 설명 · 해시태그 · 고정 댓글을 만들고, 올린 뒤 7일 성과를 기록합니다</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-if _thumb_locked:
-    st.info("이미지 생성(STEP 2) 또는 최종 합성(STEP 5) 이후 만들 수 있습니다.")
-else:
-    _copy = state.get("thumbnail_copy") or {}
-    with st.expander("✏️ 섬네일 문구 (비워 두면 AI가 대본을 읽고 만듭니다)", expanded=False):
-        _c1, _c2 = st.columns(2)
-        with _c1:
-            _l1 = st.text_input("첫째 줄 (9자 이내)", value=_copy.get("line1", ""), key="thumb_l1")
-            _l2 = st.text_input("둘째 줄 (9자 이내)", value=_copy.get("line2", ""), key="thumb_l2")
-        with _c2:
-            _ac = st.text_input("골드로 강조할 단어", value=_copy.get("accent", ""), key="thumb_ac")
-            _sb = st.text_input("아래 설명 (16자 이내)", value=_copy.get("sub", ""), key="thumb_sb")
-    if st.button("🖼 섬네일 만들기" if not _thumb_done else "🔁 섬네일 다시 만들기", key="thumb_btn"):
-        with st.spinner("섬네일 만드는 중… (약 10~20초)"):
-            try:
-                from src.thumbnail import create_thumbnail
-                _manual = {"line1": _l1.strip(), "line2": _l2.strip(),
-                           "accent": _ac.strip(), "sub": _sb.strip()} if _l1.strip() else None
-                _p, _used = create_thumbnail(state, api_keys.get("ANTHROPIC_API_KEY", ""), copy=_manual)
-                state["thumbnail_path"] = _p
-                state["thumbnail_copy"] = _used
-                manager.save_state(state)
-                st.session_state.current_project = state
-                st.rerun()
-            except Exception as e:
-                st.error(f"섬네일 생성 실패: {e}")
-    if _thumb_done:
-        _tc1, _tc2 = st.columns([1, 2])
-        with _tc1:
-            st.image(_thumb_path, use_container_width=True)
-        with _tc2:
-            with open(_thumb_path, "rb") as _tf:
-                st.download_button(
-                    "⬇️ 섬네일 다운로드 (PNG)", data=_tf,
-                    file_name=f"{state.get('project_id', 'thumbnail')}_thumb.png",
-                    mime="image/png", key="thumb_dl",
-                )
-            st.caption("YouTube Studio(PC) 업로드 화면의 Shorts 맞춤 섬네일에 올립니다. "
-                       "현재 YouTube 파트너 프로그램 채널부터 순차 제공 중인 기능입니다.")
+_pack = state.get("upload_pack") or {}
+if st.button("📝 업로드 정보 만들기" if not _pack else "🔁 업로드 정보 다시 만들기", key="pack_btn"):
+    with st.spinner("업로드 정보 만드는 중… (약 10초)"):
+        state["upload_pack"] = publish.make_upload_pack(api_keys.get("ANTHROPIC_API_KEY", ""), state)
+        manager.save_state(state)
+        st.session_state.current_project = state
+        st.rerun()
+
+if _pack:
+    st.caption("각 칸 오른쪽 위 복사 아이콘으로 그대로 붙여 넣으면 됩니다.")
+    st.markdown("**제목**")
+    st.code(_pack.get("title", ""), language=None)
+    st.markdown("**설명 (해시태그 포함)**")
+    st.code(_pack.get("description", ""), language=None)
+    st.markdown("**고정 댓글** — 올린 직후 댓글로 달고 '고정'")
+    st.code(_pack.get("pinned_comment", ""), language=None)
+    if _pack.get("next_teaser"):
+        st.markdown("**다음 편 예고** — 고정 댓글 아래에 한 줄 더")
+        st.code(_pack.get("next_teaser", ""), language=None)
+
+with st.expander("📊 성과 기록 (올리고 7일 뒤 YouTube Studio 숫자를 적어 두세요)"):
+    _perf = dict(state.get("perf") or {})
+    _pc1, _pc2 = st.columns(2)
+    for _i, _k in enumerate(publish.PERF_FIELDS):
+        with (_pc1 if _i % 2 == 0 else _pc2):
+            _perf[_k] = st.text_input(publish.PERF_LABELS[_k], value=str(_perf.get(_k, "")),
+                                      key=f"perf_{_k}")
+    if st.button("💾 성과 저장", key="perf_save"):
+        state["perf"] = _perf
+        manager.save_state(state)
+        st.session_state.current_project = state
+        st.success("저장했습니다. JSON 백업에도 함께 들어갑니다.")
+    # 서버에 있는 모든 프로젝트 성과표
+    _rows = []
+    for _p in manager.list_projects():
+        try:
+            _rows.append(publish.perf_row(manager.load_state(_p["dir"])))
+        except Exception:
+            pass
+    if _rows:
+        st.dataframe(
+            [{"주제": r["topic"], "길이": r["length"], "훅": r["hook_text"],
+              "7일 조회수": r["views_7d"], "시청함 %": r["viewed_rate"]} for r in _rows],
+            use_container_width=True, hide_index=True,
+        )
+        st.download_button("⬇️ 성과표 CSV 다운로드", data=publish.perf_csv(_rows),
+                           file_name="shorts_performance.csv", mime="text/csv", key="perf_csv")
+        st.caption("서버가 재시작되면 이 표도 비워집니다. CSV로 내려받아 한 파일에 모아 두면 "
+                   "어떤 훅·길이가 잘 되는지 비교할 수 있습니다.")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
