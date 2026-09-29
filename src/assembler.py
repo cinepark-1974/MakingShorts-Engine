@@ -402,7 +402,9 @@ def plan_durations(scenes: list, clip_durs: list, audio_dur: float) -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 # 컷 하나 렌더링: 9:16 크롭 → 길이 맞춤 → 오버레이
 # ─────────────────────────────────────────────────────────────────────────────
-def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str) -> None:
+def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str,
+                      instant: bool = False) -> None:
+    """instant=True: 자막·그래픽을 0초부터 바로 보이게 (1컷 훅 — 피드 첫 화면)."""
     src_dur = _media_duration(src) or 6.0
     chain = [
         f"scale={W}:{H}:force_original_aspect_ratio=increase",
@@ -420,7 +422,8 @@ def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str) 
     fade_in = 0.35
     fc = (
         f"[0:v]{','.join(chain)}[base];"
-        f"[1:v]format=rgba,fade=t=in:st=0.15:d={fade_in}:alpha=1[ov];"
+        + ("[1:v]format=rgba[ov];" if instant else
+           f"[1:v]format=rgba,fade=t=in:st=0.15:d={fade_in}:alpha=1[ov];") +
         f"[base][ov]overlay=0:0:format=auto,format=yuv420p[out]"
     )
     cmd = [
@@ -545,7 +548,7 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
                 from PIL import Image
                 Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(png)
             out = os.path.join(tmp, f"r_{sno:02d}.mp4")
-            render_scene_clip(p, png, tgt, out)
+            render_scene_clip(p, png, tgt, out, instant=(i == 1))
             rendered.append(out)
             print(f"[assembler] 컷 #{sno:02d} {tgt:.1f}초 완료", flush=True)
 

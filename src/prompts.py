@@ -371,8 +371,13 @@ narration 내용을 보고 scene_type과 visual_source를 동시에 결정한다
       · 쉼표는 실제로 숨을 쉬는 자리에만 찍는다.
 
 ▶ 오프닝(1씬): 멈춰 서게 만드는 의외의 사실이나 질문.
-▶ 11씬: 전체를 한 문장으로 정리하는 결론.
-▶ 12씬: 엔딩 멘트 전용. narration 은 정확히 "{{CLOSING}}" 한 문장만 쓴다.
+▶ 마지막 바로 앞 씬: 전체를 한 문장으로 정리하는 결론.
+  이 결론은 1씬의 훅 질문에 답하면서 1씬 첫 문장의 핵심 단어로 끝낸다 (루프 엔딩).
+  예) 1씬 "당신이 마신 아메리카노, 사실 롱블랙이었을 수도 있습니다."
+      결론 "결국 한 잔의 맛을 바꾸는 건, 붓는 순서 하나. 오늘 마신 그 아메리카노처럼요."
+  → 영상이 끝나고 처음으로 다시 돌아가도 이야기가 자연스럽게 이어진다.
+▶ 1씬 첫 문장은 영상 시작 0초에 바로 들린다. 인사말·채널 소개로 시작하지 않는다.
+▶ 마지막 씬: 엔딩 멘트 전용. narration 은 정확히 "{{CLOSING}}" 한 문장만 쓴다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [12컷 구성 원칙]
@@ -505,13 +510,38 @@ def closing_tts(text: str) -> str:
     return (text or DEFAULT_CLOSING).replace(BRAND, BRAND_TTS)
 
 
-def _system(closing: str) -> str:
-    return SYSTEM_INSTRUCTION.replace("{{CLOSING}}", closing or DEFAULT_CLOSING)
+def _system(closing: str, length: str = "") -> str:
+    sp = _spec(length)
+    lo, hi = sp["total"]
+    slo, shi = sp["scene"]
+    sec_lo, sec_hi = round(lo / TTS_CHARS_PER_SEC), round(hi / TTS_CHARS_PER_SEC)
+    override = f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[이번 편 길이 설정 — 위 본문의 '12컷·310~380자' 규칙보다 이 설정이 우선한다]
+- 씬 수: 정확히 {sp['cuts']}컷 (scene_no 1~{sp['cuts']})
+- narration_tts 합계: 공백 제외 {lo}~{hi}자 (약 {sec_lo}~{sec_hi}초)
+- 씬당: 공백 제외 {slo}~{shi}자
+- 12컷 구성 원칙은 {sp['cuts']}컷에 맞게 압축한다: 1컷 훅(HOOK), 마지막 컷 엔딩 멘트, 그 사이는 차이 → 왜 → 그래서 → 결론 순서 유지.
+- 인포그래픽(ai) 씬은 전체의 절반 이상."""
+    return SYSTEM_INSTRUCTION.replace("{{CLOSING}}", closing or DEFAULT_CLOSING) + override
 POINTER_PHRASES = ["보시다시피", "왼쪽이", "오른쪽이", "단면을 보면", "위에서부터",
                    "숫자로 보면", "이 비율입니다", "이 순서대로", "화면을 보면", "여기를 보면"]
 TTS_CHARS_PER_SEC = 4.9          # ElevenLabs 실측 (project_10: 236자 / 48.5초)
-TOTAL_MIN, TOTAL_MAX = 310, 380  # 약 65~75초
+TOTAL_MIN, TOTAL_MAX = 310, 380  # 약 65~75초 (기본 = long)
 SCENE_MIN, SCENE_MAX = 18, 40
+
+# 길이 옵션: 컷 수, 낭독 합계(공백 제외 글자), 씬당 글자, 화면 표시용 이름
+LENGTH_PRESETS = {
+    "short": {"cuts": 8,  "total": (150, 190), "scene": (12, 30), "label": "짧게 · 약 35초 (8컷)"},
+    "mid":   {"cuts": 10, "total": (220, 270), "scene": (15, 35), "label": "보통 · 약 50초 (10컷)"},
+    "long":  {"cuts": 12, "total": (310, 380), "scene": (18, 40), "label": "길게 · 약 70초 (12컷)"},
+}
+DEFAULT_LENGTH = "long"
+
+
+def _spec(length: str) -> dict:
+    return LENGTH_PRESETS.get(length or DEFAULT_LENGTH, LENGTH_PRESETS[DEFAULT_LENGTH])
 _AI_TYPES = {"HOOK", "ASSEMBLY", "MACHINE", "EXTRACTION", "SCIENCE_DATA"}
 
 
@@ -556,12 +586,15 @@ def _call_json(client, system: str, user: str, max_tokens: int = 12000, retries:
 # ─────────────────────────────────────────────────────────────────────────────
 # 1) 규칙 검사 (코드로 확실하게 잡을 수 있는 것)
 # ─────────────────────────────────────────────────────────────────────────────
-def lint_script(data: dict, closing: str = "") -> list:
+def lint_script(data: dict, closing: str = "", length: str = "") -> list:
     """대본 규칙 위반 목록을 돌려준다. 빈 리스트면 통과."""
     issues = []
     scenes = data.get("scenes") or []
-    if len(scenes) != 12:
-        issues.append(f"씬이 12개가 아니라 {len(scenes)}개입니다.")
+    sp = _spec(length)
+    SCENE_MIN, SCENE_MAX = sp["scene"]
+    TOTAL_MIN, TOTAL_MAX = sp["total"]
+    if len(scenes) != sp["cuts"]:
+        issues.append(f"씬이 {sp['cuts']}개가 아니라 {len(scenes)}개입니다.")
     total = 0
     pointer_hits = []
     endings = []
@@ -590,7 +623,7 @@ def lint_script(data: dict, closing: str = "") -> list:
         endings.append(tts.rstrip().endswith("니다."))
     if total and not (TOTAL_MIN <= total <= TOTAL_MAX):
         issues.append(f"전체 낭독 {total}자 ≈ {total / TTS_CHARS_PER_SEC:.0f}초 "
-                      f"(목표 {TOTAL_MIN}~{TOTAL_MAX}자 ≈ 65~75초).")
+                      f"(목표 {TOTAL_MIN}~{TOTAL_MAX}자 ≈ {TOTAL_MIN / TTS_CHARS_PER_SEC:.0f}~{TOTAL_MAX / TTS_CHARS_PER_SEC:.0f}초).")
     if len(pointer_hits) > 3:
         issues.append(f"화면 지시어가 {len(pointer_hits)}번 (씬 {pointer_hits}) — 최대 3번.")
     run = 0
@@ -616,7 +649,7 @@ def lint_script(data: dict, closing: str = "") -> list:
         _seen_q.setdefault(q, n)
     want = closing_tts(closing)
     if scenes and want not in (scenes[-1].get("narration_tts") or ""):
-        issues.append(f"12씬 낭독이 엔딩 멘트 '{want}' 가 아닙니다.")
+        issues.append(f"마지막 씬 낭독이 엔딩 멘트 '{want}' 가 아닙니다.")
     return issues
 
 
@@ -676,19 +709,20 @@ REVISE_RULES = """당신은 '너도나도아는커피' 대본 수석 에디터�
 초안 JSON 을 받아, 규칙 위반과 팩트체크 결과를 모두 반영한 최종 JSON 전체를 출력합니다.
 - 팩트체크에서 '수정필요'는 correction 대로 고치고, '근거없음' 수치는 삭제하거나 확인된 사실로 바꿉니다.
 - data_points 에는 '확인' 판정을 받은 수치만 남깁니다. 없으면 [].
-- 12씬 narration 이 하나의 해설로 이어지게 다듬습니다 (훅 → 차이 → 왜 → 그래서 → 결론).
+- 모든 씬 narration 이 하나의 해설로 이어지게 다듬습니다 (훅 → 차이 → 왜 → 그래서 → 결론).
+- 결론 씬은 1씬 훅 질문에 답하며 1씬 첫 문장의 핵심 단어로 끝냅니다 (루프 엔딩).
 - narration_tts 는 narration 과 같은 내용을 ElevenLabs 가 읽기 좋게: 숫자·영문·기호 없이 한글 소리로.
 - scene_no, scene_type, visual_source, image_prompt, flow_prompt, sfx 는 사실 오류가 없는 한 그대로 둡니다.
 - 설명 없이 JSON 전체만 출력합니다."""
 
 
-def revise_script(client, data: dict, issues: list, facts: dict, closing: str = "") -> dict:
+def revise_script(client, data: dict, issues: list, facts: dict, closing: str = "", length: str = "") -> dict:
     user = (
         "[규칙 위반]\n" + ("\n".join(f"- {i}" for i in issues) or "- 없음") +
         "\n\n[팩트체크 결과]\n" + json.dumps(facts.get("claims", []), ensure_ascii=False, indent=1) +
         "\n\n[초안 JSON]\n" + json.dumps(data, ensure_ascii=False)
     )
-    return _call_json(client, _system(closing) + "\n\n" + REVISE_RULES, user, max_tokens=14000)
+    return _call_json(client, _system(closing, length) + "\n\n" + REVISE_RULES, user, max_tokens=14000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -725,7 +759,7 @@ def _finalize(data: dict, closing: str = "") -> dict:
 
 
 def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress=None,
-                                closing: str = "") -> dict:
+                                closing: str = "", length: str = "") -> dict:
     """
     12컷 대본 생성 → 규칙 검사 → 웹 검색 팩트체크 → 자동 수정 → 재검사(필요 시 1회 더 수정).
     반환 dict 의 "verification" 에 검증 기록(판정·출처·남은 문제)을 담는다.
@@ -733,15 +767,17 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     """
     say = progress or (lambda m: None)
     closing = (closing or DEFAULT_CLOSING).strip()
+    length = length if length in LENGTH_PRESETS else DEFAULT_LENGTH
+    sp = _spec(length)
     client = anthropic.Anthropic(api_key=api_key)
 
     user_prompt = (
         f"챕터: '{chapter}', 주제: '{topic}'.\n\n"
-        "아래 조건을 모두 지켜서 12컷 대본을 JSON으로 출력해줘.\n\n"
-        "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것.\n"
-        "② 인포그래픽(visual_source: 'ai') 씬이 최소 7컷 이상 포함될 것.\n"
-        "③ narration 은 12씬이 한 편의 해설로 이어지게: 훅 → 차이 → 왜(원리) → 그래서 → 결론.\n"
-        "   씬당 공백 제외 18~40자, 합계 310~380자. 화면을 가리키는 말은 전체 최대 3번.\n"
+        f"아래 조건을 모두 지켜서 {sp['cuts']}컷 대본을 JSON으로 출력해줘.\n\n"
+        "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것. 1컷은 HOOK.\n"
+        "② 인포그래픽(visual_source: 'ai') 씬이 전체의 절반 이상일 것.\n"
+        "③ narration 은 전체가 한 편의 해설로 이어지게: 훅 → 차이 → 왜(원리) → 그래서 → 결론(1컷 훅으로 돌아가는 루프 엔딩).\n"
+        f"   씬당 공백 제외 {sp['scene'][0]}~{sp['scene'][1]}자, 합계 {sp['total'][0]}~{sp['total'][1]}자. 화면을 가리키는 말은 전체 최대 3번.\n"
         "④ 모든 씬에 narration(자막용)과 narration_tts(ElevenLabs 낭독용, 숫자·영문을 한글 소리로)를 함께 쓸 것.\n"
         "   확인할 수 없는 수치는 쓰지 말 것.\n"
         "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
@@ -749,8 +785,8 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     )
 
     say("① 초안 작성 중…")
-    draft = _call_json(client, _system(closing), user_prompt, max_tokens=12000)
-    draft_issues = lint_script(draft, closing)
+    draft = _call_json(client, _system(closing, length), user_prompt, max_tokens=12000)
+    draft_issues = lint_script(draft, closing, length)
 
     say("② 사실 검증 중 (웹 검색)…")
     facts = fact_check(client, topic, draft)
@@ -759,16 +795,16 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     data, rounds = draft, 0
     if draft_issues or flagged:
         say("③ 검증 결과 반영해 자동 수정 중…")
-        data = revise_script(client, draft, draft_issues, facts, closing)
+        data = revise_script(client, draft, draft_issues, facts, closing, length)
         rounds = 1
-        remaining = lint_script(data, closing)
+        remaining = lint_script(data, closing, length)
         if remaining:
             say("④ 남은 문제 한 번 더 수정 중…")
-            data = revise_script(client, data, remaining, {"claims": []}, closing)
+            data = revise_script(client, data, remaining, {"claims": []}, closing, length)
             rounds = 2
     data = _finalize(data, closing)
 
-    final_issues = lint_script(data, closing)
+    final_issues = lint_script(data, closing, length)
     total = sum(_nchars(sc.get("narration_tts", "")) for sc in data["scenes"])
     data["verification"] = {
         "web_search":      facts.get("web_search", False),
@@ -780,5 +816,6 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
         "est_seconds":     round(total / TTS_CHARS_PER_SEC),
     }
     data["closing"] = closing
+    data["length"] = length
     say("✅ 대본 완성")
     return data
