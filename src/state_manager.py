@@ -25,7 +25,7 @@ class StateManager:
         os.makedirs(self.storage_dir, exist_ok=True)
 
     # ── 새 프로젝트 생성 ──────────────────────────────────────────────────────
-    def create_new_project(self, chapter: str, topic: str) -> dict:
+    def create_new_project(self, chapter: str, topic: str, channel: str = "coffee") -> dict:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_topic = (
             "".join(c for c in topic if c.isalnum() or c in (" ", "_", "-"))
@@ -39,6 +39,7 @@ class StateManager:
         state = {
             "project_id":       project_id,
             "project_dir":      project_dir,
+            "channel":          channel,          # coffee | scenestory | hasira
             "created_at":       timestamp,
             "chapter":          chapter,
             "topic":            topic,
@@ -87,6 +88,7 @@ class StateManager:
                             f"({state.get('status', '')})"
                         ),
                         "dir":   p_dir,
+                        "channel": state.get("channel") or "coffee",
                     })
                 except Exception:
                     continue
