@@ -1,7 +1,7 @@
 # src/publish.py
 # 너도나도아는커피 숏폼 팩토리 — 업로드 정보 · 성과 기록
 #
-# make_upload_pack : 대본을 읽고 YouTube Shorts 업로드용 제목·설명·해시태그·고정 댓글·다음 편 예고를 만든다.
+# make_upload_pack : 대본을 읽고 YouTube Shorts 업로드용 제목·설명·해시태그·태그·고정 댓글·다음 편 예고·섬네일 문구를 한 번에 만든다.
 # perf_rows        : 서버에 있는 프로젝트들의 성과 기록을 표(행 목록)로 모은다 → CSV 다운로드용.
 
 import csv
@@ -11,25 +11,81 @@ import json
 CHANNEL = "너도나도아는커피"
 
 _PACK_SYSTEM = """당신은 유튜브 쇼츠 채널 '너도나도아는커피'(커피 과학·역사 해설)의 업로드 담당자입니다.
-대본을 읽고 업로드 정보를 만듭니다. 규칙:
-- title: 40자 이내. 사람들이 검색할 핵심어를 앞에 둔다. 과장·낚시 금지, 대본에 있는 사실만.
+대본을 읽고 업로드에 필요한 것을 한 번에 만듭니다. 규칙:
+- title: 40자 이내. 비교 주제면 두 이름을 맨 앞에 둔다(예: "예가체프와 수프리모, ..."). 과장·낚시 금지, 대본에 있는 사실만.
 - description: 2~3줄. 첫 줄에 영상의 핵심 한 줄. 마지막 줄에 해시태그 3개(#쇼츠 제외, 주제어 중심).
 - hashtags: description 에 넣은 해시태그 3개 (배열).
+- tags: YouTube 태그 칸용 검색어 8~12개 (배열). 각 2~20자, 사람들이 실제로 검색할 말. 주제와 무관한 말 금지. '#' 붙이지 않는다.
 - pinned_comment: 시청자가 한 단어로 답할 수 있는 질문 하나. 두 가지 중 고르게 하는 형식 권장.
 - next_teaser: 다음 편 예고 한 줄 (대본 주제와 이어지는 궁금증).
+- thumb_line1, thumb_line2: 섬네일 두 줄. 각 줄 공백 포함 9자 이내. 비교 주제면 두 이름을 한 줄씩(예: "콜드브루 vs" / "더치커피"). 대본에 있는 사실만.
+- thumb_accent: thumb_line1 또는 thumb_line2 안에 그대로 들어 있는 단어 하나 (색으로 강조).
 이모지는 pinned_comment 에만 1개까지. JSON 만 출력:
-{"title": "", "description": "", "hashtags": [], "pinned_comment": "", "next_teaser": ""}"""
+{"title": "", "description": "", "hashtags": [], "tags": [], "pinned_comment": "", "next_teaser": "", "thumb_line1": "", "thumb_line2": "", "thumb_accent": ""}"""
 
+TAGS_MAX_CHARS = 500     # YouTube Studio 태그 칸 합계 한도 (쉼표 포함)
 
 def _fallback(state: dict) -> dict:
     topic = (state.get("topic") or "").strip()
+    first = (state.get("scenes") or [{}])[0].get("overlay_text", "") or topic
+    words = first.split()
+    half = max(1, len(words) // 2)
     return {
         "title": topic[:40],
         "description": f"{topic}\n\n#커피 #{CHANNEL} #커피상식",
         "hashtags": ["#커피", f"#{CHANNEL}", "#커피상식"],
+        "tags": [w for w in [topic[:20], "커피", "커피상식", CHANNEL, "커피과학"] if w],
         "pinned_comment": "여러분은 어느 쪽인가요? 댓글로 알려주세요 ☕",
         "next_teaser": "",
+        "thumb_line1": " ".join(words[:half])[:9] or topic[:9],
+        "thumb_line2": " ".join(words[half:])[:9],
+        "thumb_accent": "",
     }
+
+
+def _clean_tags(tags) -> list:
+    """중복·'#' 제거, 합계 500자(쉼표 포함) 안으로 자른다."""
+    out, total = [], 0
+    for t in tags or []:
+        t = str(t).replace("#", "").replace(",", " ").strip()
+        if not t or t in out or len(t) > 30:
+            continue
+        add = len(t) + (1 if out else 0)
+        if total + add > TAGS_MAX_CHARS:
+            break
+        out.append(t)
+        total += add
+    return out
+
+
+def tags_text(pack: dict) -> str:
+    return ",".join(pack.get("tags") or [])
+
+
+def all_in_one(pack: dict) -> str:
+    """한 번에 복사해 메모장 등에 붙여 둘 수 있는 전체 묶음."""
+    parts = [
+        ("제목", pack.get("title", "")),
+        ("설명", pack.get("description", "")),
+        ("태그", tags_text(pack)),
+        ("고정 댓글", pack.get("pinned_comment", "")),
+        ("다음 편 예고", pack.get("next_teaser", "")),
+    ]
+    return "\n\n".join(f"[{k}]\n{v}" for k, v in parts if v)
+
+
+def thumb_copy(pack: dict) -> dict:
+    return {"line1": pack.get("thumb_line1", ""), "line2": pack.get("thumb_line2", ""),
+            "accent": pack.get("thumb_accent", "")}
+
+
+UPLOAD_SETTINGS = [
+    ("카테고리", "교육"),
+    ("아동용 여부", "아니요, 아동용이 아닙니다"),
+    ("동영상 언어", "한국어"),
+    ("변경되거나 합성된 콘텐츠", "사실적인 AI 인물·실사 장면이 들어간 편은 '예'"),
+    ("섬네일", "Shorts 맞춤 섬네일은 데스크톱 YouTube Studio 에서 올립니다"),
+]
 
 
 def make_upload_pack(api_key: str, state: dict) -> dict:
@@ -40,7 +96,7 @@ def make_upload_pack(api_key: str, state: dict) -> dict:
         narr = " ".join((s.get("narration") or "") for s in state.get("scenes", []))
         user = f"주제: {state.get('topic', '')}\n\n대본:\n{narr}"
         resp = anthropic.Anthropic(api_key=api_key).messages.create(
-            model="claude-sonnet-4-6", max_tokens=800, system=_PACK_SYSTEM,
+            model="claude-sonnet-4-6", max_tokens=1200, system=_PACK_SYSTEM,
             messages=[{"role": "user", "content": user}],
         )
         raw = "".join(getattr(b, "text", "") for b in resp.content)
@@ -50,6 +106,11 @@ def make_upload_pack(api_key: str, state: dict) -> dict:
             if data.get(k):
                 pack[k] = data[k]
         pack["title"] = str(pack["title"])[:40]
+        pack["tags"] = _clean_tags(pack.get("tags"))
+        for k in ("thumb_line1", "thumb_line2"):
+            pack[k] = str(pack.get(k, ""))[:12]
+        if pack.get("thumb_accent") and pack["thumb_accent"] not in (pack["thumb_line1"] + pack["thumb_line2"]):
+            pack["thumb_accent"] = ""
         return pack
     except Exception as e:
         print(f"[publish] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
