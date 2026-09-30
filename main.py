@@ -492,6 +492,10 @@ def load_api_keys():
         "UNSPLASH_ACCESS_KEY",     # Unsplash 라이센스 프리 사진 검색용
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용 (폴백)
         "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID (폴백)
+        "R2_ENDPOINT",             # Cloudflare R2 (결과물 보관·전달)
+        "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY",
+        "R2_BUCKET",
     ]:
         try:
             keys[k] = st.secrets[k]
@@ -658,6 +662,42 @@ with st.sidebar:
             st.rerun()
         except Exception as _e:
             st.error(f"복구 실패: {_e}")
+
+    st.markdown("---")
+
+    # ── 연결 테스트 (R2 보관소 · Google Lyria 음악) ─────────────────────────
+    with st.expander("🔧 연결 테스트"):
+        _tk = load_api_keys()
+        if st.button("☁️ R2 연결 테스트", key="r2_test_btn", use_container_width=True):
+            from src import r2_store
+            with st.spinner("R2 에 작은 파일을 올리고 다시 받는 중…"):
+                st.session_state["_r2_report"] = r2_store.test_connection(_tk)
+        _r2 = st.session_state.get("_r2_report")
+        if _r2:
+            for _name, _ok, _msg in _r2["steps"]:
+                st.markdown(f"{'✅' if _ok else '❌'} **{_name}** — {_msg}")
+            if _r2["ok"]:
+                st.success("R2 연결 성공 — 버킷에 _tests/connection_test.txt 가 생겼습니다.")
+
+        st.markdown("---")
+        st.caption("Lyria 30초 음악 클립 1개를 받아 봅니다 (Google 요금이 발생할 수 있음).")
+        if st.button("🎵 Lyria 연결 테스트", key="lyria_test_btn", use_container_width=True):
+            from src import music_lyria
+            with st.spinner("음악 만드는 중… (보통 수십 초)"):
+                st.session_state["_lyria_report"] = music_lyria.test_clip(_tk.get("GOOGLE_API_KEY", ""))
+        _ly = st.session_state.get("_lyria_report")
+        if _ly:
+            from src import music_lyria
+            if _ly["ok"]:
+                st.success(f"성공 — {_ly['model']} · {_ly['seconds']}초 걸림 · "
+                           f"{len(_ly['audio']) // 1024}KB")
+                st.audio(_ly["audio"], format=_ly["mime"] or "audio/mpeg")
+            else:
+                st.error(f"실패 — {_ly['error']}")
+            st.download_button("⬇ 응답 구조 JSON (Claude 에게 전달용)",
+                               data=music_lyria.structure_json(_ly),
+                               file_name="lyria_test_response.json", mime="application/json",
+                               key="lyria_json_dl", use_container_width=True)
 
     st.markdown("---")
     st.markdown(
@@ -1886,30 +1926,94 @@ st.markdown("""
   <div class="step-num">6</div>
   <div>
     <div class="step-title">STEP 6 · 업로드 정보 · 성과 기록</div>
-    <div class="step-sub">제목 · 설명 · 해시태그 · 고정 댓글을 만들고, 올린 뒤 7일 성과를 기록합니다</div>
+    <div class="step-sub">제목 · 설명 · 태그 · 고정 댓글 · 섬네일을 한 번에 만들고, 올린 뒤 7일 성과를 기록합니다</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+from src import thumbnail as thumb_mod
+
 _pack = state.get("upload_pack") or {}
-if st.button("📝 업로드 정보 만들기" if not _pack else "🔁 업로드 정보 다시 만들기", key="pack_btn"):
-    with st.spinner("업로드 정보 만드는 중… (약 10초)"):
+_thumb_bgs = thumb_mod.background_candidates(state)
+
+
+def _make_thumb(bg_path: str = ""):
+    _p = state.get("upload_pack") or {}
+    path = thumb_mod.create_thumbnail(state, publish.thumb_copy(_p), bg_path, publish.CHANNEL)
+    state["thumbnail_path"] = path
+    state["thumbnail_bg"] = bg_path
+
+
+if st.button("📝 업로드 정보 · 섬네일 한 번에 만들기" if not _pack else "🔁 업로드 정보 · 섬네일 다시 만들기",
+             key="pack_btn", type="primary"):
+    with st.spinner("제목 · 설명 · 태그 · 고정 댓글 · 섬네일 만드는 중… (약 15초)"):
         state["upload_pack"] = publish.make_upload_pack(api_keys.get("ANTHROPIC_API_KEY", ""), state)
+        try:
+            _make_thumb(_thumb_bgs[0][1] if _thumb_bgs else "")
+        except Exception as e:
+            st.warning(f"섬네일 생성 실패 — 업로드 정보는 만들어졌습니다: {e}")
         manager.save_state(state)
         st.session_state.current_project = state
         st.rerun()
 
 if _pack:
     st.caption("각 칸 오른쪽 위 복사 아이콘으로 그대로 붙여 넣으면 됩니다.")
-    st.markdown("**제목**")
-    st.code(_pack.get("title", ""), language=None)
-    st.markdown("**설명 (해시태그 포함)**")
-    st.code(_pack.get("description", ""), language=None)
-    st.markdown("**고정 댓글** — 올린 직후 댓글로 달고 '고정'")
-    st.code(_pack.get("pinned_comment", ""), language=None)
-    if _pack.get("next_teaser"):
-        st.markdown("**다음 편 예고** — 고정 댓글 아래에 한 줄 더")
-        st.code(_pack.get("next_teaser", ""), language=None)
+    _t1, _t2 = st.tabs(["📋 항목별", "🧾 전체 한 번에"])
+    with _t1:
+        st.markdown("**제목**")
+        st.code(_pack.get("title", ""), language=None)
+        st.markdown("**설명 (해시태그 포함)**")
+        st.code(_pack.get("description", ""), language=None)
+        st.markdown(f"**태그** — YouTube Studio '태그' 칸에 붙여 넣기 ({len(publish.tags_text(_pack))}/500자)")
+        st.code(publish.tags_text(_pack), language=None)
+        st.markdown("**고정 댓글** — 올린 직후 댓글로 달고 '고정'")
+        st.code(_pack.get("pinned_comment", ""), language=None)
+        if _pack.get("next_teaser"):
+            st.markdown("**다음 편 예고** — 고정 댓글 아래에 한 줄 더")
+            st.code(_pack.get("next_teaser", ""), language=None)
+    with _t2:
+        st.code(publish.all_in_one(_pack), language=None)
+    with st.expander("⚙️ 업로드 설정 (매번 같음)"):
+        for _k, _v in publish.UPLOAD_SETTINGS:
+            st.markdown(f"- **{_k}**: {_v}")
+
+    # ── 섬네일 ──
+    st.markdown("**섬네일 (1080×1920)** — 매 편 같은 틀, 글자는 채널 화면에서 잘리지 않는 위치")
+    _thumb_path = state.get("thumbnail_path", "")
+    _tc1, _tc2 = st.columns([1, 1])
+    with _tc1:
+        if _thumb_path and os.path.exists(_thumb_path):
+            st.image(_thumb_path, use_container_width=True)
+            with open(_thumb_path, "rb") as _fh:
+                st.download_button("⬇️ 섬네일 PNG 다운로드", data=_fh.read(),
+                                   file_name=f"thumbnail_{state.get('project_id', 'shorts')}.png",
+                                   mime="image/png", key="thumb_dl")
+        else:
+            st.info("섬네일이 아직 없습니다. 오른쪽에서 문구와 배경을 확인하고 '섬네일 다시 그리기'를 누르세요.")
+    with _tc2:
+        _l1 = st.text_input("윗줄 (9자 안팎)", value=_pack.get("thumb_line1", ""), key="thumb_l1")
+        _l2 = st.text_input("아랫줄 (9자 안팎)", value=_pack.get("thumb_line2", ""), key="thumb_l2")
+        _ac = st.text_input("강조 단어 (윗줄·아랫줄 안의 단어)", value=_pack.get("thumb_accent", ""), key="thumb_ac")
+        _bg_pick = ""
+        if _thumb_bgs:
+            _labels = [l for l, _ in _thumb_bgs]
+            _paths = [p for _, p in _thumb_bgs]
+            _cur = state.get("thumbnail_bg", "")
+            _idx = _paths.index(_cur) if _cur in _paths else 0
+            _sel = st.selectbox("배경 그림", _labels, index=_idx, key="thumb_bg")
+            _bg_pick = _paths[_labels.index(_sel)]
+        else:
+            st.caption("서버에 남은 컷 이미지가 없어 종이색 바탕으로 그립니다.")
+        if st.button("🖼 섬네일 다시 그리기", key="thumb_redraw"):
+            _pack["thumb_line1"], _pack["thumb_line2"], _pack["thumb_accent"] = _l1, _l2, _ac
+            state["upload_pack"] = _pack
+            try:
+                _make_thumb(_bg_pick)
+                manager.save_state(state)
+                st.session_state.current_project = state
+                st.rerun()
+            except Exception as e:
+                st.error(f"섬네일 생성 실패: {e}")
 
 with st.expander("📊 성과 기록 (올리고 7일 뒤 YouTube Studio 숫자를 적어 두세요)"):
     _perf = dict(state.get("perf") or {})
