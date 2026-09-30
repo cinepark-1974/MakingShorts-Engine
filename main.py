@@ -1,4 +1,4 @@
-# app.py — 너도나도아는커피 숏폼 팩토리 | Streamlit 메인 대시보드
+# main.py — Making Shorts Engine | 채널 3개(너도나도아는커피 · SceneStory · HASIRA_yo!) 제작 대시보드
 # Claude API 버전 (Anthropic claude-sonnet-4-6)
 
 import streamlit as st
@@ -19,6 +19,26 @@ def _load_logo_b64() -> str:
     return ""
 
 LOGO_B64 = _load_logo_b64()
+
+
+# ── 채널 ─────────────────────────────────────────────────────────────────────
+# 프로젝트 state["channel"] 에 저장된다. 예전 프로젝트(값 없음)는 커피로 본다.
+CHANNELS = {
+    "coffee":     "너도나도아는커피",
+    "scenestory": "SceneStory",
+    "hasira":     "HASIRA_yo!",
+}
+CHANNEL_KEYS = list(CHANNELS.keys())
+
+
+def project_channel(state: dict) -> str:
+    ch = (state or {}).get("channel") or "coffee"
+    return ch if ch in CHANNELS else "coffee"
+
+
+def current_channel() -> str:
+    ch = st.session_state.get("channel_pick")
+    return ch if ch in CHANNELS else st.session_state.get("_last_channel", "coffee")
 
 
 # ── 구글 드라이브 레퍼런스 이미지 목록 로드 ──────────────────────────────────
@@ -68,8 +88,8 @@ def load_gdrive_images(api_key: str, folder_id: str) -> list[dict]:
 
 # ── 페이지 설정 (반드시 첫 번째 st 호출) ─────────────────────────────────────
 st.set_page_config(
-    page_title="☕ 너도나도아는커피 | 숏폼 팩토리",
-    page_icon="☕",
+    page_title="Making Shorts Engine",
+    page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -88,6 +108,9 @@ st.markdown("""
   white      : #FFFFFF  (카드 배경)
   ─────────────────────────────────────────────────────────────
 */
+
+/* ── 채널 배너 모서리 ── */
+[data-testid="stImage"] img { border-radius: 12px; }
 
 /* ── 전체 배경 ── */
 .stApp { background-color: #F7FBFC; color: #142C3C; }
@@ -552,29 +575,18 @@ def calc_progress(scenes: list) -> tuple[int, int]:
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    # ── 브랜드 로고 ──────────────────────────────────────────────────────────
-    if LOGO_B64:
-        st.markdown(
-            f"""
-            <div style="
-                padding: 20px 16px 12px;
-                text-align: center;
-            ">
-                <img src="data:image/png;base64,{LOGO_B64}"
-                     style="width: 100%; max-width: 200px;
-                            filter: brightness(0) invert(1);
-                            opacity: 0.92;" />
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown("## ☕ 숏폼 팩토리")
-
+    # ── 엔진 워드마크 ────────────────────────────────────────────────────────
     st.markdown(
-        '<div style="text-align:center; color:rgba(255,255,255,0.5); '
-        'font-size:11px; letter-spacing:0.08em; margin-bottom:12px;">'
-        'SHORTS FACTORY</div>',
+        '<div style="padding:22px 8px 6px; text-align:center;">'
+        '<div style="font-size:24px; font-weight:800; letter-spacing:0.04em; color:#FFFFFF;">'
+        'MAKING SHORTS</div>'
+        '<div style="font-size:13px; font-weight:700; letter-spacing:0.42em; color:#DBA12C; '
+        'margin-top:2px;">ENGINE</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="text-align:center; color:rgba(255,255,255,0.55); font-size:12px; '
+        f'margin:6px 0 10px;">지금 채널 · {CHANNELS[current_channel()]}</div>',
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -591,7 +603,8 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("#### 기존 프로젝트")
-    projects = manager.list_projects()
+    projects = [p for p in manager.list_projects()
+                if p.get("channel", "coffee") == current_channel()]
 
     if not projects:
         st.caption("아직 프로젝트가 없습니다.")
@@ -648,6 +661,9 @@ with st.sidebar:
             restored = _json.loads(uploaded_json.getvalue().decode("utf-8"))
             # ① 세션 상태 먼저 설정 — 디스크 저장 실패와 무관하게 복구 보장
             st.session_state.current_project = restored
+            # 복구한 프로젝트의 채널로 화면 전환 (채널 선택 위젯이 그려지기 전이라 바꿀 수 있음)
+            st.session_state["channel_pick"] = project_channel(restored)
+            st.session_state["_last_channel"] = project_channel(restored)
             # ② 디렉터리 생성 후 디스크 저장 시도 (실패해도 세션 복구는 유지)
             try:
                 import os as _os
@@ -703,11 +719,34 @@ with st.sidebar:
     st.markdown(
         '<div style="text-align:center; color:rgba(255,255,255,0.4); '
         'font-size:10px; line-height:1.7; padding:4px 0 8px;">'
-        'Claude API · ElevenLabs · Replicate MiniMax Video-01<br>'
-        '<span style="color:rgba(219,161,44,0.6);">You & I Know Coffee</span>'
+        'Claude · ElevenLabs · Replicate · Google Lyria · Cloudflare R2<br>'
+        '<span style="color:rgba(219,161,44,0.6);">Making Shorts Engine · BLUE JEANS PICTURES</span>'
         '</div>',
         unsafe_allow_html=True,
     )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 채널 선택 (너도나도아는커피 · SceneStory · HASIRA_yo!)
+# ─────────────────────────────────────────────────────────────────────────────
+def _on_channel_change():
+    ch = st.session_state.get("channel_pick")
+    if ch not in CHANNELS:          # 선택된 것을 다시 눌러 해제한 경우 → 이전 채널 유지
+        st.session_state["channel_pick"] = st.session_state.get("_last_channel", "coffee")
+        return
+    st.session_state["_last_channel"] = ch
+    cur = st.session_state.get("current_project")
+    if cur and project_channel(cur) != ch:
+        st.session_state.current_project = None
+
+
+if st.session_state.get("channel_pick") not in CHANNELS:
+    st.session_state["channel_pick"] = st.session_state.get("_last_channel", "coffee")
+st.segmented_control(
+    "채널", CHANNEL_KEYS, format_func=lambda k: CHANNELS[k],
+    key="channel_pick", on_change=_on_channel_change, label_visibility="collapsed",
+)
+CHANNEL = current_channel()
+st.session_state["_last_channel"] = CHANNEL
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API 키 체크
@@ -723,25 +762,47 @@ if missing:
         icon="⚠️",
     )
 
+
+
+def show_channel_banner(ch: str):
+    """채널 배너 (assets/images/banner_<채널>.jpg). 파일을 같은 이름으로 바꿔 올리면 그대로 반영된다."""
+    p = Path(__file__).parent / "assets" / "images" / f"banner_{ch}.jpg"
+    if p.exists():
+        st.image(str(p), use_container_width=True)
+    else:
+        st.markdown(f"## {CHANNELS[ch]}")
+
+
+if CHANNEL == "scenestory":
+    show_channel_banner("scenestory")
+    st.info("SceneStory 제작 라인은 준비 중입니다. 설계는 프로젝트 문서 "
+            "「scenestory-jp-engine-spec」에 정리되어 있습니다.")
+    st.markdown(
+        "- **형식**: 소설 · 영화 · 드라마 · 시 · 역사 속 사랑의 한 장면 + 작가의 해설 (60~75초)\n"
+        "- **화면**: 사람과 작품 장면은 펜-잉크 수채화 스케치, 오늘의 장소·물건은 실사\n"
+        "- **음성**: 일본어 나레이션 (시니어에 맞춘 느린 속도, 큰 자막)\n"
+        "- **첫 시리즈 후보**: 「姦通罪があった時代の恋」 — みだれ髪 · それから · 白蓮事件 · 花子とアン · 金妻"
+    )
+    st.stop()
+
+if CHANNEL == "hasira":
+    show_channel_banner("hasira")
+    st.info("HASIRA_yo! 음악 제작 라인은 준비 중입니다. 먼저 사이드바 「🔧 연결 테스트」에서 "
+            "R2 와 Lyria 연결을 확인해 주세요.")
+    st.markdown(
+        "- **음악**: Google Lyria 로 곡 여러 개를 만들어 크로스페이드로 1시간 이상 연결\n"
+        "- **영상**: 16:9 그림 한 장 + 반복 움직임(비 · 눈 · 꽃잎 · 김 · 불빛)\n"
+        "- **전달**: 완성본은 Cloudflare R2 에 올리고 7일짜리 내려받기 링크로 받기\n"
+        "- **업로드 정보**: 곡 목록 타임스탬프(챕터)가 들어간 설명 자동 작성"
+    )
+    st.stop()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 새 프로젝트 생성 폼 (프로젝트 미선택 시)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.current_project is None:
-    # 웰컴 헤더
-    if LOGO_B64:
-        st.markdown(
-            f"""
-            <div style="text-align:center; padding: 32px 0 8px;">
-                <img src="data:image/png;base64,{LOGO_B64}"
-                     style="height: 96px; opacity: 0.9;" />
-                <div style="margin-top:12px; font-size:13px; color:#4A7A8A;
-                            letter-spacing:0.06em;">SHORTS FACTORY</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown("## ☕ 너도나도아는커피 숏폼 팩토리")
+    # 웰컴 헤더 — 채널 배너
+    show_channel_banner("coffee")
 
     st.markdown(
         '<p style="text-align:center; color:#1E3A4E; font-size:14px; margin:4px 0 24px;">'
@@ -908,7 +969,8 @@ if st.session_state.current_project is None:
                     # 프로젝트 디렉터리 생성
                     new_state = manager.create_new_project(
                         chapter=chapter_for_api,
-                        topic=topic.strip()
+                        topic=topic.strip(),
+                        channel="coffee",
                     )
                     # Claude API 호출
                     result = generate_script_and_prompts(
