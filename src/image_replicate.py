@@ -17,7 +17,51 @@
 #   - Z-Image 호출이 실패하면 자동으로 flux-dev 로 다시 생성한다 (앱이 멈추지 않도록).
 
 import os
+import time
 import replicate
+
+# ── 호출 방식 (2026-10-01) ────────────────────────────────────────────────────
+# replicate.run() 은 끝날 때까지 시간 제한 없이 기다린다. 서버 로그에서 이미지 1장이 20분 넘게
+# 응답 없이 멈춘 것을 확인 → 영상 모듈처럼 예측 시작 + 2초마다 상태 확인 + 시간 제한으로 바꾼다.
+_POLL_INTERVAL = 2
+TIMEOUT_FAST = 120     # z-image-turbo · flux-schnell (보통 수 초~수십 초)
+TIMEOUT_DEV = 240      # flux-dev 28스텝
+
+
+class ImageCreditError(RuntimeError):
+    """Replicate 크레딧 부족(402) — 다음 컷도 실패하므로 배치를 멈춘다."""
+
+
+def _run_prediction(model: str, inputs: dict, timeout: int, tag: str):
+    """예측을 시작하고 끝날 때까지 상태를 확인한다. 시간 초과·실패는 이유를 담아 예외로 올린다."""
+    t0 = time.time()
+    try:
+        pred = replicate.predictions.create(model=model, input=inputs)
+    except Exception as e:
+        msg = str(e)
+        print(f"[image_replicate] {tag} 시작 실패: {msg[:300]}", flush=True)
+        if "402" in msg or "nsufficient credit" in msg:
+            raise ImageCreditError("Replicate 크레딧이 부족합니다. replicate.com/account/billing 에서 "
+                                   "충전한 뒤 몇 분 후 다시 시도하세요.") from e
+        raise
+    print(f"[image_replicate] {tag} 시작 id={pred.id}", flush=True)
+    while pred.status not in ("succeeded", "failed", "canceled"):
+        if time.time() - t0 > timeout:
+            try:
+                pred.cancel()
+            except Exception:
+                pass
+            print(f"[image_replicate] {tag} ⏰ {timeout}초 초과 → 취소 id={pred.id}", flush=True)
+            raise TimeoutError(f"이미지 생성이 {timeout}초 안에 끝나지 않았습니다 (Replicate id={pred.id})")
+        time.sleep(_POLL_INTERVAL)
+        pred.reload()
+    sec = round(time.time() - t0)
+    if pred.status != "succeeded":
+        err = getattr(pred, "error", "") or pred.status
+        print(f"[image_replicate] {tag} 실패 ({sec}초): {str(err)[:300]}", flush=True)
+        raise RuntimeError(f"Replicate 이미지 생성 실패: {err}")
+    print(f"[image_replicate] {tag} 완료 ({sec}초)", flush=True)
+    return pred.output
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
 FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"   # 사진형 — 빠름
@@ -144,9 +188,12 @@ def generate_reference_image(
         # 1순위: Z-Image Turbo (스케치 화풍 검증 모델)
         try:
             print(f"[image_replicate] [illust/z-image-turbo] 720x1280 | {image_prompt[:60]}…", flush=True)
-            url = _to_url(replicate.run(ZIMAGE_MODEL, input=_build_zimage_inputs(image_prompt)))
+            url = _to_url(_run_prediction(ZIMAGE_MODEL, _build_zimage_inputs(image_prompt),
+                                          TIMEOUT_FAST, "[illust/z-image-turbo]"))
             print(f"[image_replicate] → {url[:80]}", flush=True)
             return url
+        except ImageCreditError:
+            raise
         except Exception as e:
             print(f"[image_replicate] z-image-turbo 실패 → flux-dev 로 재시도: {e}", flush=True)
 
@@ -162,7 +209,7 @@ def generate_reference_image(
             "num_outputs":         1,
         }
         print(f"[image_replicate] [hook/flux-dev] 9:16 | {image_prompt[:60]}…", flush=True)
-        url = _to_url(replicate.run(FLUX_DEV_MODEL, input=inputs))
+        url = _to_url(_run_prediction(FLUX_DEV_MODEL, inputs, TIMEOUT_DEV, "[hook/flux-dev]"))
         print(f"[image_replicate] → {url[:80]}", flush=True)
         return url
 
@@ -170,7 +217,7 @@ def generate_reference_image(
     inputs = _build_inputs(image_prompt, illust_mode=illust_mode)
     tag = "[illust/flux-dev]" if illust_mode else "[photo/flux-schnell]"
     print(f"[image_replicate] {tag} 9:16 | {image_prompt[:60]}…", flush=True)
-    output = replicate.run(model_id, input=inputs)
+    output = _run_prediction(model_id, inputs, TIMEOUT_DEV if illust_mode else TIMEOUT_FAST, tag)
     url = _to_url(output)
     print(f"[image_replicate] → {url[:80]}", flush=True)
     return url
