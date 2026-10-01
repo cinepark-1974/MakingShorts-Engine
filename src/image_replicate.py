@@ -32,36 +32,63 @@ class ImageCreditError(RuntimeError):
     """Replicate 크레딧 부족(402) — 다음 컷도 실패하므로 배치를 멈춘다."""
 
 
+_API = "https://api.replicate.com/v1"
+
+
+def _headers() -> dict:
+    return {"Authorization": f"Bearer {os.environ.get('REPLICATE_API_TOKEN', '')}",
+            "Content-Type": "application/json"}
+
+
 def _run_prediction(model: str, inputs: dict, timeout: int, tag: str):
-    """예측을 시작하고 끝날 때까지 상태를 확인한다. 시간 초과·실패는 이유를 담아 예외로 올린다."""
+    """Replicate HTTP API 를 직접 호출한다 (공식 문서의 엔드포인트 그대로).
+
+    2026-10-01 로그: flux-schnell 은 replicate 파이썬 라이브러리(1.0.7)가 서버 응답을 읽다가
+    'validation error for Prediction / version: none is not an allowed value' 로 실패했다.
+    응답의 version 칸이 비어 있어 라이브러리 검사에서 걸린 것 → 라이브러리를 거치지 않고 직접 읽는다.
+    """
+    import requests
     t0 = time.time()
-    try:
-        pred = replicate.predictions.create(model=model, input=inputs)
-    except Exception as e:
-        msg = str(e)
-        print(f"[image_replicate] {tag} 시작 실패: {msg[:300]}", flush=True)
-        if "402" in msg or "nsufficient credit" in msg:
-            raise ImageCreditError("Replicate 크레딧이 부족합니다. replicate.com/account/billing 에서 "
-                                   "충전한 뒤 몇 분 후 다시 시도하세요.") from e
-        raise
-    print(f"[image_replicate] {tag} 시작 id={pred.id}", flush=True)
-    while pred.status not in ("succeeded", "failed", "canceled"):
+    body = {"input": inputs}
+    r = None
+    for attempt in range(3):                                   # 429(요청 과다)만 잠깐 쉬고 재시도
+        r = requests.post(f"{_API}/models/{model}/predictions", json=body, headers=_headers(), timeout=60)
+        if r.status_code != 429:
+            break
+        time.sleep(5 * (attempt + 1))
+    if r.status_code == 402:
+        print(f"[image_replicate] {tag} 크레딧 부족 (402)", flush=True)
+        raise ImageCreditError("Replicate 크레딧이 부족합니다. replicate.com/account/billing 에서 "
+                               "충전한 뒤 몇 분 후 다시 시도하세요.")
+    if r.status_code >= 300:
+        print(f"[image_replicate] {tag} 시작 실패 HTTP {r.status_code}: {r.text[:300]}", flush=True)
+        raise RuntimeError(f"Replicate 요청 실패 (HTTP {r.status_code}): {r.text[:200]}")
+    pred = r.json()
+    pid = pred.get("id", "")
+    get_url = (pred.get("urls") or {}).get("get") or f"{_API}/predictions/{pid}"
+    print(f"[image_replicate] {tag} 시작 id={pid}", flush=True)
+    while pred.get("status") not in ("succeeded", "failed", "canceled"):
         if time.time() - t0 > timeout:
             try:
-                pred.cancel()
+                requests.post(f"{_API}/predictions/{pid}/cancel", headers=_headers(), timeout=30)
             except Exception:
                 pass
-            print(f"[image_replicate] {tag} ⏰ {timeout}초 초과 → 취소 id={pred.id}", flush=True)
-            raise TimeoutError(f"이미지 생성이 {timeout}초 안에 끝나지 않았습니다 (Replicate id={pred.id})")
+            print(f"[image_replicate] {tag} ⏰ {timeout}초 초과 → 취소 id={pid}", flush=True)
+            raise TimeoutError(f"이미지 생성이 {timeout}초 안에 끝나지 않았습니다 (Replicate id={pid})")
         time.sleep(_POLL_INTERVAL)
-        pred.reload()
+        try:
+            g = requests.get(get_url, headers=_headers(), timeout=30)
+            if g.status_code == 200:
+                pred = g.json()
+        except Exception as e:                                  # 일시적 네트워크 오류는 다음 확인 때 다시
+            print(f"[image_replicate] {tag} 상태 확인 오류(재시도): {e}", flush=True)
     sec = round(time.time() - t0)
-    if pred.status != "succeeded":
-        err = getattr(pred, "error", "") or pred.status
+    if pred.get("status") != "succeeded":
+        err = pred.get("error") or pred.get("status")
         print(f"[image_replicate] {tag} 실패 ({sec}초): {str(err)[:300]}", flush=True)
         raise RuntimeError(f"Replicate 이미지 생성 실패: {err}")
     print(f"[image_replicate] {tag} 완료 ({sec}초)", flush=True)
-    return pred.output
+    return pred.get("output")
 
 # ── 모델 ID ───────────────────────────────────────────────────────────────────
 FLUX_SCHNELL_MODEL = "black-forest-labs/flux-schnell"   # 사진형 — 빠름
