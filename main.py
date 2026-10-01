@@ -1403,6 +1403,12 @@ if not step2_locked:
                     scene["image_status"] = "error"
                     scene["image_error"]  = str(ex)
                     err_box.error(f"#{sno:02d} 수집 실패: {ex}")
+                    if "크레딧" in str(ex):          # 크레딧 부족이면 다음 컷도 실패 → 배치 중단
+                        try:
+                            manager.save_state(state)
+                        except Exception:
+                            pass
+                        break
 
                 # 씬마다 즉시 저장 — 에러는 화면에 표시
                 try:
