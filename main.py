@@ -519,6 +519,7 @@ def load_api_keys():
         "R2_ACCESS_KEY_ID",
         "R2_SECRET_ACCESS_KEY",
         "R2_BUCKET",
+        "ELEVENLABS_VOICE_ID_JA",  # SceneStory 일본어 나레이션 (없으면 기본값 사용)
     ]:
         try:
             keys[k] = st.secrets[k]
@@ -694,6 +695,27 @@ with st.sidebar:
                 st.markdown(f"{'✅' if _ok else '❌'} **{_name}** — {_msg}")
             if _r2["ok"]:
                 st.success("R2 연결 성공 — 버킷에 _tests/connection_test.txt 가 생겼습니다.")
+
+        st.markdown("---")
+        st.caption("SceneStory 일본어 목소리로 시험 문장을 읽혀 속도를 잽니다.")
+        if st.button("🎙 일본어 목소리 테스트", key="ja_voice_btn", use_container_width=True):
+            from src import voice_test
+            with st.spinner("일본어 음성 만드는 중…"):
+                st.session_state["_ja_voice"] = voice_test.test_voice(
+                    _tk.get("ELEVENLABS_API_KEY", ""),
+                    _tk.get("ELEVENLABS_VOICE_ID_JA", "") or voice_test.JA_VOICE_ID)
+        _jv = st.session_state.get("_ja_voice")
+        if _jv:
+            from src import voice_test
+            if _jv["ok"]:
+                st.success(f"성공 — {_jv['seconds']}초 · 초당 {_jv['cps']}자 "
+                           f"(문장부호 빼면 {_jv['cps_no_punct']}자)")
+                st.audio(_jv["audio"], format="audio/mpeg")
+            else:
+                st.error(f"실패 — {_jv['error']}")
+            st.download_button("⬇ 측정 결과 JSON (Claude 에게 전달용)",
+                               data=voice_test.result_json(_jv), file_name="ja_voice_test.json",
+                               mime="application/json", key="ja_voice_dl", use_container_width=True)
 
         st.markdown("---")
         st.caption("Lyria 30초 음악 클립 1개를 받아 봅니다 (Google 요금이 발생할 수 있음).")
