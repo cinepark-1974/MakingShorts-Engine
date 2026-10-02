@@ -128,10 +128,21 @@ def _nchars(t: str) -> int:
     return len(re.sub(r"\s", "", t or ""))
 
 
+def _cut_budget(length: str) -> tuple:
+    """컷당 글자 수 (목표 하한, 목표 상한, 절대 상한). 마지막 컷(엔딩 멘트)은 제외하고 나눈다."""
+    sp = _spec(length)
+    body = sp["cuts"] - 1
+    lo, hi = sp["total"][0] - 18, sp["total"][1] - 18
+    return max(10, lo // body), max(14, hi // body), max(18, int(hi / body * 1.35))
+
+
 def _system(closing: str, length: str) -> str:
     sp = _spec(length)
-    return (SYSTEM + f"\n\n[이번 편 분량]\n- 컷 수 {sp['cuts']}개, narration_tts 합계(공백 제외) "
-            f"{sp['total'][0]}~{sp['total'][1]}자.\n- 마지막 컷 narration 은 정확히 「{closing}」.")
+    a, b, mx = _cut_budget(length)
+    return (SYSTEM + f"\n\n[이번 편 분량 — 가장 중요한 규칙]\n- 컷 수 {sp['cuts']}개, narration_tts 합계(공백 제외) "
+            f"{sp['total'][0]}~{sp['total'][1]}자. 일본어 낭독 속도는 초당 약 4자입니다.\n"
+            f"- 컷 하나의 narration_tts 는 {a}~{b}자, 어떤 컷도 {mx}자를 넘지 않는다. 한 컷 = 짧은 한 문장.\n"
+            f"- 마지막 컷 narration 은 정확히 「{closing}」.")
 
 
 def _user(form: dict, length: str) -> str:
@@ -162,6 +173,13 @@ def lint(data: dict, closing: str, length: str) -> list:
             issues.append(f"{n}컷 scene_type '{st}' 는 TITLE/SKETCH/PHOTO 가 아닙니다.")
         tts = s.get("narration_tts") or ""
         total += _nchars(tts)
+        if s is not scenes[-1] and _nchars(tts) > _cut_budget(length)[2]:
+            issues.append(f"{n}컷 narration_tts 가 {_nchars(tts)}자 — 컷당 {_cut_budget(length)[2]}자 이하로.")
+        odd = sorted({c for c in (s.get("narration") or "") if "\u4e00" <= c <= "\u9fff"} -
+                     {c for c in tts if "\u4e00" <= c <= "\u9fff"} - set("〇一二三四五六七八九十百千万"))
+        if odd:
+            issues.append(f"{n}컷 자막(narration)에만 있는 한자 {''.join(odd)} — 오자(중국 간체자 등)인지 확인해 "
+                          "narration 과 narration_tts 를 같은 글자로.")
         if re.search(r"[0-9０-９]", tts):
             issues.append(f"{n}컷 narration_tts 에 아라비아 숫자가 있습니다 → 한자로.")
         if re.search(r"[A-Za-zＡ-Ｚａ-ｚ]", tts.replace(BRAND, "")):
@@ -291,7 +309,9 @@ def form_from_candidate(c: dict, note: str = "") -> dict:
 
 def fact_check(client, form: dict, data: dict) -> dict:
     from src.prompts import SCRIPT_MODEL, _text_of, _extract_json, _call_json
-    user = f"작품: {form.get('work', '')} ({form.get('genre', '')})\n\n검증할 대본:\n{_fact_payload(data)}"
+    import datetime
+    user = (f"오늘 날짜: {datetime.date.today().isoformat()} (경과 연수는 이 날짜 기준으로 계산)\n"
+            f"작품: {form.get('work', '')} ({form.get('genre', '')})\n\n검증할 대본:\n{_fact_payload(data)}")
     messages = [{"role": "user", "content": user}]
     try:
         tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
@@ -314,6 +334,73 @@ def fact_check(client, form: dict, data: dict) -> dict:
         return result
     except Exception as e:
         return {"claims": [], "web_search": False, "error": str(e)}
+
+
+SHRINK_SYSTEM = """당신은 일본어 쇼츠 나레이션 편집자입니다. 컷별 나레이션을 받아 정해진 글자 수에 맞게 다시 씁니다.
+- 사실(작품명·연도·인물·사건)은 바꾸지 않고, 꾸밈말·반복·설명을 덜어냅니다. 새 사실을 더하지 않습니다.
+- です・ます調, 차분한 문체 유지. 각 컷은 짧은 한 문장.
+- narration_tts 는 숫자를 한자로, 영문은 가타카나로. narration 은 같은 문장(자막용, 숫자·영문 표기 그대로 가능).
+- narration 과 narration_tts 의 한자는 같은 글자로 (일본 글자체만).
+설명 없이 JSON 만 출력: {"cuts": [{"scene_no": 1, "narration": "", "narration_tts": ""}]}"""
+
+
+def _total(data: dict) -> int:
+    return sum(_nchars(sc.get("narration_tts", "")) for sc in data.get("scenes", []))
+
+
+def fit_length(client, data: dict, closing: str, length: str, say=None, rounds: int = 3) -> dict:
+    """합계 글자 수가 범위를 벗어나면 나레이션만 따로 줄이거나 늘린다 (최대 3회).
+    대본 전체를 다시 쓰게 하면 길이를 놓치므로, 컷별 목표 글자 수를 숫자로 주고 나레이션만 고치게 한다."""
+    from src.prompts import _call_json
+    say = say or (lambda m: None)
+    lo, hi = _spec(length)["total"]
+    a, b, mx = _cut_budget(length)
+    for _ in range(rounds):
+        total = _total(data)
+        if lo <= total <= hi:
+            break
+        body = [sc for sc in data.get("scenes", [])][:-1]      # 마지막 컷 = 엔딩 멘트, 고정
+        say(f"③-1 길이 맞추는 중 — 지금 {total}자 → 목표 {lo}~{hi}자")
+        rows = [{"scene_no": sc.get("scene_no"), "target": f"{a}~{b}자 (최대 {mx}자)",
+                 "now": _nchars(sc.get("narration_tts", "")),
+                 "narration": sc.get("narration", ""), "narration_tts": sc.get("narration_tts", "")}
+                for sc in body]
+        user = (f"합계 목표 {lo}~{hi}자 (마지막 엔딩 컷 {_nchars(closing_tts(closing))}자 포함). "
+                f"아래 {len(rows)}컷을 각 target 에 맞게 다시 써 주세요.\n"
+                + json.dumps(rows, ensure_ascii=False, indent=1))
+        try:
+            out = _call_json(client, SHRINK_SYSTEM, user, max_tokens=6000)
+        except Exception as e:
+            say(f"　→ 길이 조정 실패: {e}")
+            break
+        fixed = {int(c.get("scene_no") or 0): c for c in out.get("cuts", []) if isinstance(c, dict)}
+        for sc in body:
+            c = fixed.get(int(sc.get("scene_no") or 0))
+            if c and (c.get("narration_tts") or "").strip():
+                sc["narration_tts"] = c["narration_tts"].strip()
+                sc["narration"] = (c.get("narration") or c["narration_tts"]).strip()
+    return data
+
+
+def refit_project(api_key: str, state: dict, progress=None) -> dict:
+    """이미 만든 편의 나레이션만 목표 길이로 고친다. 이미지·영상 클립·타이틀 카드는 건드리지 않는다."""
+    import anthropic
+    closing = (state.get("closing") or DEFAULT_CLOSING).strip()
+    length = state.get("length") if state.get("length") in LENGTH_PRESETS else DEFAULT_LENGTH
+    client = anthropic.Anthropic(api_key=api_key)
+    fit_length(client, state, closing, length, progress)
+    for sc in state.get("scenes", []):
+        if not (sc.get("narration_tts") or "").strip():
+            sc["narration_tts"] = sc.get("narration", "")
+    last = state["scenes"][-1]
+    last["narration"], last["narration_tts"] = closing, closing_tts(closing)
+    state["full_narration"] = "".join((sc.get("narration_tts") or "").strip() for sc in state["scenes"])
+    ver = state.setdefault("verification", {})
+    total = _total(state)
+    ver.update(tts_chars=total, est_seconds=round(total / JA_CPS),
+               remaining_issues=lint(state, closing, length))
+    (progress or (lambda m: None))(f"✅ {total}자 · 약 {round(total / JA_CPS)}초")
+    return state
 
 
 def finalize(data: dict, closing: str) -> dict:
@@ -392,6 +479,7 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
         rounds += 1
         flagged = []
         issues = lint(data, closing, length)
+    data = fit_length(client, data, closing, length, say)
     data = finalize(data, closing)
     final_issues = lint(data, closing, length)
     total = sum(_nchars(sc.get("narration_tts", "")) for sc in data["scenes"])
