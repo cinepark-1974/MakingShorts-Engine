@@ -1303,6 +1303,32 @@ if step1_done:
                     _src = f" — [출처]({_c['source']})" if str(_c.get("source", "")).startswith("http") else ""
                     st.markdown(f"- {_c.get('scene_no', '')}씬 · {_c.get('claim', '')}{_src}")
 
+    # SceneStory — 길이가 범위를 벗어난 대본: 나레이션만 줄이기 (이미지·영상은 그대로)
+    if project_channel(state) == "scenestory":
+        from src import scenestory as _ss
+        _lo, _hi = _ss.LENGTH_PRESETS.get(state.get("length") or "long", _ss.LENGTH_PRESETS["long"])["total"]
+        _now = _ss._total(state)
+        if not _lo <= _now <= _hi:
+            st.error(f"나레이션이 {_now}자(약 {round(_now / _ss.JA_CPS)}초)입니다. 목표는 {_lo}~{_hi}자"
+                     f"(약 {round(_lo / _ss.JA_CPS)}~{round(_hi / _ss.JA_CPS)}초)입니다. "
+                     "아래 버튼은 나레이션 글만 고치고 이미지·영상 클립은 그대로 둡니다. 그다음 음성과 합성만 다시 하면 됩니다.")
+            if st.button("✂️ 나레이션 길이만 맞추기", key="ss_fit_len", type="primary"):
+                if not api_keys.get("ANTHROPIC_API_KEY"):
+                    st.error("ANTHROPIC_API_KEY가 없습니다.")
+                else:
+                    with st.status("나레이션 길이 맞추는 중… (약 30초)", expanded=True):
+                        try:
+                            _ss.refit_project(api_keys["ANTHROPIC_API_KEY"], state, progress=st.write)
+                            state["audio_path"] = ""
+                            state["final_video_path"] = ""
+                            if state.get("status") == "done":
+                                state["status"] = "script_ready"
+                            manager.save_state(state)
+                            st.session_state.current_project = state
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"오류: {e}")
+
     # 대본 재생성 버튼 (경고 모달)
     with st.expander("⚠️ 대본 전체 재생성"):
         st.warning("대본을 다시 생성하면 모든 씬 상태가 초기화됩니다.")
