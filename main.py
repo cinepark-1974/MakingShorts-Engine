@@ -484,6 +484,16 @@ def smart_ai_image(scene: dict, replicate_token: str, google_key: str) -> tuple:
     scene_type = scene.get("scene_type", "")
     prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
 
+    # SceneStory — 스케치(얼굴 없음) / 실사(사람 없음) / 타이틀 카드(서버에서 직접 그림)
+    if scene_type in ("SKETCH", "PHOTO"):
+        from src.image_replicate import generate_scenestory_image
+        return generate_scenestory_image(replicate_token, prompt, scene_type), f"ss-{scene_type.lower()}"
+    if scene_type == "TITLE":
+        from src import scenestory as _ss
+        _cur = st.session_state.get("current_project") or {}
+        _ss.prepare_title_scenes(_cur)
+        return scene.get("image_local") or scene.get("image_path", ""), "title"
+
     # MACHINE / EXTRACTION / SCIENCE_DATA → 일러스트·설계도 스타일 (flux-schnell + illust_mode)
     if scene_type in {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}:
         url = generate_illustration_image(
@@ -795,16 +805,64 @@ def show_channel_banner(ch: str):
         st.markdown(f"## {CHANNELS[ch]}")
 
 
-if CHANNEL == "scenestory":
+if CHANNEL == "scenestory" and st.session_state.current_project is None:
+    from src import scenestory as ss
     show_channel_banner("scenestory")
-    st.info("SceneStory 제작 라인은 준비 중입니다. 설계는 프로젝트 문서 "
-            "「scenestory-jp-engine-spec」에 정리되어 있습니다.")
     st.markdown(
-        "- **형식**: 소설 · 영화 · 드라마 · 시 · 역사 속 사랑의 한 장면 + 작가의 해설 (60~75초)\n"
-        "- **화면**: 사람과 작품 장면은 펜-잉크 수채화 스케치, 오늘의 장소·물건은 실사\n"
-        "- **음성**: 일본어 나레이션 (시니어에 맞춘 느린 속도, 큰 자막)\n"
-        "- **첫 시리즈 후보**: 「姦通罪があった時代の恋」 — みだれ髪 · それから · 白蓮事件 · 花子とアン · 金妻"
+        '<p style="text-align:center; color:#1E3A4E; font-size:14px; margin:4px 0 18px;">'
+        '작품과 장면을 넣으면 Claude 가 일본어 해설 대본을 쓰고, 작품 사실을 웹에서 확인합니다.</p>',
+        unsafe_allow_html=True,
     )
+    _g1, _g2 = st.columns([1, 2])
+    with _g1:
+        ss_genre = st.selectbox("장르", list(ss.GENRES), format_func=lambda g: f"{g} · {ss.GENRES[g]}",
+                                key="ss_genre")
+    with _g2:
+        ss_work = st.text_input("작품명 (한국어로 써도 됩니다)", placeholder="예: 금요일의 아내들에게 / 金曜日の妻たちへ",
+                                key="ss_work")
+    ss_info = st.text_input("작품 정보 (선택 — 모르면 비워 두세요. 연도·방송사·작가는 웹에서 자동으로 찾습니다)",
+                            placeholder="비워 두어도 됩니다", key="ss_info")
+    ss_scene = st.text_area("해부할 장면 (한국어로 써도 됩니다)", height=110, key="ss_scene",
+                            placeholder="예: 금요일 밤 10시, 주부들이 전화를 받지 않던 시간 — 교외 주택가의 이웃집 창문")
+    ss_note = st.text_area("작가 해설 한 줄 (선택 — 이 관점이 대본의 중심이 됩니다)", height=80, key="ss_note",
+                           placeholder="예: 옆집 창문이 보이는 거리가 불륜 드라마의 무대가 된 이유")
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        ss_closing = st.selectbox("엔딩 멘트 (마지막 컷)", ss.CLOSING_PRESETS, key="ss_closing")
+    with _c2:
+        ss_length = st.radio("영상 길이", list(ss.LENGTH_PRESETS), index=2, horizontal=True,
+                             format_func=lambda k: ss.LENGTH_PRESETS[k]["label"], key="ss_length")
+    if st.button("✍️ SceneStory 대본 생성", type="primary", use_container_width=True, key="ss_make"):
+        if not ss_work.strip() or not ss_scene.strip():
+            st.error("작품명과 해부할 장면을 입력해 주세요.")
+        elif not api_keys.get("ANTHROPIC_API_KEY"):
+            st.error("ANTHROPIC_API_KEY 가 없습니다.")
+        else:
+            _form = {"genre": ss_genre, "work": ss_work.strip(), "info": ss_info.strip(),
+                     "scene": ss_scene.strip(), "note": ss_note.strip()}
+            with st.status("Claude 가 일본어 대본을 쓰고 작품 사실을 확인합니다… (약 1~3분)", expanded=True):
+                try:
+                    new_state = manager.create_new_project(chapter=ss_genre, topic=_form["work"],
+                                                           channel="scenestory")
+                    result = ss.generate_script(api_keys["ANTHROPIC_API_KEY"], _form, progress=st.write,
+                                                closing=ss_closing, length=ss_length)
+                    _form = result.get("form") or _form          # 웹에서 찾은 공식 표기·정보로 갱신
+                    new_state["topic"] = _form.get("work", new_state.get("topic", ""))
+                    new_state.update(
+                        title=result.get("title", ""), title_card=result.get("title_card", {}),
+                        full_narration=result.get("full_narration", ""), scenes=result.get("scenes", []),
+                        verification=result.get("verification", {}), closing=result.get("closing", ss_closing),
+                        length=result.get("length", ss_length), ss_form=_form, status="script_ready",
+                    )
+                    st.write("④ 타이틀 카드 만드는 중…")
+                    ss.prepare_title_scenes(new_state)
+                    manager.save_state(new_state)
+                    st.session_state.current_project = new_state
+                    st.success("대본 생성 완료!")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"대본 생성 중 오류가 발생했습니다:\n```\n{e}\n```")
     st.stop()
 
 if CHANNEL == "hasira":
@@ -1210,20 +1268,31 @@ if step1_done:
             else:
                 with st.status("대본 재생성 + 자동 검증 중… (약 1~3분)", expanded=True):
                     try:
-                        result = generate_script_and_prompts(
-                            api_key=api_keys["ANTHROPIC_API_KEY"],
-                            chapter=state["chapter"],
-                            topic=state["topic"],
-                            progress=st.write,
-                            closing=state.get("closing", ""),
-                            length=state.get("length", ""),
-                        )
+                        if project_channel(state) == "scenestory":
+                            from src import scenestory as _ss
+                            result = _ss.generate_script(
+                                api_keys["ANTHROPIC_API_KEY"], state.get("ss_form") or {},
+                                progress=st.write, closing=state.get("closing", ""),
+                                length=state.get("length", ""))
+                            state["title_card"] = result.get("title_card", {})
+                            state["title"] = result.get("title", state.get("title", ""))
+                        else:
+                            result = generate_script_and_prompts(
+                                api_key=api_keys["ANTHROPIC_API_KEY"],
+                                chapter=state["chapter"],
+                                topic=state["topic"],
+                                progress=st.write,
+                                closing=state.get("closing", ""),
+                                length=state.get("length", ""),
+                            )
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
                         state["verification"] = result.get("verification", {})
                         state["status"] = "script_ready"
                         state["audio_path"] = ""
                         state["final_video_path"] = ""
+                        if project_channel(state) == "scenestory":
+                            _ss.prepare_title_scenes(state)
                         manager.save_state(state)
                         st.session_state.current_project = state
                         st.success("재생성 완료!")
@@ -1363,7 +1432,9 @@ if not step2_locked:
                     #   "모두 Unsplash"        → 항상 Unsplash
                     #   "자동 판단" or 키없음  → visual_source / scene_type 기반 분기
                     _rep_key_ok = bool(api_keys.get("REPLICATE_API_TOKEN", ""))
-                    if not _unsplash_key and _rep_key_ok:
+                    if scene.get("scene_type") in ("SKETCH", "PHOTO", "TITLE"):   # SceneStory 는 항상 AI
+                        _use_flux = True
+                    elif not _unsplash_key and _rep_key_ok:
                         _use_flux = True
                     elif not _unsplash_key and not _rep_key_ok:
                         # Replicate도 Unsplash도 없으면 오류 방지: 빈 URL → error 처리
@@ -1485,7 +1556,11 @@ elif not step3_audio_locked:
         if not narration_text:
             st.warning("대본에 full_narration 텍스트가 없습니다. STEP 1을 먼저 실행하세요.")
         else:
-            voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "8jHHF8rMqMlg8if2mOUe")
+            if project_channel(state) == "scenestory":
+                from src.voice_test import JA_VOICE_ID as _JA
+                voice_id = api_keys.get("ELEVENLABS_VOICE_ID_JA") or _JA      # 일본어 나레이션
+            else:
+                voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "8jHHF8rMqMlg8if2mOUe")
             st.caption(f"음성 ID: `{voice_id}` · 모델: `eleven_multilingual_v2`")
             audio_btn = st.button("🎙 나레이션 음성 생성", key="audio_gen")
             if audio_btn:
@@ -2029,7 +2104,7 @@ _thumb_bgs = thumb_mod.background_candidates(state)
 
 def _make_thumb(bg_path: str = ""):
     _p = state.get("upload_pack") or {}
-    path = thumb_mod.create_thumbnail(state, publish.thumb_copy(_p), bg_path, publish.CHANNEL)
+    path = thumb_mod.create_thumbnail(state, publish.thumb_copy(_p), bg_path, publish.channel_brand(state))
     state["thumbnail_path"] = path
     state["thumbnail_bg"] = bg_path
 
@@ -2064,7 +2139,7 @@ if _pack:
     with _t2:
         st.code(publish.all_in_one(_pack), language=None)
     with st.expander("⚙️ 업로드 설정 (매번 같음)"):
-        for _k, _v in publish.UPLOAD_SETTINGS:
+        for _k, _v in publish.upload_settings(state):
             st.markdown(f"- **{_k}**: {_v}")
 
     # ── 섬네일 ──
