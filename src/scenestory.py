@@ -429,20 +429,63 @@ def jp_font(path: str, size: int):
     return ImageFont.load_default()
 
 
+_PUNCT_TAIL = "、。，．」』）！？…—―ー"          # 줄 앞에 오면 안 되는 글자
+_BREAK_STRONG = "、。」』）！？…—―"                # 이 글자 뒤는 끊기 좋은 자리
+
+
+def _hira(c: str) -> bool:
+    return "\u3041" <= c <= "\u309f"
+
+
+def _head(c: str) -> bool:                           # 한자·가타카나·여는 괄호 = 새 말덩어리의 시작
+    return ("\u4e00" <= c <= "\u9fff") or ("\u30a1" <= c <= "\u30fa") or c in "「『（"
+
+
+def phrase_wrap(draw, text: str, font, max_w: int, with_bad: bool = False):
+    """일본어 줄바꿈 — 말덩어리 경계에서 끊는다 (단어 중간 「つな/がったら」 방지).
+    ① 말 중간에서 끊는 횟수가 가장 적고 ② 줄 수가 적고 ③ 줄 길이가 고른 나눔을 고른다.
+    좋은 자리: 、。」 뒤, 히라가나 → 한자·가타카나로 바뀌는 자리. 문장부호는 줄 앞에 오지 않는다."""
+    t = text.strip()
+    n = len(t)
+    if not n:
+        return ([], 0) if with_bad else []
+    INF = (10 ** 9, 10 ** 9, 0.0)                    # (말 중간에서 끊은 횟수, 줄 수, 고르지 않음)
+    best = [INF] * (n + 1)
+    prev = [0] * (n + 1)
+    best[0] = (0, 0, 0.0)
+    for j in range(1, n + 1):
+        if j < n and t[j] in _PUNCT_TAIL:              # 다음 줄이 문장부호로 시작하면 안 됨
+            continue
+        bad, brk = 0, 0.0
+        if j < n and t[j - 1] not in _BREAK_STRONG:
+            if _hira(t[j - 1]) and _head(t[j]):
+                brk = 0.5
+            else:
+                bad = 1
+        for i in range(j - 1, -1, -1):
+            if best[i] == INF:
+                continue
+            w = draw.textlength(t[i:j], font=font)
+            if w > max_w:
+                if j - i > 1:
+                    break                              # 더 앞에서 시작하면 더 길어질 뿐
+                w = max_w                              # 한 글자도 안 들어가는 극단적 경우
+            slack = 0.0 if j == n else 2.0 * ((max_w - w) / max_w) ** 2
+            cand = (best[i][0] + bad, best[i][1] + 1, best[i][2] + brk + slack)
+            if cand < best[j]:
+                best[j], prev[j] = cand, i
+    if best[n] == INF:
+        return ([t], 1) if with_bad else [t]
+    lines, j = [], n
+    while j > 0:
+        lines.append(t[prev[j]:j])
+        j = prev[j]
+    lines = lines[::-1]
+    return (lines, best[n][0]) if with_bad else lines
+
+
 def wrap_ja(draw, text: str, font, max_w: int, max_lines: int = 3) -> list:
-    """일본어는 띄어쓰기가 없으므로 글자 단위로 줄을 나눈다. 문장부호는 줄 앞에 오지 않게."""
-    lines, cur = [], ""
-    for ch in text:
-        if draw.textlength(cur + ch, font=font) <= max_w:
-            cur += ch
-            continue
-        if ch in "、。」』）！？…" and cur:
-            cur += ch                                  # 문장부호는 앞 줄 끝에 붙인다
-            continue
-        lines.append(cur)
-        cur = ch
-    if cur:
-        lines.append(cur)
+    lines = phrase_wrap(draw, text, font, max_w)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
         lines[-1] = lines[-1][:-1] + "…"
@@ -555,10 +598,21 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str, li
 
     narr = (scene.get("narration") or "").strip()
     if narr:
-        f_sub = jp_font(JP_SANS_BOLD, 72)               # 커피 채널(58)보다 크게 — 시니어 시청자
+        # 72px(시니어용 큰 자막)부터: 3줄 안에, 말 중간에서 끊지 않는 가장 큰 글자 크기를 쓴다
+        pick = None
+        for size in (72, 66, 60, 56):
+            f = jp_font(JP_SANS_BOLD, size)
+            ls, bad = phrase_wrap(d, narr, f, W - 2 * m - 20, with_bad=True)
+            if len(ls) <= 3 and (pick is None or bad < pick[2]):
+                pick = (f, ls, bad)
+            if len(ls) <= 3 and bad == 0:
+                break
+        f_sub = pick[0] if pick else jp_font(JP_SANS_BOLD, 56)
+        sub_lines = pick[1] if pick else wrap_ja(d, narr, f_sub, W - 2 * m - 20, max_lines=3)
+        lh = int(f_sub.size * 1.3)
         y0 = int(H * 0.735)
-        for i, ln in enumerate(wrap_ja(d, narr, f_sub, W - 2 * m - 20, max_lines=3)):
-            _t((W // 2, y0 + i * 94), ln, f_sub, text, 7, anchor="ma")
+        for i, ln in enumerate(sub_lines):
+            _t((W // 2, y0 + i * lh), ln, f_sub, text, 7, anchor="ma")
     img.save(out_path, "PNG")
     return out_path
 
