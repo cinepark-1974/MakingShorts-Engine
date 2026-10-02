@@ -114,6 +114,10 @@ st.markdown("""
 
 /* ── 전체 배경 ── */
 .stApp { background-color: #F7FBFC; color: #142C3C; }
+/* 본문 위젯 라벨·라디오 글자 — 브라우저가 다크 모드여도 읽히게 */
+[data-testid="stMain"] [data-testid="stWidgetLabel"] p, [data-testid="stMain"] [data-testid="stWidgetLabel"] label,
+[data-testid="stMain"] [role="radiogroup"] label p, [data-testid="stMain"] [data-testid="stExpander"] summary p,
+[data-testid="stMain"] [data-testid="stCaptionContainer"], [data-testid="stMain"] .stMarkdown p { color: #142C3C !important; }
 
 /* ── 사이드바 — 다크 네이비 ── */
 section[data-testid="stSidebar"] {
@@ -810,59 +814,99 @@ if CHANNEL == "scenestory" and st.session_state.current_project is None:
     show_channel_banner("scenestory")
     st.markdown(
         '<p style="text-align:center; color:#1E3A4E; font-size:14px; margin:4px 0 18px;">'
-        '작품과 장면을 넣으면 Claude 가 일본어 해설 대본을 쓰고, 작품 사실을 웹에서 확인합니다.</p>',
+        '키워드 하나만 넣으면 Claude 가 웹에서 실제 작품 속 장면 후보 3개를 찾아 옵니다. '
+        '하나를 고르면 일본어 대본을 쓰고 사실을 다시 확인합니다.</p>',
         unsafe_allow_html=True,
     )
-    _g1, _g2 = st.columns([1, 2])
-    with _g1:
-        ss_genre = st.selectbox("장르", list(ss.GENRES), format_func=lambda g: f"{g} · {ss.GENRES[g]}",
-                                key="ss_genre")
-    with _g2:
-        ss_work = st.text_input("작품명 (한국어로 써도 됩니다)", placeholder="예: 금요일의 아내들에게 / 金曜日の妻たちへ",
-                                key="ss_work")
-    ss_info = st.text_input("작품 정보 (선택 — 모르면 비워 두세요. 연도·방송사·작가는 웹에서 자동으로 찾습니다)",
-                            placeholder="비워 두어도 됩니다", key="ss_info")
-    ss_scene = st.text_area("해부할 장면 (한국어로 써도 됩니다)", height=110, key="ss_scene",
-                            placeholder="예: 금요일 밤 10시, 주부들이 전화를 받지 않던 시간 — 교외 주택가의 이웃집 창문")
-    ss_note = st.text_area("작가 해설 한 줄 (선택 — 이 관점이 대본의 중심이 됩니다)", height=80, key="ss_note",
-                           placeholder="예: 옆집 창문이 보이는 거리가 불륜 드라마의 무대가 된 이유")
-    _c1, _c2 = st.columns(2)
-    with _c1:
-        ss_closing = st.selectbox("엔딩 멘트 (마지막 컷)", ss.CLOSING_PRESETS, key="ss_closing")
-    with _c2:
-        ss_length = st.radio("영상 길이", list(ss.LENGTH_PRESETS), index=2, horizontal=True,
-                             format_func=lambda k: ss.LENGTH_PRESETS[k]["label"], key="ss_length")
-    if st.button("✍️ SceneStory 대본 생성", type="primary", use_container_width=True, key="ss_make"):
-        if not ss_work.strip() or not ss_scene.strip():
-            st.error("작품명과 해부할 장면을 입력해 주세요.")
+    st.session_state.setdefault("ss_cands", [])
+    st.session_state.setdefault("ss_seen", [])
+
+    with st.form("ss_find_form", border=False):
+        _k1, _k2 = st.columns([4, 1], vertical_alignment="bottom")
+        with _k1:
+            ss_kw = st.text_input("① 키워드", key="ss_kw",
+                                  placeholder="예: 불륜 남편 / 첫사랑 편지 / 금요일의 아내들에게 / 벚꽃 이별")
+        with _k2:
+            _find = st.form_submit_button("🔎 장면 찾기", type="primary", use_container_width=True)
+
+    def _ss_search(exclude):
+        if not ss_kw.strip():
+            st.error("키워드를 입력해 주세요.")
         elif not api_keys.get("ANTHROPIC_API_KEY"):
             st.error("ANTHROPIC_API_KEY 가 없습니다.")
         else:
-            _form = {"genre": ss_genre, "work": ss_work.strip(), "info": ss_info.strip(),
-                     "scene": ss_scene.strip(), "note": ss_note.strip()}
-            with st.status("Claude 가 일본어 대본을 쓰고 작품 사실을 확인합니다… (약 1~3분)", expanded=True):
-                try:
-                    new_state = manager.create_new_project(chapter=ss_genre, topic=_form["work"],
-                                                           channel="scenestory")
-                    result = ss.generate_script(api_keys["ANTHROPIC_API_KEY"], _form, progress=st.write,
-                                                closing=ss_closing, length=ss_length)
-                    _form = result.get("form") or _form          # 웹에서 찾은 공식 표기·정보로 갱신
-                    new_state["topic"] = _form.get("work", new_state.get("topic", ""))
-                    new_state.update(
-                        title=result.get("title", ""), title_card=result.get("title_card", {}),
-                        full_narration=result.get("full_narration", ""), scenes=result.get("scenes", []),
-                        verification=result.get("verification", {}), closing=result.get("closing", ss_closing),
-                        length=result.get("length", ss_length), ss_form=_form, status="script_ready",
-                    )
-                    st.write("④ 타이틀 카드 만드는 중…")
-                    ss.prepare_title_scenes(new_state)
-                    manager.save_state(new_state)
-                    st.session_state.current_project = new_state
-                    st.success("대본 생성 완료!")
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"대본 생성 중 오류가 발생했습니다:\n```\n{e}\n```")
+            with st.spinner("웹에서 작품과 장면을 찾는 중… (약 30초~1분)"):
+                r = ss.find_candidates(api_keys["ANTHROPIC_API_KEY"], ss_kw, exclude=exclude)
+            if r["error"] and not r["candidates"]:
+                st.error(f"후보를 찾지 못했습니다. 키워드를 바꿔 보세요.\n\n{r['error']}")
+            st.session_state.ss_cands = r["candidates"]
+            st.session_state.ss_seen = list(dict.fromkeys(
+                (exclude or []) + [c["work"] for c in r["candidates"]]))
+
+    if _find:
+        _ss_search([])
+
+    _cands = st.session_state.ss_cands
+    _pick = None
+    if _cands:
+        st.markdown("**② 장면 고르기**")
+        for _i, _c in enumerate(_cands):
+            with st.container(border=True):
+                _meta = " · ".join(x for x in (ss.GENRES.get(_c.get("genre"), ""), _c.get("year"),
+                                                _c.get("origin"), _c.get("creator")) if x)
+                _ko = f" ({_c['work_ko']})" if _c.get("work_ko") and _c["work_ko"] != _c["work"] else ""
+                st.markdown(f"**『{_c['work']}』**{_ko}  \n<small>{_meta}</small>", unsafe_allow_html=True)
+                st.write(_c.get("scene", ""))
+                if _c.get("angle"):
+                    st.caption(f"해설 각도 · {_c['angle']}")
+                if _c.get("why"):
+                    st.caption(f"시니어 포인트 · {_c['why']}")
+                if _c.get("source"):
+                    st.caption(f"근거 · {_c['source']}")
+                if st.button("✍️ 이 장면으로 대본 만들기", key=f"ss_pick_{_i}", type="primary",
+                             use_container_width=True):
+                    _pick = _c
+        if st.button("🔄 다른 후보 찾기", key="ss_more"):
+            _ss_search(st.session_state.ss_seen)
+            st.rerun()
+
+    with st.expander("세부 설정 (선택 — 그대로 두어도 됩니다)"):
+        ss_note = st.text_area("작가 해설 한 줄 — 비우면 후보 카드의 해설 각도를 씁니다", height=70, key="ss_note",
+                               placeholder="예: 옆집 창문이 보이는 거리가 불륜 드라마의 무대가 된 이유")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            ss_length = st.radio("영상 길이", list(ss.LENGTH_PRESETS), index=2,
+                                 format_func=lambda k: ss.LENGTH_PRESETS[k]["label"], key="ss_length")
+        with _c2:
+            ss_closing = st.selectbox("엔딩 멘트 (마지막 컷)", ss.CLOSING_PRESETS, key="ss_closing")
+
+    if _pick is not None:
+        _form = ss.form_from_candidate(_pick, ss_note)
+        with st.status(f"『{_pick['work']}』 일본어 대본을 쓰고 사실을 확인합니다… (약 1~3분)", expanded=True):
+            try:
+                new_state = manager.create_new_project(chapter=_form["genre"], topic=_form["work"],
+                                                       channel="scenestory")
+                result = ss.generate_script(api_keys["ANTHROPIC_API_KEY"], _form, progress=st.write,
+                                            closing=ss_closing, length=ss_length)
+                _form = result.get("form") or _form
+                new_state["topic"] = _form.get("work", new_state.get("topic", ""))
+                new_state.update(
+                    title=result.get("title", ""), title_card=result.get("title_card", {}),
+                    full_narration=result.get("full_narration", ""), scenes=result.get("scenes", []),
+                    verification=result.get("verification", {}), closing=result.get("closing", ss_closing),
+                    length=result.get("length", ss_length), ss_form=_form, ss_keyword=ss_kw.strip(),
+                    status="script_ready",
+                )
+                st.write("④ 타이틀 카드 만드는 중…")
+                ss.prepare_title_scenes(new_state)
+                manager.save_state(new_state)
+                st.session_state.current_project = new_state
+                st.session_state.ss_cands, st.session_state.ss_seen = [], []
+                st.success("대본 생성 완료!")
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as e:
+                st.error(f"대본 생성 중 오류가 발생했습니다:\n```\n{e}\n```")
     st.stop()
 
 if CHANNEL == "hasira":
