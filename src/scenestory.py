@@ -225,6 +225,70 @@ def research_work(client, form: dict) -> dict:
         return {"found": False, "web_search": False, "error": str(e)}
 
 
+FIND_SYSTEM = """당신은 유튜브 채널 'SceneStory'의 기획 조사원입니다. 시청자는 일본의 60~70대입니다.
+사용자가 한국어 키워드 하나를 줍니다 (예: "불륜 남편", "첫사랑 편지", "금요일의 아내들에게").
+웹 검색으로 그 키워드에 맞는 '실제 작품 속 사랑의 한 장면' 후보 3개를 찾습니다.
+
+[후보 조건]
+- 실제로 존재하는 소설·영화·드라마·시, 또는 실제 역사 사건. 일본 시니어가 알 만한 것 우선
+  (일본 작품, 또는 일본에서 크게 알려진 해외 작품. 1950~1990년대 작품을 우선).
+- 키워드가 작품명이면 그 작품 안의 서로 다른 장면 3개를 고릅니다.
+- 장면은 줄거리 자료(위키백과·공식 소개·신뢰할 수 있는 기사)로 확인되는 것만. 지어내지 않습니다.
+- 성행위 묘사가 중심인 장면, 자살·동반자살의 방법이 중심인 장면은 고르지 않습니다.
+- 세 후보는 서로 다른 작품(키워드가 작품명일 때만 같은 작품)으로, 장르가 겹치지 않게 섞습니다.
+- 확인하지 못한 칸은 빈 문자열로 둡니다.
+
+마지막에 아래 JSON 만 출력하세요 (설명 문장 금지).
+{"candidates": [
+ {"genre": "小説|映画|ドラマ|詩|歴史", "work": "일본 공식 표기", "work_ko": "한국어 표기",
+  "year": "1983年", "origin": "방송사·출판사·제작사·감독 등", "creator": "작가·각본가",
+  "scene": "해부할 장면 — 누가, 어디서, 무엇을 하는지 구체적으로 두 문장 (한국어)",
+  "angle": "시나리오 작가의 해설 각도 한 줄 (한국어)",
+  "why": "일본 시니어에게 통하는 이유 한 줄 (한국어)", "source": "근거 URL"}
+]}"""
+
+
+def find_candidates(api_key: str, keyword: str, exclude: list = None) -> dict:
+    """키워드 하나 → 웹 검색으로 실제 작품·장면 후보 3개. 반환: {"candidates": [...], "error": ""}"""
+    import anthropic
+    from src.prompts import SCRIPT_MODEL, _text_of, _extract_json
+    client = anthropic.Anthropic(api_key=api_key)
+    user = f"키워드: {keyword.strip()}"
+    if exclude:
+        user += "\n이미 보여준 작품(이번에는 빼고 다른 것으로): " + ", ".join(exclude)
+    messages = [{"role": "user", "content": user}]
+    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
+    try:
+        resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=4000, system=FIND_SYSTEM,
+                                      messages=messages, tools=tools)
+        for _ in range(3):
+            if getattr(resp, "stop_reason", "") != "pause_turn":
+                break
+            messages = messages + [{"role": "assistant", "content": resp.content}]
+            resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=4000, system=FIND_SYSTEM,
+                                          messages=messages, tools=tools)
+        r = _extract_json(_text_of(resp))
+        cands = [c for c in (r.get("candidates") or []) if isinstance(c, dict) and c.get("work") and c.get("scene")]
+        for c in cands:
+            if c.get("genre") not in GENRES:
+                c["genre"] = "映画"
+        return {"candidates": cands[:3], "error": "" if cands else "후보를 찾지 못했습니다."}
+    except Exception as e:
+        return {"candidates": [], "error": f"{type(e).__name__}: {e}"}
+
+
+def form_from_candidate(c: dict, note: str = "") -> dict:
+    """후보 카드 → generate_script 입력. 이미 웹에서 찾은 정보라 조사 단계를 건너뛴다."""
+    known = " · ".join(x for x in (c.get("year"), c.get("origin"), c.get("creator")) if x)
+    return {
+        "genre": c.get("genre", "映画"), "work": c.get("work", ""), "work_ko": c.get("work_ko", ""),
+        "info": known, "scene": c.get("scene", ""), "note": note.strip() or c.get("angle", ""),
+        "research": {"found": True, "work": c.get("work", ""), "year": c.get("year", ""),
+                     "origin": c.get("origin", ""), "creator": c.get("creator", ""),
+                     "summary": c.get("scene", ""), "source": c.get("source", ""), "web_search": True},
+    }
+
+
 def fact_check(client, form: dict, data: dict) -> dict:
     from src.prompts import SCRIPT_MODEL, _text_of, _extract_json, _call_json
     user = f"작품: {form.get('work', '')} ({form.get('genre', '')})\n\n검증할 대본:\n{_fact_payload(data)}"
@@ -292,13 +356,17 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
     client = anthropic.Anthropic(api_key=api_key)
     system = _system(closing, length)
 
-    say("⓪ 작품 정보 찾는 중 (웹 검색)…")
-    research = research_work(client, form)
     form = dict(form)
+    if (form.get("research") or {}).get("found"):         # 후보 카드에서 고른 경우 — 이미 조사됨
+        research = form.pop("research")
+    else:
+        say("⓪ 작품 정보 찾는 중 (웹 검색)…")
+        research = research_work(client, form)
+        form.pop("research", None)
     if research.get("found") and research.get("work"):
         form["work"] = research["work"]
         known = " · ".join(x for x in (research.get("year"), research.get("origin"), research.get("creator")) if x)
-        form["info"] = "; ".join(x for x in (form.get("info", ""), known,
+        form["info"] = "; ".join(x for x in (known,
                                              f"줄거리: {research.get('summary', '')}") if x)
         say(f"　→ 『{form['work']}』 {known}")
     else:
