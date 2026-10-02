@@ -21,7 +21,7 @@ _JOBS: dict = {}            # project_id → job dict (서버 프로세스가 �
 _LOCK = threading.Lock()
 
 INTER_SCENE_SEC = 5         # 컷 사이 간격 (rate limit 예방)
-STYLE_LOCK_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA"}   # 스케치 화풍 유지 씬
+STYLE_LOCK_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA", "SKETCH"}   # 스케치 화풍 유지 씬
 
 
 def get_job(project_id: str):
@@ -86,12 +86,15 @@ def _is_expired_ai_image(scene: dict) -> bool:
 
 
 def _regenerate_image(scene: dict, replicate_token: str) -> None:
-    from src.image_replicate import generate_reference_image
+    from src.image_replicate import generate_reference_image, generate_scenestory_image
     prompt = (scene.get("image_prompt") or scene.get("flow_prompt") or "").strip()
-    url = generate_reference_image(
-        replicate_token, prompt,
-        illust_mode=scene.get("scene_type", "") in _ILLUST_TYPES,
-    )
+    if scene.get("scene_type") in ("SKETCH", "PHOTO"):          # SceneStory
+        url = generate_scenestory_image(replicate_token, prompt, scene["scene_type"])
+    else:
+        url = generate_reference_image(
+            replicate_token, prompt,
+            illust_mode=scene.get("scene_type", "") in _ILLUST_TYPES,
+        )
     scene["image_path"] = url
     scene["reference_image_url"] = url
     scene["image_status"] = "done"

@@ -80,9 +80,11 @@ def get_sfx(tag: str, api_key: str, cache_dir: str):
         return None
 
 
-def get_bgm(seconds: float, api_key: str, cache_dir: str):
-    """영상 길이에 맞춘 배경음악 파일 경로. 준비할 수 없으면 None."""
-    own = sorted(glob.glob(os.path.join(ASSETS_DIR, "bgm", "*.mp3")))
+def get_bgm(seconds: float, api_key: str, cache_dir: str, prompt: str = "", own_dir: str = "bgm"):
+    """영상 길이에 맞춘 배경음악 파일 경로. 준비할 수 없으면 None.
+    own_dir: 직접 올린 음악 폴더 (커피 assets/bgm, SceneStory assets/bgm/scenestory)."""
+    prompt = prompt or BGM_PROMPT
+    own = sorted(glob.glob(os.path.join(ASSETS_DIR, own_dir, "*.mp3")))
     if own:
         return own[0]
     length_ms = int(max(3000, min(600000, (seconds + 2.0) * 1000)))
@@ -94,7 +96,7 @@ def get_bgm(seconds: float, api_key: str, cache_dir: str):
     try:
         print(f"[sound] 배경음악 생성: {length_ms / 1000:.0f}초", flush=True)
         audio = _client(api_key).music.compose(
-            prompt=BGM_PROMPT,
+            prompt=prompt,
             music_length_ms=length_ms,
             force_instrumental=True,
         )

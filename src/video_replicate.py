@@ -190,7 +190,7 @@ def _run_model_with_polling(
 STYLE_LOCK_SUFFIX = (
     "pen-and-ink watercolor sketch on paper in every frame, bold black ink contour lines "
     "and watercolor washes stay drawn on the paper, the paper grain stays visible, "
-    "only the liquid and steam move gently, slow camera push-in, "
+    "only small elements move gently (liquid, steam, light, curtains, fabric), slow camera push-in, "
     "no photorealism, no 3D render, no text"
 )
 

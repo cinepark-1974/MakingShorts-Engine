@@ -88,20 +88,47 @@ UPLOAD_SETTINGS = [
 ]
 
 
+def _ss_pack_system() -> str:
+    from src import scenestory
+    return scenestory.PACK_SYSTEM
+
+
+def channel_brand(state: dict) -> str:
+    return "SceneStory" if (state or {}).get("channel") == "scenestory" else CHANNEL
+
+
+def upload_settings(state: dict) -> list:
+    if (state or {}).get("channel") == "scenestory":
+        from src import scenestory
+        return scenestory.UPLOAD_SETTINGS
+    return UPLOAD_SETTINGS
+
+
+def _fallback_ss(state: dict) -> dict:
+    tc = state.get("title_card") or {}
+    work = (tc.get("work") or state.get("topic") or "").strip("『』")
+    return {"title": f"『{work}』"[:40], "description": f"『{work}』\n\n#SceneStory #名場面 #{work}",
+            "hashtags": ["#SceneStory", "#名場面", f"#{work}"], "tags": [work, "名場面", "SceneStory"],
+            "pinned_comment": "この場面、覚えていますか？", "next_teaser": "",
+            "thumb_line1": work[:9], "thumb_line2": "名場面", "thumb_accent": ""}
+
+
 def make_upload_pack(api_key: str, state: dict) -> dict:
+    is_ss = (state or {}).get("channel") == "scenestory"
+    fb = _fallback_ss if is_ss else _fallback
     if not api_key:
-        return _fallback(state)
+        return fb(state)
     try:
         import anthropic
         narr = " ".join((s.get("narration") or "") for s in state.get("scenes", []))
         user = f"주제: {state.get('topic', '')}\n\n대본:\n{narr}"
         resp = anthropic.Anthropic(api_key=api_key).messages.create(
-            model="claude-sonnet-4-6", max_tokens=1200, system=_PACK_SYSTEM,
+            model="claude-sonnet-4-6", max_tokens=1200, system=(_ss_pack_system() if is_ss else _PACK_SYSTEM),
             messages=[{"role": "user", "content": user}],
         )
         raw = "".join(getattr(b, "text", "") for b in resp.content)
         data = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
-        pack = _fallback(state)
+        pack = fb(state)
         for k in pack:
             if data.get(k):
                 pack[k] = data[k]
@@ -114,7 +141,7 @@ def make_upload_pack(api_key: str, state: dict) -> dict:
         return pack
     except Exception as e:
         print(f"[publish] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
-        return _fallback(state)
+        return fb(state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

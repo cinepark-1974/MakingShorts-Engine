@@ -250,6 +250,33 @@ def generate_reference_image(
     return url
 
 
+def generate_scenestory_image(replicate_token: str, image_prompt: str, kind: str) -> str:
+    """SceneStory — SKETCH(펜-잉크 수채화, 얼굴 없음) / PHOTO(실사, 사람 없음). Z-Image 우선, 실패 시 flux."""
+    from src import scenestory as ss
+    os.environ["REPLICATE_API_TOKEN"] = replicate_token
+    body = image_prompt.strip().rstrip(" .") + "."
+    if kind == "SKETCH":
+        prompt = ss.SKETCH_PREFIX + _strip_photo_words(body) + ss.SKETCH_SUFFIX
+        tag, fb_model, fb_inputs = "[ss/sketch]", FLUX_DEV_MODEL, {"num_inference_steps": 28, "guidance": 3.5}
+    else:
+        prompt = ss.PHOTO_PREFIX + body + ss.PHOTO_SUFFIX
+        tag, fb_model, fb_inputs = "[ss/photo]", FLUX_SCHNELL_MODEL, {}
+    print(f"[image_replicate] {tag} z-image | {image_prompt[:60]}…", flush=True)
+    try:
+        inputs = {"prompt": prompt, "width": ZIMAGE_W, "height": ZIMAGE_H, "num_inference_steps": 8,
+                  "guidance_scale": 0.0, "output_format": "jpg", "output_quality": 92}
+        url = _to_url(_run_prediction(ZIMAGE_MODEL, inputs, TIMEOUT_FAST, tag + " z-image"))
+    except ImageCreditError:
+        raise
+    except Exception as e:
+        print(f"[image_replicate] {tag} z-image 실패 → {fb_model} 로 재시도: {e}", flush=True)
+        inputs = {"prompt": prompt, "aspect_ratio": ASPECT_RATIO, "output_format": "jpg",
+                  "output_quality": 92, "num_outputs": 1, **fb_inputs}
+        url = _to_url(_run_prediction(fb_model, inputs, TIMEOUT_DEV, tag + " fallback"))
+    print(f"[image_replicate] → {url[:80]}", flush=True)
+    return url
+
+
 def generate_illustration_image(replicate_token: str, image_prompt: str) -> str:
     """MACHINE / EXTRACTION / SCIENCE_DATA 씬 전용 — 신비한 건축사전 스케치."""
     return generate_reference_image(

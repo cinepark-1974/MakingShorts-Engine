@@ -110,7 +110,8 @@ def _draw_line(draw, y, text, accent, font, fill, accent_fill, stroke, stroke_fi
         x += draw.textlength(p, font=font)
 
 
-def render_thumbnail(bg_path: str, copy: dict, out_path: str, brand: str) -> str:
+def render_thumbnail(bg_path: str, copy: dict, out_path: str, brand: str,
+                     head_font: str = "", sub_font: str = "") -> str:
     from PIL import Image, ImageDraw
 
     src = Image.open(bg_path).convert("RGB") if _usable(bg_path) else None
@@ -140,7 +141,8 @@ def render_thumbnail(bg_path: str, copy: dict, out_path: str, brand: str) -> str
     d = ImageDraw.Draw(base)
 
     # 채널명 + 양옆 짧은 선
-    f_ch = _font(FONT_SUB, 44)
+    head_font, sub_font = head_font or FONT_HEAD, sub_font or FONT_SUB
+    f_ch = _font(sub_font, 44)
     tw = d.textlength(brand, font=f_ch)
     cx = W / 2
     d.text((cx - tw / 2, TEXT_TOP), brand, font=f_ch, fill=rule)
@@ -151,7 +153,7 @@ def render_thumbnail(bg_path: str, copy: dict, out_path: str, brand: str) -> str
     # 두 줄 헤드라인 (두 줄을 같은 크기로)
     l1, l2 = (copy.get("line1") or "").strip(), (copy.get("line2") or "").strip()
     longest = max([l1, l2], key=len) if (l1 or l2) else ""
-    f_head = _fit(d, longest, FONT_HEAD, 150, 84, W - 2 * MARGIN)
+    f_head = _fit(d, longest, head_font, 150, 84, W - 2 * MARGIN)
     lh = int(f_head.size * 1.16)
     y = HEAD_TOP
     for line in (l1, l2):
@@ -188,6 +190,10 @@ def grid_preview(thumb_path: str, out_path: str, title: str = "") -> str:
 
 
 def create_thumbnail(state: dict, copy: dict, bg_path: str, brand: str) -> str:
+    head_font = sub_font = ""
+    if state.get("channel") == "scenestory":                   # 일본어 글꼴 (Noto CJK JP)
+        from src import scenestory
+        head_font, sub_font = scenestory.JP_SERIF_BOLD, scenestory.JP_SANS_BOLD
     """project_dir/thumbnail.png 에 저장하고 경로를 돌려준다."""
     project_dir = state.get("project_dir", "projects/tmp")
     os.makedirs(project_dir, exist_ok=True)
@@ -195,4 +201,4 @@ def create_thumbnail(state: dict, copy: dict, bg_path: str, brand: str) -> str:
         cands = background_candidates(state)
         bg_path = cands[0][1] if cands else ""
     out = os.path.join(project_dir, "thumbnail.png")
-    return render_thumbnail(bg_path, copy, out, brand)
+    return render_thumbnail(bg_path, copy, out, brand, head_font, sub_font)

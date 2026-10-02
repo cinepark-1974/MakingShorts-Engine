@@ -508,6 +508,8 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
     나레이션은 끝까지 들어가고, 영상 길이는 나레이션 + 여운 0.8초.
     """
     scenes    = sorted(state.get("scenes", []), key=lambda s: s.get("scene_no", 0))
+    is_ss     = state.get("channel") == "scenestory"          # SceneStory: 일본어 자막·글꼴, 다른 배경음악
+    ss_work   = ((state.get("title_card") or {}).get("work") or "") if is_ss else ""
     audio_src = (state.get("audio_path") or "").strip()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -542,7 +544,10 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
         for i, ((s, p), tgt) in enumerate(zip(items, targets), start=1):
             sno = s.get("scene_no", i)
             png = os.path.join(tmp, f"ov_{sno:02d}.png")
-            if apply_overlay:
+            if apply_overlay and is_ss:
+                from src import scenestory as _ss
+                _ss.render_overlay_png(s, sno, total, png, light=_is_light_clip(p, tmp), work=ss_work)
+            elif apply_overlay:
                 render_overlay_png(s, sno, total, png, light=_is_light_clip(p, tmp))
             else:
                 from PIL import Image
@@ -569,7 +574,12 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
         os.makedirs(project_dir, exist_ok=True)
         sound_dir = os.path.join(project_dir, "sound")      # 생성한 소리 캐시 (재합성 시 재사용)
         from src import sound
-        bgm_path = sound.get_bgm(video_dur, elevenlabs_key, sound_dir) if with_bgm else None
+        if is_ss:
+            from src import scenestory as _ss
+            bgm_path = sound.get_bgm(video_dur, elevenlabs_key, sound_dir, prompt=_ss.BGM_PROMPT,
+                                     own_dir="bgm/scenestory") if with_bgm else None
+        else:
+            bgm_path = sound.get_bgm(video_dur, elevenlabs_key, sound_dir) if with_bgm else None
         sfx_events, t = [], 0.0
         if with_sfx:
             for (s, _), tgt in zip(items, targets):
