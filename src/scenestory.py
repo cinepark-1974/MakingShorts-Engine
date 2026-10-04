@@ -85,6 +85,8 @@ SYSTEM = """당신은 유튜브 채널 'SceneStory'의 수석 작가입니다. �
   narration(자막)은 원래 한자 표기 그대로 둡니다.
 - 위에서 히라가나로 바꾼 말은 모두 readings 에 {"원래 표기": "읽기"} 로 적습니다.
 - 화면을 가리키는 말(ご覧ください 등) 금지.
+- 작가·감독을 본문에서 부를 때는 반드시 성까지 붙인 전체 이름 + 직함 (作家の松本清張は / 木下惠介監督は).
+  이름만(清張は) 쓰면 등장인물 이름처럼 들립니다. 등장인물은 이름만, 작가는 전체 이름으로 구분합니다.
 
 [씬 유형 scene_type]
 - TITLE : 2컷 고정. 작품 타이틀 카드. image_prompt 는 빈 문자열. 이 컷의 나레이션은 프로그램이 title_card 로
@@ -106,7 +108,7 @@ SYSTEM = """당신은 유튜브 채널 'SceneStory'의 수석 작가입니다. �
                 "genre": "小説|映画|ドラマ|詩|歴史", "year": "一九八三年 처럼 한자", "year_num": 1983,
                 "origin": "방송사·출판사·영화사 하나 (예: TBS, 松竹, 新潮社)", "origin_yomi": "읽기 (예: ティービーエス, しょうちく)",
                 "creator": "중심 작가 한 명의 이름만", "creator_yomi": "이름 읽기 (예: やまだたいち)",
-                "creator_role": "脚本|原作・脚本|監督|脚本・監督|作|原作 중 하나"},
+                "creator_role": "소설·시=作, 영화=監督|脚本・監督, 드라마=脚本|原作・脚本"},
  "readings": {"政夫": "まさお"},
  "scenes": [
   {"scene_no": 1, "name": "훅", "scene_type": "PHOTO", "visual_source": "ai",
@@ -189,27 +191,77 @@ def _year_num(tc: dict):
     return None
 
 
-_ROLE_YOMI = {"原作": "げんさく", "脚本": "きゃくほん", "監督": "かんとく", "作": "さく", "・": "、"}
+_GENRE_YOMI = {"小説": "しょうせつ", "映画": "えいが", "ドラマ": "ドラマ", "詩": "し"}
+
+
+def _creator_name(tc: dict) -> str:
+    return re.sub(r"[（(].*?[）)]", "", tc.get("creator") or "").split("、")[0].strip()
+
+
+def _role_word(tc: dict) -> str:
+    """이름 뒤에 붙는 직함: 監督 / 脚本 / (소설·시는 없음)."""
+    r = tc.get("creator_role") or ""
+    if "監督" in r:
+        return "監督"
+    if "脚本" in r:
+        return "脚本"
+    return ""
+
+
+def role_label(tc: dict) -> str:
+    """타이틀 카드에 이름 앞에 붙는 표시: 作 / 監督 / 脚本 / 原作・脚本 …"""
+    r = (tc.get("creator_role") or "").strip()
+    if tc.get("genre") in ("小説", "詩") and r in ("", "原作"):
+        return "作"
+    return r
 
 
 def title_narration(tc: dict) -> tuple:
-    """TITLE 컷 나레이션을 title_card 로 직접 만든다 → (자막, 낭독용). 작품명·연도가 빠지거나 잘못 읽히지 않게."""
+    """TITLE 컷 나레이션을 title_card 로 직접 만든다 → (자막, 낭독용).
+    「一九六〇年、光文社。松本清張の小説『波の塔』。」 — 작가 이름이 등장인물로 들리지 않도록
+    반드시 「〜の小説」「〜監督の映画」「〜脚本のドラマ」 형태로 작품에 붙인다."""
     work = (tc.get("work") or "").strip("『』 ")
     if not work:
         return "", ""
     y = _year_num(tc)
-    origin, role, creator = (tc.get("origin") or "").strip(), (tc.get("creator_role") or "").strip(), \
-        re.sub(r"[（(].*?[）)]", "", tc.get("creator") or "").split("、")[0].strip()
-    sub = (f"{y}年、" if y else "") + (f"{origin}、" if origin else "") + f"『{work}』。"
-    tts = (f"{year_yomi(y)}、" if y else "") + (f"{tc.get('origin_yomi') or origin}、" if origin else "") + \
-        f"『{tc.get('work_yomi') or work}』。"
+    origin, creator, role = (tc.get("origin") or "").strip(), _creator_name(tc), _role_word(tc)
+    genre = tc.get("genre") if tc.get("genre") in _GENRE_YOMI else ""
+    head = (f"{y}年、" if y else "") + (f"{origin}。" if origin else "")
+    head_t = (f"{year_yomi(y)}、" if y else "") + (f"{tc.get('origin_yomi') or origin}。" if origin else "")
     if creator:
-        sub += (f"{role}、" if role else "") + f"{creator}。"
-        rr = role
-        for k, v in _ROLE_YOMI.items():
-            rr = rr.replace(k, v)
-        tts += (f"{rr}、" if rr else "") + f"{tc.get('creator_yomi') or creator}。"
+        role_t = {"監督": "かんとく", "脚本": "きゃくほん"}.get(role, "")
+        sub = head + f"{creator}{role}の{genre}『{work}』。"
+        tts = head_t + f"{tc.get('creator_yomi') or creator}{role_t}の{_GENRE_YOMI.get(genre, '')}" \
+            f"『{tc.get('work_yomi') or work}』。"
+    else:
+        sub = head + f"{genre}『{work}』。"
+        tts = head_t + f"{_GENRE_YOMI.get(genre, '')}『{tc.get('work_yomi') or work}』。"
     return sub, tts
+
+
+def fix_author_mentions(data: dict) -> dict:
+    """본문에서 작가를 이름만(「清張は」) 부르면 등장인물처럼 들린다 → 성까지 붙인 전체 이름으로."""
+    name = _creator_name(data.get("title_card") or {})
+    if len(name) != 4 or not all("\u4e00" <= c <= "\u9fff" for c in name):
+        return data                                  # 성2+이름2 한자 이름만 안전하게 처리
+    sur, given = name[:2], name[2:]
+    pat = re.compile(rf"(?<!{sur}){given}")
+    yomi = (data.get("title_card") or {}).get("creator_yomi") or ""
+    for sc in data.get("scenes", []):
+        if sc.get("scene_type") == "TITLE":
+            continue
+        before = sc.get("narration") or ""
+        sc["narration"] = pat.sub(name, before)
+        tts = pat.sub(name, sc.get("narration_tts") or "")
+        if sc["narration"] != before and yomi and given not in (sc.get("narration_tts") or ""):
+            # 낭독용 원고에 이름만 히라가나로 들어간 경우(せいちょうは) → 성까지 붙인 읽기로
+            for i in range(1, len(yomi) - 1):
+                tail, head = yomi[i:], yomi[:i]
+                if tail in tts:
+                    tts = re.sub(rf"(?<!{head}){tail}", yomi, tts)
+                    break
+        sc["narration_tts"] = tts
+    return data
 
 
 def _set_title(data: dict) -> None:
@@ -244,9 +296,9 @@ def work_info_line(state: dict) -> str:
     if not work:
         return ""
     y = _year_num(tc)
-    creator = re.sub(r"[（(].*?[）)]", "", tc.get("creator") or "").split("、")[0].strip()
+    creator = _creator_name(tc)
     parts = [f"{y}年" if y else "", (tc.get("origin") or "").strip(),
-             (f"{tc.get('creator_role')} " if tc.get("creator_role") else "") + creator if creator else ""]
+             (f"{role_label(tc)} " if role_label(tc) else "") + creator if creator else ""]
     inner = "／".join(p for p in parts if p)
     return f"『{work}』" + (f"（{inner}）" if inner else "")
 
@@ -503,7 +555,7 @@ READING_SYSTEM = """당신은 일본어 낭독 원고 교정자입니다. 음성
 대본의 title_card 와 컷별 narration_tts 를 받아, 아래 JSON 만 출력하세요 (설명 문장 금지).
 - title_card: work_yomi(작품명 읽기, 히라가나·가타카나), year_num(서기 정수), origin(방송사·출판사·영화사 하나만),
   origin_yomi(그 읽기, 영문 약자는 가타카나: TBS→ティービーエス), creator(중심 작가 한 명 이름만), creator_yomi,
-  creator_role(脚本|原作・脚本|監督|脚本・監督|作|原作 중 하나). 확실하지 않으면 빈 문자열.
+  creator_role(소설·시는 作, 영화는 監督 또는 脚本・監督, 드라마는 脚本 또는 原作・脚本). 확실하지 않으면 빈 문자열.
 - readings: narration_tts 에 나오는 말 중 읽기가 갈리거나 잘못 읽힐 수 있는 것 → {"원래 표기": "히라가나 읽기"}.
   인명·지명·작품명·옛 글자체(惠 등)·특수한 읽기(如き→ごとき)·역사적 가나 표기(やうな→ような)를 빠짐없이.
   흔한 말(秋, 花, 電話 등)은 넣지 않습니다.
@@ -539,6 +591,7 @@ def refit_project(api_key: str, state: dict, progress=None) -> dict:
     closing = (state.get("closing") or DEFAULT_CLOSING).strip()
     length = state.get("length") if state.get("length") in LENGTH_PRESETS else DEFAULT_LENGTH
     client = anthropic.Anthropic(api_key=api_key)
+    fix_author_mentions(state)
     fix_readings(client, state, progress)
     _set_title(state)
     apply_readings(state)
@@ -554,6 +607,10 @@ def refit_project(api_key: str, state: dict, progress=None) -> dict:
     total = _total(state)
     ver.update(tts_chars=total, est_seconds=round(total / JA_CPS),
                remaining_issues=lint(state, closing, length))
+    try:
+        prepare_title_scenes(state)                  # 타이틀 카드 그림도 새 표기(作・監督 등)로 다시
+    except Exception as e:
+        print(f"[scenestory] 타이틀 카드 다시 그리기 실패: {e}", flush=True)
     (progress or (lambda m: None))(f"✅ {total}자 · 약 {round(total / JA_CPS)}초")
     return state
 
@@ -636,6 +693,7 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
         rounds += 1
         flagged = []
         issues = lint(data, closing, length)
+    fix_author_mentions(data)
     data = fix_readings(client, data, say)
     _set_title(data)
     apply_readings(data)
@@ -774,7 +832,9 @@ def render_title_card(title_card: dict, out_png: str, W: int = 1080, H: int = 19
         y += int(f_work.size * 1.3)
     y += 30
     f_info = jp_font(JP_SANS_BOLD, 46)
-    for txt in (tc.get("year", ""), tc.get("origin", ""), tc.get("creator", "")):
+    _cr = _creator_name(tc) if tc.get("creator_yomi") or tc.get("creator_role") else (tc.get("creator") or "")
+    _cr = f"{role_label(tc)}　{_cr}" if (_cr and role_label(tc) and tc.get("creator_role") is not None) else _cr
+    for txt in (tc.get("year", ""), tc.get("origin", ""), _cr):
         if txt:
             y += 30
             for ln in wrap_ja(d, txt, f_info, W - 200, max_lines=2):
