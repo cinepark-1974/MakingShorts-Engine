@@ -422,12 +422,19 @@ FIND_SYSTEM = """당신은 유튜브 채널 'SceneStory'의 기획 조사원입�
 - 성행위 묘사가 중심인 장면, 자살·동반자살의 방법이 중심인 장면은 고르지 않습니다.
 - 세 후보는 서로 다른 작품(키워드가 작품명일 때만 같은 작품)으로, 장르가 겹치지 않게 섞습니다.
 - 확인하지 못한 칸은 빈 문자열로 둡니다.
+- [표기] 인명·지명·작품명은 한국어 문장 안에서도 일본어 원래 표기(한자·가나) 그대로 씁니다.
+  한국 한자음으로 옮기지 않습니다 (原節子 → '원절자' 금지, 大阪 → '대阪' 금지, 実家 → '실가' 금지).
+  한국어 문장은 자연스러운 한국어로: "미치요(三千代)는 大阪의 작은 집에서…", "도쿄의 친정으로".
+- names 에 장면에 나오는 등장인물·배우·지명을 모두 적고 일본어 읽기를 히라가나로 붙입니다.
+- scene_ja 는 같은 장면을 일본어로 (대본 작가가 그대로 참고합니다).
 
 마지막에 아래 JSON 만 출력하세요 (설명 문장 금지).
 {"candidates": [
  {"genre": "小説|映画|ドラマ|詩|歴史", "work": "일본 공식 표기", "work_ko": "한국어 표기",
   "year": "1983年", "origin": "방송사·출판사·제작사·감독 등", "creator": "작가·각본가",
-  "scene": "해부할 장면 — 누가, 어디서, 무엇을 하는지 구체적으로 두 문장 (한국어)",
+  "scene": "해부할 장면 — 누가, 어디서, 무엇을 하는지 구체적으로 두 문장 (한국어, 고유명사는 일본어 표기)",
+  "scene_ja": "같은 장면을 일본어로 두 문장",
+  "names": [{"name": "三千代", "yomi": "みちよ", "who": "주인공 (배우 原節子)"}, {"name": "大阪", "yomi": "おおさか", "who": "무대"}],
   "angle": "시나리오 작가의 해설 각도 한 줄 (한국어)",
   "why": "일본 시니어에게 통하는 이유 한 줄 (한국어)", "source": "근거 URL"}
 ]}"""
@@ -465,9 +472,14 @@ def find_candidates(api_key: str, keyword: str, exclude: list = None) -> dict:
 def form_from_candidate(c: dict, note: str = "") -> dict:
     """후보 카드 → generate_script 입력. 이미 웹에서 찾은 정보라 조사 단계를 건너뛴다."""
     known = " · ".join(x for x in (c.get("year"), c.get("origin"), c.get("creator")) if x)
+    names = [n for n in (c.get("names") or []) if isinstance(n, dict) and n.get("name")]
+    if names:
+        known += "\n등장인물·지명 표기 (반드시 이 표기 그대로): " + ", ".join(
+            f"{n['name']}({n.get('yomi', '')}{' · ' + n['who'] if n.get('who') else ''})" for n in names)
     return {
         "genre": c.get("genre", "映画"), "work": c.get("work", ""), "work_ko": c.get("work_ko", ""),
-        "info": known, "scene": c.get("scene", ""), "note": note.strip() or c.get("angle", ""),
+        "info": known, "scene": c.get("scene_ja") or c.get("scene", ""), "note": note.strip() or c.get("angle", ""),
+        "readings": {n["name"]: n["yomi"] for n in names if n.get("yomi") and n["yomi"] != n["name"]},
         "research": {"found": True, "work": c.get("work", ""), "year": c.get("year", ""),
                      "origin": c.get("origin", ""), "creator": c.get("creator", ""),
                      "summary": c.get("scene", ""), "source": c.get("source", ""), "web_search": True},
@@ -667,8 +679,9 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
     if research.get("found") and research.get("work"):
         form["work"] = research["work"]
         known = " · ".join(x for x in (research.get("year"), research.get("origin"), research.get("creator")) if x)
-        form["info"] = "; ".join(x for x in (known,
-                                             f"줄거리: {research.get('summary', '')}") if x)
+        names_line = "\n".join(l for l in (form.get("info") or "").split("\n") if l.startswith("등장인물·지명"))
+        form["info"] = "; ".join(x for x in (known, f"줄거리: {research.get('summary', '')}") if x) + \
+            (f"\n{names_line}" if names_line else "")
         say(f"　→ 『{form['work']}』 {known}")
     else:
         say("　→ 작품 정보를 찾지 못했습니다. 입력한 내용만으로 쓰고, 사실 확인 단계에서 다시 검증합니다.")
@@ -694,6 +707,8 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
         flagged = []
         issues = lint(data, closing, length)
     fix_author_mentions(data)
+    if form.get("readings"):                         # 후보 카드에서 확인한 이름 읽기를 먼저 넣는다
+        data["readings"] = {**form["readings"], **(data.get("readings") or {})}
     data = fix_readings(client, data, say)
     _set_title(data)
     apply_readings(data)
