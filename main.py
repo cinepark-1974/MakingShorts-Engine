@@ -857,6 +857,10 @@ if CHANNEL == "scenestory" and st.session_state.current_project is None:
                 _ko = f" ({_c['work_ko']})" if _c.get("work_ko") and _c["work_ko"] != _c["work"] else ""
                 st.markdown(f"**『{_c['work']}』**{_ko}  \n<small>{_meta}</small>", unsafe_allow_html=True)
                 st.write(_c.get("scene", ""))
+                _nm = [x for x in (_c.get("names") or []) if isinstance(x, dict) and x.get("name")]
+                if _nm:
+                    st.caption("이름·지명 · " + " / ".join(
+                        f"{x['name']}（{x.get('yomi', '')}）" + (f" {x['who']}" if x.get("who") else "") for x in _nm))
                 if _c.get("angle"):
                     st.caption(f"해설 각도 · {_c['angle']}")
                 if _c.get("why"):
