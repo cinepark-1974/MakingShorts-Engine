@@ -107,7 +107,9 @@ def upload_settings(state: dict) -> list:
 def _fallback_ss(state: dict) -> dict:
     tc = state.get("title_card") or {}
     work = (tc.get("work") or state.get("topic") or "").strip("『』")
-    return {"title": f"『{work}』"[:40], "description": f"『{work}』\n\n#SceneStory #名場面 #{work}",
+    from src import scenestory
+    info = scenestory.work_info_line(state) or f"『{work}』"
+    return {"title": f"『{work}』"[:40], "description": f"作品：{info}\n\n#SceneStory #名場面 #{work}",
             "hashtags": ["#SceneStory", "#名場面", f"#{work}"], "tags": [work, "名場面", "SceneStory"],
             "pinned_comment": "この場面、覚えていますか？", "next_teaser": "",
             "thumb_line1": work[:9], "thumb_line2": "名場面", "thumb_accent": ""}
@@ -138,6 +140,14 @@ def make_upload_pack(api_key: str, state: dict) -> dict:
             pack[k] = str(pack.get(k, ""))[:12]
         if pack.get("thumb_accent") and pack["thumb_accent"] not in (pack["thumb_line1"] + pack["thumb_line2"]):
             pack["thumb_accent"] = ""
+        if is_ss:                                   # 작품 정보는 설명 첫 줄과 고정 댓글 첫 줄에 반드시
+            from src import scenestory
+            info = scenestory.work_info_line(state)
+            if info:
+                if info not in pack.get("description", ""):
+                    pack["description"] = f"作品：{info}\n" + pack.get("description", "")
+                if info not in pack.get("pinned_comment", ""):
+                    pack["pinned_comment"] = f"作品：{info}\n" + pack.get("pinned_comment", "")
         return pack
     except Exception as e:
         print(f"[publish] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)

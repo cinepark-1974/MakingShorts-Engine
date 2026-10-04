@@ -78,11 +78,17 @@ SYSTEM = """당신은 유튜브 채널 'SceneStory'의 수석 작가입니다. �
 - 대사 인용은 한 편에 한 번, 15자 이내. 저작권이 끝난 작품(예: 1968년 이전 사망 작가의 소설·시)만 길게 인용 가능.
 - 자살·동반자살은 사실로 언급만 하고 방법·장면은 쓰지도 그리지도 않는다. 성적 묘사 금지.
 - 배우·실존 인물의 이름은 narration 에는 써도 되지만 image_prompt 에는 절대 쓰지 않는다.
-- 숫자는 아라비아 숫자를 쓰지 않는다. narration_tts 에는 한자·가나만 (예: 十時, 一九八三年). 영문은 가타카나로.
+- 숫자는 아라비아 숫자를 쓰지 않는다. narration_tts 에는 한자·가나만 (예: 十時). 영문은 가타카나로.
+- [발음] narration_tts 는 음성 합성기가 읽는 글입니다. 읽기가 갈리는 한자는 히라가나로 씁니다:
+  인명(政夫→まさお, 則子→のりこ), 작품명(野菊の如き君なりき→のぎくのごとききみなりき), 지명(多摩川→たまがわ),
+  옛 글자체(惠→けい), 연도(一九五五年→せんきゅうひゃくごじゅうごねん), 역사적 가나 표기(やうな→ような).
+  narration(자막)은 원래 한자 표기 그대로 둡니다.
+- 위에서 히라가나로 바꾼 말은 모두 readings 에 {"원래 표기": "읽기"} 로 적습니다.
 - 화면을 가리키는 말(ご覧ください 등) 금지.
 
 [씬 유형 scene_type]
-- TITLE : 2컷 고정. 작품 타이틀 카드. image_prompt 는 빈 문자열.
+- TITLE : 2컷 고정. 작품 타이틀 카드. image_prompt 는 빈 문자열. 이 컷의 나레이션은 프로그램이 title_card 로
+          자동으로 만듭니다(연도·방송사·작품명·작가). narration 은 짧게 아무 문장이나 두어도 됩니다.
 - SKETCH: 작품 속 장면의 기억. image_prompt 는 영문, 한 장의 그림을 단정적으로 서술(한 상태·한 동작).
           사람은 뒷모습·실루엣·손으로만. 얼굴 묘사 금지. 시대·장소·소품을 구체적으로.
 - PHOTO : 오늘의 장소·물건(시청자의 현재). image_prompt 는 영문, 한 장의 사진을 단정적으로 서술. 사람 없음.
@@ -96,8 +102,12 @@ SYSTEM = """당신은 유튜브 채널 'SceneStory'의 수석 작가입니다. �
 [JSON 스키마]
 {
  "title": "편 제목(일본어)",
- "title_card": {"work": "作品名(일본 공식 표기)", "genre": "小説|映画|ドラマ|詩|歴史",
-                "year": "一九八三年 처럼 한자", "origin": "방송사·출판사·감독 등 한 줄", "creator": "작가·각본가"},
+ "title_card": {"work": "作品名(일본 공식 표기)", "work_yomi": "작품명 읽기(히라가나·가타카나)",
+                "genre": "小説|映画|ドラマ|詩|歴史", "year": "一九八三年 처럼 한자", "year_num": 1983,
+                "origin": "방송사·출판사·영화사 하나 (예: TBS, 松竹, 新潮社)", "origin_yomi": "읽기 (예: ティービーエス, しょうちく)",
+                "creator": "중심 작가 한 명의 이름만", "creator_yomi": "이름 읽기 (예: やまだたいち)",
+                "creator_role": "脚本|原作・脚本|監督|脚本・監督|作|原作 중 하나"},
+ "readings": {"政夫": "まさお"},
  "scenes": [
   {"scene_no": 1, "name": "훅", "scene_type": "PHOTO", "visual_source": "ai",
    "narration": "자막용 일본어", "narration_tts": "낭독용 일본어(숫자 한자)", "overlay_text": "화면 키워드 12자 이내",
@@ -125,7 +135,11 @@ def _spec(length: str) -> dict:
 
 
 def _nchars(t: str) -> int:
-    return len(re.sub(r"\s", "", t or ""))
+    """낭독 길이 환산 글자 수. 한자는 평균 1.7음(모라), 가나는 1음이라 그대로 세면 히라가나로 바꾼 읽기가
+    길게 잡힌다. 실측 문장(98자 = 23.7초)에 맞춰 한자 1.36, 그 밖의 글자 0.8 로 센다 → 초당 4.13 기준 유지."""
+    t = re.sub(r"\s", "", t or "")
+    k = sum(1 for c in t if "\u4e00" <= c <= "\u9fff")
+    return round(k * 1.36 + (len(t) - k) * 0.8)
 
 
 def _cut_budget(length: str) -> tuple:
@@ -134,6 +148,107 @@ def _cut_budget(length: str) -> tuple:
     body = sp["cuts"] - 1
     lo, hi = sp["total"][0] - 18, sp["total"][1] - 18
     return max(10, lo // body), max(14, hi // body), max(18, int(hi / body * 1.35))
+
+
+def _jis(c: str) -> bool:
+    """일본 글자(JIS)인가 — 중국 간체자(则 등)는 False."""
+    try:
+        c.encode("cp932")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+_DIG = {1: "いち", 2: "に", 3: "さん", 4: "よん", 5: "ご", 6: "ろく", 7: "なな", 8: "はち", 9: "きゅう"}
+_SEN = {1: "せん", 2: "にせん", 3: "さんぜん", 8: "はっせん"}
+_HYAKU = {1: "ひゃく", 3: "さんびゃく", 6: "ろっぴゃく", 8: "はっぴゃく"}
+_KANJI_DIGIT = str.maketrans("〇一二三四五六七八九", "0123456789")
+
+
+def year_yomi(year) -> str:
+    """1977 → せんきゅうひゃくななじゅうななねん (음성 합성기가 「一九七七」을 숫자 나열로 읽지 않게)."""
+    try:
+        n = int(re.sub(r"\D", "", str(year).translate(_KANJI_DIGIT))[:4])
+    except ValueError:
+        return ""
+    if not 1 <= n <= 9999:
+        return ""
+    th, hu, te, on = n // 1000, n // 100 % 10, n // 10 % 10, n % 10
+    out = _SEN.get(th, _DIG.get(th, "") + "せん") if th else ""
+    out += _HYAKU.get(hu, _DIG.get(hu, "") + "ひゃく") if hu else ""
+    out += ("じゅう" if te == 1 else _DIG[te] + "じゅう") if te else ""
+    out += {4: "よ", 7: "なな", 9: "く"}.get(on, _DIG.get(on, "")) if on else ""
+    return out + "ねん"
+
+
+def _year_num(tc: dict):
+    for v in (tc.get("year_num"), tc.get("year")):
+        digits = re.sub(r"\D", "", str(v or "").translate(_KANJI_DIGIT))
+        if len(digits) >= 4:
+            return int(digits[:4])
+    return None
+
+
+_ROLE_YOMI = {"原作": "げんさく", "脚本": "きゃくほん", "監督": "かんとく", "作": "さく", "・": "、"}
+
+
+def title_narration(tc: dict) -> tuple:
+    """TITLE 컷 나레이션을 title_card 로 직접 만든다 → (자막, 낭독용). 작품명·연도가 빠지거나 잘못 읽히지 않게."""
+    work = (tc.get("work") or "").strip("『』 ")
+    if not work:
+        return "", ""
+    y = _year_num(tc)
+    origin, role, creator = (tc.get("origin") or "").strip(), (tc.get("creator_role") or "").strip(), \
+        re.sub(r"[（(].*?[）)]", "", tc.get("creator") or "").split("、")[0].strip()
+    sub = (f"{y}年、" if y else "") + (f"{origin}、" if origin else "") + f"『{work}』。"
+    tts = (f"{year_yomi(y)}、" if y else "") + (f"{tc.get('origin_yomi') or origin}、" if origin else "") + \
+        f"『{tc.get('work_yomi') or work}』。"
+    if creator:
+        sub += (f"{role}、" if role else "") + f"{creator}。"
+        rr = role
+        for k, v in _ROLE_YOMI.items():
+            rr = rr.replace(k, v)
+        tts += (f"{rr}、" if rr else "") + f"{tc.get('creator_yomi') or creator}。"
+    return sub, tts
+
+
+def _set_title(data: dict) -> None:
+    if not (data.get("title_card") or {}).get("work_yomi"):      # 읽기 정보가 없는 옛 편은 건드리지 않음
+        return
+    sub, tts = title_narration(data.get("title_card") or {})
+    if sub:
+        for sc in data.get("scenes", []):
+            if sc.get("scene_type") == "TITLE":
+                sc["narration"], sc["narration_tts"] = sub, tts
+
+
+def apply_readings(data: dict) -> dict:
+    """readings 와 title_card 의 읽기를 모든 컷 narration_tts 에 일괄 적용 (자막은 그대로)."""
+    tc = data.get("title_card") or {}
+    rd = {k: v for k, v in (data.get("readings") or {}).items() if k and v and k != v}
+    for k, v in ((tc.get("work"), tc.get("work_yomi")), (tc.get("creator"), tc.get("creator_yomi"))):
+        k = re.sub(r"[（(].*?[）)]", "", k or "").strip("『』 ")
+        if k and v and "、" not in k:
+            rd.setdefault(k, v)
+    for k in sorted(rd, key=len, reverse=True):              # 긴 말부터 바꿔야 부분 치환이 안 꼬인다
+        for sc in data.get("scenes", []):
+            if sc.get("scene_type") != "TITLE":
+                sc["narration_tts"] = (sc.get("narration_tts") or "").replace(k, rd[k])
+    return data
+
+
+def work_info_line(state: dict) -> str:
+    """업로드 설명·고정 댓글용 작품 정보 한 줄: 『作品』（1977年／TBS／脚本 山田太一）"""
+    tc = state.get("title_card") or {}
+    work = (tc.get("work") or state.get("topic") or "").strip("『』 ")
+    if not work:
+        return ""
+    y = _year_num(tc)
+    creator = re.sub(r"[（(].*?[）)]", "", tc.get("creator") or "").split("、")[0].strip()
+    parts = [f"{y}年" if y else "", (tc.get("origin") or "").strip(),
+             (f"{tc.get('creator_role')} " if tc.get("creator_role") else "") + creator if creator else ""]
+    inner = "／".join(p for p in parts if p)
+    return f"『{work}』" + (f"（{inner}）" if inner else "")
 
 
 def _system(closing: str, length: str) -> str:
@@ -173,13 +288,13 @@ def lint(data: dict, closing: str, length: str) -> list:
             issues.append(f"{n}컷 scene_type '{st}' 는 TITLE/SKETCH/PHOTO 가 아닙니다.")
         tts = s.get("narration_tts") or ""
         total += _nchars(tts)
-        if s is not scenes[-1] and _nchars(tts) > _cut_budget(length)[2]:
+        if s is not scenes[-1] and st != "TITLE" and _nchars(tts) > _cut_budget(length)[2]:
             issues.append(f"{n}컷 narration_tts 가 {_nchars(tts)}자 — 컷당 {_cut_budget(length)[2]}자 이하로.")
-        odd = sorted({c for c in (s.get("narration") or "") if "\u4e00" <= c <= "\u9fff"} -
-                     {c for c in tts if "\u4e00" <= c <= "\u9fff"} - set("〇一二三四五六七八九十百千万"))
+        odd = sorted({c for c in (s.get("narration") or "") + tts if "\u4e00" <= c <= "\u9fff" and not _jis(c)})
         if odd:
-            issues.append(f"{n}컷 자막(narration)에만 있는 한자 {''.join(odd)} — 오자(중국 간체자 등)인지 확인해 "
-                          "narration 과 narration_tts 를 같은 글자로.")
+            issues.append(f"{n}컷에 일본 글자가 아닌 한자 {''.join(odd)} 가 있습니다 (중국 간체자 등) → 일본 글자체로.")
+        if re.search(r"[やかさたなはまら]う[なにだ]|ゐ|ゑ|けふ|てふ", tts):
+            issues.append(f"{n}컷 narration_tts 에 옛 가나 표기가 있습니다 → 현대 표기(ような 등)로.")
         if re.search(r"[0-9０-９]", tts):
             issues.append(f"{n}컷 narration_tts 에 아라비아 숫자가 있습니다 → 한자로.")
         if re.search(r"[A-Za-zＡ-Ｚａ-ｚ]", tts.replace(BRAND, "")):
@@ -340,7 +455,7 @@ SHRINK_SYSTEM = """당신은 일본어 쇼츠 나레이션 편집자입니다. �
 - 사실(작품명·연도·인물·사건)은 바꾸지 않고, 꾸밈말·반복·설명을 덜어냅니다. 새 사실을 더하지 않습니다.
 - です・ます調, 차분한 문체 유지. 각 컷은 짧은 한 문장.
 - narration_tts 는 숫자를 한자로, 영문은 가타카나로. narration 은 같은 문장(자막용, 숫자·영문 표기 그대로 가능).
-- narration 과 narration_tts 의 한자는 같은 글자로 (일본 글자체만).
+- narration_tts 에 이미 히라가나로 적힌 읽기(인명·작품명·연도)는 그대로 히라가나로 둡니다. 일본 글자체만 씁니다.
 설명 없이 JSON 만 출력: {"cuts": [{"scene_no": 1, "narration": "", "narration_tts": ""}]}"""
 
 
@@ -355,11 +470,13 @@ def fit_length(client, data: dict, closing: str, length: str, say=None, rounds: 
     say = say or (lambda m: None)
     lo, hi = _spec(length)["total"]
     a, b, mx = _cut_budget(length)
+    _set_title(data)
     for _ in range(rounds):
         total = _total(data)
         if lo <= total <= hi:
             break
-        body = [sc for sc in data.get("scenes", [])][:-1]      # 마지막 컷 = 엔딩 멘트, 고정
+        body = [sc for sc in data.get("scenes", [])[:-1]       # 마지막 컷 = 엔딩 멘트, 고정
+                if sc.get("scene_type") != "TITLE"]               # 타이틀 컷 = 프로그램이 만든 작품 정보, 고정
         say(f"③-1 길이 맞추는 중 — 지금 {total}자 → 목표 {lo}~{hi}자")
         rows = [{"scene_no": sc.get("scene_no"), "target": f"{a}~{b}자 (최대 {mx}자)",
                  "now": _nchars(sc.get("narration_tts", "")),
@@ -382,13 +499,51 @@ def fit_length(client, data: dict, closing: str, length: str, say=None, rounds: 
     return data
 
 
+READING_SYSTEM = """당신은 일본어 낭독 원고 교정자입니다. 음성 합성기(ElevenLabs)가 한자를 잘못 읽지 않도록 읽기를 정합니다.
+대본의 title_card 와 컷별 narration_tts 를 받아, 아래 JSON 만 출력하세요 (설명 문장 금지).
+- title_card: work_yomi(작품명 읽기, 히라가나·가타카나), year_num(서기 정수), origin(방송사·출판사·영화사 하나만),
+  origin_yomi(그 읽기, 영문 약자는 가타카나: TBS→ティービーエス), creator(중심 작가 한 명 이름만), creator_yomi,
+  creator_role(脚本|原作・脚本|監督|脚本・監督|作|原作 중 하나). 확실하지 않으면 빈 문자열.
+- readings: narration_tts 에 나오는 말 중 읽기가 갈리거나 잘못 읽힐 수 있는 것 → {"원래 표기": "히라가나 읽기"}.
+  인명·지명·작품명·옛 글자체(惠 등)·특수한 읽기(如き→ごとき)·역사적 가나 표기(やうな→ような)를 빠짐없이.
+  흔한 말(秋, 花, 電話 등)은 넣지 않습니다.
+{"title_card": {"work_yomi": "", "year_num": 0, "origin": "", "origin_yomi": "", "creator": "", "creator_yomi": "", "creator_role": ""},
+ "readings": {}}"""
+
+
+def fix_readings(client, data: dict, say=None) -> dict:
+    """읽기(후리가나)를 따로 한 번 더 확인해 title_card·readings 를 채운다."""
+    from src.prompts import _call_json
+    (say or (lambda m: None))("③-2 발음 확인 중 (인명·작품명·연도 읽기)…")
+    rows = {"title_card": data.get("title_card") or {},
+            "cuts": [{"scene_no": sc.get("scene_no"), "narration_tts": sc.get("narration_tts", "")}
+                     for sc in data.get("scenes", []) if sc.get("scene_type") != "TITLE"]}
+    try:
+        out = _call_json(client, READING_SYSTEM, json.dumps(rows, ensure_ascii=False, indent=1), max_tokens=3000)
+    except Exception as e:
+        (say or (lambda m: None))(f"　→ 발음 확인 실패: {e}")
+        return data
+    tc = data.setdefault("title_card", {})
+    for k, v in (out.get("title_card") or {}).items():
+        if v:
+            tc[k] = v
+    rd = dict(data.get("readings") or {})
+    rd.update({k: v for k, v in (out.get("readings") or {}).items() if isinstance(v, str) and v})
+    data["readings"] = rd
+    return data
+
+
 def refit_project(api_key: str, state: dict, progress=None) -> dict:
     """이미 만든 편의 나레이션만 목표 길이로 고친다. 이미지·영상 클립·타이틀 카드는 건드리지 않는다."""
     import anthropic
     closing = (state.get("closing") or DEFAULT_CLOSING).strip()
     length = state.get("length") if state.get("length") in LENGTH_PRESETS else DEFAULT_LENGTH
     client = anthropic.Anthropic(api_key=api_key)
+    fix_readings(client, state, progress)
+    _set_title(state)
+    apply_readings(state)
     fit_length(client, state, closing, length, progress)
+    apply_readings(state)
     for sc in state.get("scenes", []):
         if not (sc.get("narration_tts") or "").strip():
             sc["narration_tts"] = sc.get("narration", "")
@@ -425,6 +580,8 @@ def finalize(data: dict, closing: str) -> dict:
             sc["flow_prompt"] = sc.pop("video_prompt", "") or "slow gentle push-in, soft light flicker"
         if sc["scene_type"] == "TITLE":
             sc["image_prompt"] = ""
+            _set_title(data)
+    apply_readings(data)
     last = scenes[-1]
     last["narration"] = closing
     last["narration_tts"] = closing_tts(closing)
@@ -479,6 +636,9 @@ def generate_script(api_key: str, form: dict, progress=None, closing: str = "", 
         rounds += 1
         flagged = []
         issues = lint(data, closing, length)
+    data = fix_readings(client, data, say)
+    _set_title(data)
+    apply_readings(data)
     data = fit_length(client, data, closing, length, say)
     data = finalize(data, closing)
     final_issues = lint(data, closing, length)
