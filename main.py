@@ -1308,15 +1308,20 @@ if step1_done:
         from src import scenestory as _ss
         _lo, _hi = _ss.LENGTH_PRESETS.get(state.get("length") or "long", _ss.LENGTH_PRESETS["long"])["total"]
         _now = _ss._total(state)
-        if not _lo <= _now <= _hi:
-            st.error(f"나레이션이 {_now}자(약 {round(_now / _ss.JA_CPS)}초)입니다. 목표는 {_lo}~{_hi}자"
-                     f"(약 {round(_lo / _ss.JA_CPS)}~{round(_hi / _ss.JA_CPS)}초)입니다. "
-                     "아래 버튼은 나레이션 글만 고치고 이미지·영상 클립은 그대로 둡니다. 그다음 음성과 합성만 다시 하면 됩니다.")
-            if st.button("✂️ 나레이션 길이만 맞추기", key="ss_fit_len", type="primary"):
+        _no_yomi = not (state.get("title_card") or {}).get("work_yomi")
+        if not _lo <= _now <= _hi or _no_yomi:
+            _why = []
+            if not _lo <= _now <= _hi:
+                _why.append(f"나레이션이 약 {round(_now / _ss.JA_CPS)}초입니다 (목표 {round(_lo / _ss.JA_CPS)}~{round(_hi / _ss.JA_CPS)}초).")
+            if _no_yomi:
+                _why.append("작품명·인명·연도의 읽기(발음) 정보가 없는 편입니다.")
+            st.error(" ".join(_why) + " 아래 버튼은 나레이션 글만 고치고 이미지·영상 클립은 그대로 둡니다. "
+                     "그다음 음성과 합성만 다시 하면 됩니다.")
+            if st.button("✂️ 나레이션 길이·발음 맞추기", key="ss_fit_len", type="primary"):
                 if not api_keys.get("ANTHROPIC_API_KEY"):
                     st.error("ANTHROPIC_API_KEY가 없습니다.")
                 else:
-                    with st.status("나레이션 길이 맞추는 중… (약 30초)", expanded=True):
+                    with st.status("나레이션 길이·발음 맞추는 중… (약 30초~1분)", expanded=True):
                         try:
                             _ss.refit_project(api_keys["ANTHROPIC_API_KEY"], state, progress=st.write)
                             state["audio_path"] = ""
