@@ -227,6 +227,7 @@ _TOPIC_SYSTEM = """당신은 유튜브 쇼츠 채널 '너도나도아는커피'(
 - 주제는 "왜/어떻게/차이/비밀" 처럼 궁금증이 생기는 한 줄, 22자 이내.
 - SCA 기준 등 사실로 설명할 수 있는 주제만. 가격·매장 추천·제품 광고 주제는 제외.
 - [이미 만든 주제]와 겹치거나 비슷한 것은 제외.
+- 가능한 한 자동완성 목록(실제 검색어)에서 고르고, 주제 문장에 그 검색어의 핵심 단어를 그대로 살리세요.
 - 자동완성 목록에서 착안한 주제는 signal 에 그 검색어를 그대로 적고, 아니면 빈 문자열.
 JSON 만 출력: {"topics": [{"topic": "", "signal": ""}]}"""
 
@@ -253,11 +254,10 @@ def get_daily_topics(anthropic_key: str, made_titles: list = None,
             pass
 
     rnd = random.Random(time.time() if refresh else day)
-    seeds = rnd.sample(TOPIC_SEEDS, 5)
-    signals = []
-    for sd in seeds:
-        signals.extend(_autocomplete(sd, count=8))
-    signals = list(dict.fromkeys(signals))[:40]
+    # 궁금증형 씨앗으로 실제 검색어를 모으고, 드라마·쇼핑·브랜드 검색어는 미리 걸러낸다
+    _q = collect_question_queries(made_titles=made_titles, n_seeds=8, per_seed=10,
+                                  max_items=40, refresh_salt=rnd.random())
+    signals = [it["topic"] for it in _q["items"]]
 
     result = {"date": day, "topics": [], "signals": len(signals), "note": ""}
     if anthropic_key:
@@ -295,3 +295,107 @@ def get_daily_topics(anthropic_key: str, made_titles: list = None,
     except Exception:
         pass
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API: 궁금증 검색어 수집 (실시간 트렌드 탭 · 오늘의 추천 주제 공용)
+# ─────────────────────────────────────────────────────────────────────────────
+# '커피' 한 단어로 자동완성을 조회하면 드라마·노래·쇼핑·밈 검색어만 나온다.
+# 그래서 "사람이 궁금할 때 치는 앞부분"을 씨앗으로 여러 개 조회하고,
+# 쓸 수 없는 검색어를 규칙으로 걸러 실제 궁금증 검색어만 남긴다.
+
+QUESTION_SEEDS_BY_CHAPTER = {
+    "CH01": ["커피 기원", "커피 역사", "커피 유래", "아메리카노 유래", "카페라떼 유래", "커피 처음"],
+    "CH02": ["아라비카 로부스타", "예가체프", "게이샤 커피", "원두 산지", "원두 종류", "커피 품종"],
+    "CH03": ["내추럴 워시드", "커피 가공", "무산소 발효 커피", "허니 프로세스", "커피 발효"],
+    "CH04": ["로스팅 차이", "다크 로스팅", "라이트 로스팅", "원두 볶은 날짜", "원두 로스팅"],
+    "CH05": ["에스프레소 왜", "에스프레소 크레마", "에스프레소 샷", "롱블랙 아메리카노", "리스트레토"],
+    "CH06": ["핸드드립 물 온도", "핸드드립 분쇄도", "드립커피 차이", "콜드브루 더치", "프렌치프레스"],
+    "CH07": ["아이스 아메리카노 왜", "아인슈페너", "플랫화이트 라떼", "카푸치노 라떼 차이", "아포가토"],
+    "CH08": ["스페셜티 커피", "카페 아메리카노 왜", "한국 커피 소비", "커피 문화", "바리스타"],
+    "CH09": ["커피 마시면", "카페인 몇시간", "디카페인 카페인", "커피 공복", "커피 하루 몇잔",
+             "커피 잠", "커피 이뇨", "커피 효능", "커피 부작용", "커피 먹으면"],
+    "CH10": ["원두 보관", "원두 분쇄", "모카포트", "커피 그라인더 차이", "캡슐커피 차이"],
+}
+
+QUESTION_SEEDS_GENERAL = [
+    "커피 마시면", "커피 먹으면", "커피 왜", "커피 차이", "커피 이유", "커피 공복",
+    "커피 하루", "커피 잠", "카페인 몇시간", "디카페인", "아메리카노 왜", "아메리카노 차이",
+    "라떼 차이", "에스프레소 왜", "원두 보관", "원두 차이", "커피 효능", "커피 부작용",
+    "콜드브루 차이", "핸드드립 왜", "아이스 아메리카노 왜", "커피 산미",
+]
+
+# 쓸 수 없는 검색어(드라마·노래·쇼핑·브랜드·매장·밈·커피 외 용도)
+_BLOCK_WORDS = [
+    # 쇼핑·가격
+    "추천", "가격", "할인", "최저가", "쿠팡", "구매", "판매", "직구", "리뷰", "후기", "순위",
+    "기프티콘", "쿠폰", "이벤트", "신메뉴", "메뉴판", "칼로리표",
+    # 브랜드·매장
+    "스타벅스", "스벅", "메가", "컴포즈", "빽다방", "이디야", "투썸", "할리스", "폴바셋",
+    "블루보틀", "커피빈", "맥심", "카누", "네스프레소", "돌체구스토", "드롱기", "브레빌", "필립스",
+    "1호점", "매장", "창업", "알바", "프랜차이즈",
+    # 드라마·노래·방송·밈
+    "프린스", "드라마", "노래", "가사", "ost", "mr", "브금", "bgm", "playlist", "플레이리스트",
+    "할래요", "손경제", "엔톡", "사장님이", "밈", "짤", "asmr", "브이로그", "vlog", "먹방",
+    # 커피 외 용도
+    "샴푸", "스크럽", "팩", "비누", "염색", "탈색", "향수", "방향제", "탈취", "화분", "비료",
+    "그림", "색칠", "네일", "캔들", "디퓨저",
+]
+
+# 궁금증·상식 주제의 표시어 — 이 중 하나는 있어야 통과
+_QUESTION_MARKERS = [
+    "왜", "이유", "차이", "비교", "vs", "마시면", "먹으면", "몇", "언제", "얼마", "하루", "공복",
+    "효능", "효과", "부작용", "건강", "잠", "수면", "이뇨", "탈수", "속쓰림", "위염", "배아픈", "역사", "기원", "유래",
+    "원리", "과학", "보관", "온도", "분쇄", "추출", "산미", "쓴맛", "방법", "만드는", "뜻", "종류",
+    "카페인", "디카페인", "크레마", "로스팅", "품종", "산지", "가공", "내추럴", "워시드", "발효",
+]
+
+
+def _is_usable_query(q: str) -> bool:
+    """숏폼 상식 주제로 쓸 수 있는 검색어인지 판단."""
+    s = q.strip().lower()
+    if len(s.replace(" ", "")) < 4:
+        return False
+    if any(w in s for w in _BLOCK_WORDS):
+        return False
+    return any(m in s for m in _QUESTION_MARKERS)
+
+
+def _norm(t: str) -> str:
+    return "".join(str(t).split()).lower()
+
+
+def collect_question_queries(chapter: str = "", made_titles: list = None,
+                             n_seeds: int = 8, per_seed: int = 10,
+                             max_items: int = 16, refresh_salt: float = 0.0) -> dict:
+    """
+    궁금증형 씨앗 여러 개로 YouTube 자동완성을 모아, 쓸 수 있는 검색어만 반환.
+
+    반환: {"seeds": [...], "raw": n, "items": [{"topic", "grade", "source", "signal"}]}
+      - topic : 실제 검색어 (클릭하면 주제 입력창에 들어감)
+      - 이미 만든 주제와 겹치는 검색어는 제외
+    """
+    import random
+    from concurrent.futures import ThreadPoolExecutor
+
+    code = (chapter or "").split()[0] if chapter else ""
+    pool = QUESTION_SEEDS_BY_CHAPTER.get(code) or QUESTION_SEEDS_GENERAL
+    rnd = random.Random(refresh_salt or time.time())
+    seeds = pool[:] if len(pool) <= n_seeds else rnd.sample(pool, n_seeds)
+
+    with ThreadPoolExecutor(max_workers=min(8, len(seeds))) as ex:
+        results = list(ex.map(lambda sd: _autocomplete(sd, count=per_seed), seeds))
+
+    raw = [q for lst in results for q in lst]
+    made = [_norm(t) for t in (made_titles or []) if t]
+    seen, items = set(), []
+    for q in raw:
+        k = _norm(q)
+        if k in seen or not _is_usable_query(q):
+            continue
+        if any(k in m or m in k for m in made if len(m) >= 4):
+            continue
+        seen.add(k)
+        items.append({"topic": q.strip(), "grade": "A", "source": "youtube", "signal": q.strip()})
+    rnd.shuffle(items)
+    return {"seeds": seeds, "raw": len(raw), "items": items[:max_items]}

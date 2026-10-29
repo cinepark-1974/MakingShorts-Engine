@@ -437,6 +437,7 @@ try:
         get_keywords_for_chapter,
         get_trending_keywords,
         get_daily_topics,
+        collect_question_queries,
         GRADE_LABEL,
         ALL_CHAPTERS as SEO_CHAPTERS,
     )
@@ -1036,28 +1037,40 @@ if st.session_state.current_project is None:
                             st.rerun()
 
             with tab_live:
-                # 씨앗 키워드: 챕터 첫 단어 or 기본값 "커피"
-                _seed_word = chapter.split()[0] if chapter else "커피"
-                st.caption(f"'{_seed_word}' 기준 YouTube 자동완성 실시간 조회")
+                # 궁금증형 씨앗 여러 개로 실제 검색어를 모으고, 드라마·노래·쇼핑·브랜드 검색어는 걸러낸다
+                _ch_code = chapter.split()[0] if chapter else ""
+                st.caption(
+                    ("선택한 챕터의 " if _ch_code else "")
+                    + "궁금증 검색어(예: '커피 마시면', '카페인 몇시간')로 YouTube 자동완성을 조회합니다. "
+                    "누를 때마다 다른 검색어 묶음을 조회하고, 이미 만든 주제는 뺍니다."
+                )
                 if st.button("🔄 실시간 조회", key="seo_refresh_live"):
-                    st.session_state["seo_live_keywords"] = get_trending_keywords(
-                        _seed_word, max_realtime=8
-                    )
+                    with st.spinner("실제 검색어를 모으는 중… (약 5초)"):
+                        st.session_state["seo_live_result"] = collect_question_queries(
+                            chapter=chapter,
+                            made_titles=[p["title"] for p in manager.list_projects()],
+                            refresh_salt=time.time(),
+                        )
 
-                _live_kws = st.session_state.get("seo_live_keywords", [])
-                if _live_kws:
+                _live = st.session_state.get("seo_live_result")
+                if _live and _live.get("items"):
+                    st.caption(
+                        f"조회한 씨앗: {', '.join(_live['seeds'])} · "
+                        f"검색어 {_live['raw']}개 중 {len(_live['items'])}개 사용 가능"
+                    )
                     _live_cols = st.columns(2)
-                    for _j, _kw in enumerate(_live_kws):
-                        _src_tag = "📡" if _kw["source"] == "youtube" else GRADE_LABEL.get(_kw["grade"], "")
-                        _label = f"{_src_tag}  {_kw['topic']}"
+                    for _j, _kw in enumerate(_live["items"]):
                         with _live_cols[_j % 2]:
-                            if st.button(_label, key=f"seo_live_{_j}", use_container_width=True):
+                            if st.button(f"📡  {_kw['topic']}", key=f"seo_live_{_j}", use_container_width=True):
                                 st.session_state["_seo_pending_topic"] = _kw["topic"]
                                 st.rerun()
-                elif "seo_live_keywords" in st.session_state:
-                    st.warning("YouTube 자동완성을 받아오지 못했습니다. 잠시 뒤 다시 조회해 주세요.")
+                elif _live is not None:
+                    if _live.get("raw"):
+                        st.warning("검색어는 받아왔지만 숏폼 주제로 쓸 만한 것이 없었습니다. 한 번 더 조회하면 다른 씨앗으로 찾습니다.")
+                    else:
+                        st.warning("YouTube 자동완성을 받아오지 못했습니다. 잠시 뒤 다시 조회해 주세요.")
                 else:
-                    st.info("'실시간 조회' 버튼을 눌러 YouTube 트렌드 키워드를 가져오세요.")
+                    st.info("'실시간 조회' 버튼을 눌러 사람들이 실제로 궁금해하는 검색어를 가져오세요.")
 
     # 엔딩 멘트 (12컷 고정 문장)
     from src.prompts import CLOSING_PRESETS
