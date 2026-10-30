@@ -55,6 +55,14 @@ def upload_file(keys: dict, local_path: str, key: str, content_type: str = "") -
     return key
 
 
+def download_file(keys: dict, key: str, local_path: str) -> str:
+    """R2 의 파일을 디스크로 받는다 (서버 재시작·JSON 복구 뒤 재료 되살리기)."""
+    import os
+    os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+    _client(keys).download_file(keys["R2_BUCKET"].strip(), key, local_path)
+    return local_path
+
+
 def download_link(keys: dict, key: str, seconds: int = LINK_MAX_SECONDS, filename: str = "") -> str:
     params = {"Bucket": keys["R2_BUCKET"].strip(), "Key": key}
     if filename:

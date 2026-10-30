@@ -915,15 +915,8 @@ if CHANNEL == "scenestory" and st.session_state.current_project is None:
     st.stop()
 
 if CHANNEL == "hasira":
-    show_channel_banner("hasira")
-    st.info("HASIRA_yo! 음악 제작 라인은 준비 중입니다. 먼저 사이드바 「🔧 연결 테스트」에서 "
-            "R2 와 Lyria 연결을 확인해 주세요.")
-    st.markdown(
-        "- **음악**: Google Lyria 로 곡 여러 개를 만들어 크로스페이드로 1시간 이상 연결\n"
-        "- **영상**: 16:9 그림 한 장 + 반복 움직임(비 · 눈 · 꽃잎 · 김 · 불빛)\n"
-        "- **전달**: 완성본은 Cloudflare R2 에 올리고 7일짜리 내려받기 링크로 받기\n"
-        "- **업로드 정보**: 곡 목록 타임스탬프(챕터)가 들어간 설명 자동 작성"
-    )
+    from src import hasira_page
+    hasira_page.render(st, manager, api_keys, show_channel_banner)
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────

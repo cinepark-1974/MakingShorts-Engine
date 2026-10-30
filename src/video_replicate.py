@@ -204,6 +204,7 @@ def generate_single_clip_url(
     image_url: str = "",
     poll_cb=None,
     style_lock: bool = False,
+    prompt_optimizer=None,
 ) -> str:
     """
     Replicate MiniMax Video-01로 MP4를 생성하고 공개 URL을 반환한다.
@@ -223,6 +224,8 @@ def generate_single_clip_url(
             prompt.rstrip(" .,") + ", " + STYLE_LOCK_SUFFIX
         )
         optimizer = False
+    if prompt_optimizer is not None:      # HASIRA 루프: 카메라 고정 지시가 재작성되지 않게 끔
+        optimizer = bool(prompt_optimizer)
 
     if use_image_mode:
         image_file = _fetch_image_as_fileobj(image_url)
