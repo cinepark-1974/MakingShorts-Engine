@@ -5,7 +5,9 @@
 import os
 from elevenlabs import ElevenLabs
 
-DEFAULT_MODEL_ID  = "eleven_multilingual_v2"
+DEFAULT_MODEL_ID  = "eleven_v4"                 # 2026-10 기본 (공식 문서: 최고 품질·내레이션용, 한국어·일본어 지원)
+FALLBACK_MODEL_ID = "eleven_multilingual_v2"    # v4 가 이 계정·목소리에서 실패하면 되돌림
+TTS_MODELS = {"eleven_v4": "eleven_v4 (기본)", "eleven_multilingual_v2": "multilingual_v2 (예전)"}
 DEFAULT_VOICE_ID  = "8jHHF8rMqMlg8if2mOUe"
 
 
@@ -15,6 +17,7 @@ def generate_narration(
     output_path: str,
     voice_id: str  = DEFAULT_VOICE_ID,
     model_id: str  = DEFAULT_MODEL_ID,
+    info: dict = None,
 ) -> str:
     """
     ElevenLabs API로 나레이션 텍스트를 MP3 파일로 변환해 로컬에 저장한다.
@@ -30,23 +33,29 @@ def generate_narration(
         str : 저장된 로컬 파일 경로 (= output_path)
     """
     client = ElevenLabs(api_key=api_key)
-
-    audio_iter = client.text_to_speech.convert(
-        voice_id=voice_id,
-        text=text,
-        model_id=model_id,
-        output_format="mp3_44100_128",
-    )
-
     out_dir = os.path.dirname(output_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    with open(output_path, "wb") as f:
-        for chunk in audio_iter:
-            f.write(chunk)
-
-    return output_path
+    tried = [model_id] + ([FALLBACK_MODEL_ID] if model_id != FALLBACK_MODEL_ID else [])
+    last = None
+    for mid in tried:
+        try:
+            audio = b"".join(client.text_to_speech.convert(
+                voice_id=voice_id, text=text, model_id=mid, output_format="mp3_44100_128"))
+            if not audio:
+                raise RuntimeError("빈 음성이 반환되었습니다.")
+            with open(output_path, "wb") as f:
+                f.write(audio)
+            if info is not None:
+                info["model"] = mid
+                if mid != model_id:
+                    info["fallback_reason"] = str(last)[:300]
+            return output_path
+        except Exception as e:
+            last = e
+            print(f"[audio] {mid} 실패: {e}", flush=True)
+    raise last
 
 
 def generate_narration_cdn(
@@ -56,6 +65,7 @@ def generate_narration_cdn(
     voice_id: str = DEFAULT_VOICE_ID,
     model_id: str = DEFAULT_MODEL_ID,
     project_dir: str = "",
+    info: dict = None,
 ) -> str:
     """
     나레이션을 생성하고 로컬 project_dir에 narration.mp3로 저장한 뒤 경로를 반환한다.
@@ -91,4 +101,5 @@ def generate_narration_cdn(
         output_path=output_path,
         voice_id=voice_id,
         model_id=model_id,
+        info=info,
     )

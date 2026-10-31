@@ -12,7 +12,14 @@ import requests
 import replicate
 
 # ── Replicate 모델 ID ──────────────────────────────────────────────────────────
-MINIMAX_MODEL = "minimax/video-01"   # I2V(first_frame_image) + T2V 통합 모델
+MINIMAX_MODEL = "minimax/video-01"   # I2V(first_frame_image) + T2V 통합 모델 (2024 · 되돌림용)
+HAILUO_MODEL = "minimax/hailuo-2.3-fast"   # 2026-10 기본 — 그림 → 영상 전용, 1080p 6초
+VIDEO_MODELS = {
+    "hailuo-2.3-fast": "Hailuo 2.3 Fast (기본 · 1080p 6초)",
+    "video-01":        "video-01 (예전 모델)",
+}
+DEFAULT_VIDEO_MODEL = "hailuo-2.3-fast"
+_SCHEMA_CACHE: dict = {}
 
 # 재시도 및 폴링 설정
 _MAX_RETRIES      = 5    # 최대 재시도 횟수 (429 전용)
@@ -198,6 +205,65 @@ STYLE_LOCK_SUFFIX = (
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 API: 단일 클립 생성
 # ─────────────────────────────────────────────────────────────────────────────
+def model_input_schema(replicate_token: str, model: str = HAILUO_MODEL) -> dict:
+    """Replicate 가 공개하는 모델 입력 항목(openapi)을 읽는다 — 항목 이름을 추측하지 않기 위해.
+    반환: {항목이름: {"type", "enum", "default", "description"}} · 실패하면 빈 dict."""
+    if model in _SCHEMA_CACHE:
+        return _SCHEMA_CACHE[model]
+    try:
+        r = requests.get(f"https://api.replicate.com/v1/models/{model}",
+                         headers={"Authorization": f"Bearer {replicate_token}"}, timeout=20)
+        r.raise_for_status()
+        api = ((r.json().get("latest_version") or {}).get("openapi_schema") or {})
+        comps = (api.get("components") or {}).get("schemas") or {}
+        props = (comps.get("Input") or {}).get("properties") or {}
+        out = {}
+        for name, p in props.items():
+            info = {"type": p.get("type", ""), "enum": p.get("enum"), "default": p.get("default"),
+                    "description": (p.get("description") or "")[:160]}
+            for ref in (p.get("allOf") or []):          # enum 이 별도 정의로 빠져 있는 경우
+                key = (ref.get("$ref") or "").split("/")[-1]
+                if key in comps:
+                    info["enum"] = comps[key].get("enum")
+                    info["type"] = comps[key].get("type", info["type"])
+            out[name] = info
+        _SCHEMA_CACHE[model] = out
+        return out
+    except Exception as e:
+        print(f"[video_replicate] 입력 항목 조회 실패 ({model}): {e}", flush=True)
+        return {}
+
+
+def _pick(enum, want):
+    if not enum:
+        return want
+    for w in (want, str(want)):
+        if w in enum:
+            return w
+    return None
+
+
+def _hailuo_inputs(replicate_token: str, prompt: str, image_file, optimizer: bool) -> dict:
+    props = model_input_schema(replicate_token, HAILUO_MODEL)
+    img_field = next((f for f in ("first_frame_image", "image", "start_image", "input_image") if f in props),
+                     "first_frame_image")
+    inputs = {"prompt": prompt, img_field: image_file}
+    if not props:                               # 항목을 못 읽었으면 MiniMax 공통 이름으로
+        inputs.update(duration=6, resolution="1080p", prompt_optimizer=optimizer)
+        return inputs
+    if "duration" in props:
+        d = _pick(props["duration"].get("enum"), 6)
+        if d is not None:
+            inputs["duration"] = d
+    if "resolution" in props:
+        r = _pick(props["resolution"].get("enum"), "1080p")
+        if r is not None:
+            inputs["resolution"] = r
+    if "prompt_optimizer" in props:
+        inputs["prompt_optimizer"] = optimizer
+    return inputs
+
+
 def generate_single_clip_url(
     replicate_token: str,
     prompt: str,
@@ -205,6 +271,8 @@ def generate_single_clip_url(
     poll_cb=None,
     style_lock: bool = False,
     prompt_optimizer=None,
+    model_pref: str = "",
+    info: dict = None,
 ) -> str:
     """
     Replicate MiniMax Video-01로 MP4를 생성하고 공개 URL을 반환한다.
@@ -226,6 +294,28 @@ def generate_single_clip_url(
         optimizer = False
     if prompt_optimizer is not None:      # HASIRA 루프: 카메라 고정 지시가 재작성되지 않게 끔
         optimizer = bool(prompt_optimizer)
+
+    model_pref = model_pref or DEFAULT_VIDEO_MODEL
+    if info is not None:
+        info["model"] = "video-01"
+    if use_image_mode and model_pref == "hailuo-2.3-fast":
+        try:
+            image_file = _fetch_image_as_fileobj(image_url)
+            inputs = _hailuo_inputs(replicate_token, prompt, image_file, optimizer)
+            print(f"[video_replicate] I2V 시작: {HAILUO_MODEL} | 항목={sorted(inputs)} | "
+                  f"prompt={prompt[:60]}…", flush=True)
+            url = _run_model_with_polling(HAILUO_MODEL, inputs, poll_cb=poll_cb)
+            if info is not None:
+                info["model"] = "hailuo-2.3-fast"
+            return url
+        except InsufficientCreditError:
+            raise
+        except Exception as e:
+            if "타임아웃" in str(e):
+                raise
+            print(f"[video_replicate] Hailuo 2.3 Fast 실패 → video-01 로 다시 만듭니다: {e}", flush=True)
+            if info is not None:
+                info["fallback_reason"] = str(e)[:300]
 
     if use_image_mode:
         image_file = _fetch_image_as_fileobj(image_url)

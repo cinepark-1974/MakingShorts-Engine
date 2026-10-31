@@ -32,8 +32,9 @@ def _duration(path: str) -> float:
         return os.path.getsize(path) * 8 / 128_000      # 128kbps 기준 추정
 
 
-def test_voice(api_key: str, voice_id: str = JA_VOICE_ID, text: str = JA_SAMPLE) -> dict:
-    rep = {"ok": False, "voice_id": voice_id, "model": MODEL_ID, "text": text,
+def test_voice(api_key: str, voice_id: str = JA_VOICE_ID, text: str = JA_SAMPLE, model_id: str = "") -> dict:
+    model_id = model_id or MODEL_ID
+    rep = {"ok": False, "voice_id": voice_id, "model": model_id, "text": text,
            "chars": len(re.sub(r"\s", "", text)), "chars_no_punct": len(_PUNCT.sub("", text)),
            "seconds": 0.0, "cps": 0.0, "cps_no_punct": 0.0, "audio": b"", "error": "", "elapsed": 0.0}
     if not api_key:
@@ -43,7 +44,7 @@ def test_voice(api_key: str, voice_id: str = JA_VOICE_ID, text: str = JA_SAMPLE)
     try:
         from elevenlabs import ElevenLabs
         it = ElevenLabs(api_key=api_key).text_to_speech.convert(
-            voice_id=voice_id, text=text, model_id=MODEL_ID, output_format="mp3_44100_128")
+            voice_id=voice_id, text=text, model_id=model_id, output_format="mp3_44100_128")
         audio = b"".join(it)
         rep["elapsed"] = round(time.time() - t0, 1)
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:

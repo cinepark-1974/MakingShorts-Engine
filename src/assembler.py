@@ -227,7 +227,7 @@ def _text(draw, xy, text, font, fill=None, stroke=5, anchor="la", shadow=None):
 # 씬 오버레이 PNG (신비한 건축사전 스타일, 박스 없음)
 # ─────────────────────────────────────────────────────────────────────────────
 def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
-                       light: bool = False) -> str:
+                       light: bool = False, with_narration: bool = True) -> str:
     """light=True 이면 밝은 종이 배경용 잉크 톤으로 그린다."""
     from PIL import Image, ImageDraw
     global _PAL
@@ -347,7 +347,7 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str,
             _text(d, (m + 20, ky + i * 88), line, f_kw, fill=ACCENT, stroke=6, anchor="la")
 
     # ── 6. 나레이션 자막 (박스 없음, 외곽선) ─────────────────────────────
-    narr = (scene.get("narration") or "").strip()
+    narr = (scene.get("narration") or "").strip() if with_narration else ""
     if narr:
         f_sub = _font(FONT_SANS_BOLD, 58)
         lines = _wrap(d, narr, f_sub, W - 2 * m - 40, max_lines=3)
@@ -402,9 +402,15 @@ def plan_durations(scenes: list, clip_durs: list, audio_dur: float) -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 # 컷 하나 렌더링: 9:16 크롭 → 길이 맞춤 → 오버레이
 # ─────────────────────────────────────────────────────────────────────────────
+PUNCH_IN = 1.10        # 컷 후반 확대 배율 (화면이 3초 안팎마다 바뀌게)
+PUNCH_MIN_SEC = 4.5    # 이보다 짧은 컷은 나누지 않음
+
+
 def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str,
-                      instant: bool = False) -> None:
-    """instant=True: 자막·그래픽을 0초부터 바로 보이게 (1컷 훅 — 피드 첫 화면)."""
+                      instant: bool = False, captions: list = None, punch_in: bool = True) -> None:
+    """instant=True: 자막·그래픽을 0초부터 바로 보이게 (1컷 훅 — 피드 첫 화면).
+    captions: [(시작, 끝, png)] — 말 따라 바뀌는 자막 구간.
+    punch_in: 컷 길이가 PUNCH_MIN_SEC 이상이면 후반부를 1.1배 확대해 컷 안에서 화면을 한 번 바꾼다."""
     src_dur = _media_duration(src) or 6.0
     chain = [
         f"scale={W}:{H}:force_original_aspect_ratio=increase",
@@ -420,15 +426,27 @@ def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str,
         if remain > 0.02:
             chain.append(f"tpad=stop_mode=clone:stop_duration={remain:.3f}")
     fade_in = 0.35
-    fc = (
-        f"[0:v]{','.join(chain)}[base];"
-        + ("[1:v]format=rgba[ov];" if instant else
-           f"[1:v]format=rgba,fade=t=in:st=0.15:d={fade_in}:alpha=1[ov];") +
-        f"[base][ov]overlay=0:0:format=auto,format=yuv420p[out]"
-    )
+    if punch_in and target >= PUNCH_MIN_SEC:
+        half = round(target / 2, 3)
+        cw, ch = int(W / PUNCH_IN) // 2 * 2, int(H / PUNCH_IN) // 2 * 2
+        fc = (f"[0:v]{','.join(chain)},split[pa][pb];"
+              f"[pa]trim=0:{half},setpts=PTS-STARTPTS[p1];"
+              f"[pb]trim={half}:{target:.3f},setpts=PTS-STARTPTS,crop={cw}:{ch},scale={W}:{H},setsar=1[p2];"
+              f"[p1][p2]concat=n=2:v=1:a=0[base];")
+    else:
+        fc = f"[0:v]{','.join(chain)}[base];"
+    fc += ("[1:v]format=rgba[ov];" if instant else
+           f"[1:v]format=rgba,fade=t=in:st=0.15:d={fade_in}:alpha=1[ov];")
+    fc += "[base][ov]overlay=0:0:format=auto[v0]"
+    inputs = ["-i", src, "-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", overlay_png]
+    last = "[v0]"
+    for k, (a, b, png) in enumerate(captions or []):
+        inputs += ["-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", png]
+        fc += f";{last}[{k + 2}:v]overlay=0:0:format=auto:enable='between(t,{a:.3f},{b:.3f})'[v{k + 1}]"
+        last = f"[v{k + 1}]"
+    fc += f";{last}format=yuv420p[out]"
     cmd = [
-        "ffmpeg", "-y", "-i", src,
-        "-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", overlay_png,
+        "ffmpeg", "-y", *inputs,
         "-filter_complex", fc, "-map", "[out]", "-an",
         "-t", f"{target:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
@@ -502,11 +520,13 @@ def build_audio_mix(video_path: str, narration: str, bgm: str, sfx_events: list,
 
 
 def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = True,
-                         elevenlabs_key: str = "", with_sfx: bool = True, with_bgm: bool = True) -> str:
+                         elevenlabs_key: str = "", with_sfx: bool = True, with_bgm: bool = True,
+                         caption_mode: str = "") -> str:
     """
     모든 컷 영상 + 나레이션 → 1080×1920 최종 MP4 (project_dir/final.mp4) 경로 반환.
     나레이션은 끝까지 들어가고, 영상 길이는 나레이션 + 여운 0.8초.
     """
+    caption_mode = caption_mode or state.get("caption_mode") or "phrase"   # phrase: 말 따라 바뀌는 자막 / full: 예전 방식
     scenes    = sorted(state.get("scenes", []), key=lambda s: s.get("scene_no", 0))
     is_ss     = state.get("channel") == "scenestory"          # SceneStory: 일본어 자막·글꼴, 다른 배경음악
     ss_work   = ((state.get("title_card") or {}).get("work") or "") if is_ss else ""
@@ -544,16 +564,23 @@ def assemble_final_video(state: dict, fal_key: str = "", apply_overlay: bool = T
         for i, ((s, p), tgt) in enumerate(zip(items, targets), start=1):
             sno = s.get("scene_no", i)
             png = os.path.join(tmp, f"ov_{sno:02d}.png")
+            light = _is_light_clip(p, tmp) if apply_overlay else False
+            caps = []
+            if apply_overlay and caption_mode == "phrase":
+                from src import captions as _cap
+                caps = _cap.build_for_scene(s, tgt, tmp, sno, W, H, lang="ja" if is_ss else "ko",
+                                            light=light, instant=(i == 1))
             if apply_overlay and is_ss:
                 from src import scenestory as _ss
-                _ss.render_overlay_png(s, sno, total, png, light=_is_light_clip(p, tmp), work=ss_work)
+                _ss.render_overlay_png(s, sno, total, png, light=light, work=ss_work,
+                                       with_narration=not caps)
             elif apply_overlay:
-                render_overlay_png(s, sno, total, png, light=_is_light_clip(p, tmp))
+                render_overlay_png(s, sno, total, png, light=light, with_narration=not caps)
             else:
                 from PIL import Image
                 Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(png)
             out = os.path.join(tmp, f"r_{sno:02d}.mp4")
-            render_scene_clip(p, png, tgt, out, instant=(i == 1))
+            render_scene_clip(p, png, tgt, out, instant=(i == 1), captions=caps)
             rendered.append(out)
             print(f"[assembler] 컷 #{sno:02d} {tgt:.1f}초 완료", flush=True)
 

@@ -713,17 +713,19 @@ with st.sidebar:
 
         st.markdown("---")
         st.caption("SceneStory 일본어 목소리로 시험 문장을 읽혀 속도를 잽니다.")
+        _vt_model = st.radio("시험할 목소리 모델", ["eleven_v4", "eleven_multilingual_v2"], horizontal=True,
+                             key="ja_voice_model")
         if st.button("🎙 일본어 목소리 테스트", key="ja_voice_btn", use_container_width=True):
             from src import voice_test
             with st.spinner("일본어 음성 만드는 중…"):
                 st.session_state["_ja_voice"] = voice_test.test_voice(
                     _tk.get("ELEVENLABS_API_KEY", ""),
-                    _tk.get("ELEVENLABS_VOICE_ID_JA", "") or voice_test.JA_VOICE_ID)
+                    _tk.get("ELEVENLABS_VOICE_ID_JA", "") or voice_test.JA_VOICE_ID, model_id=_vt_model)
         _jv = st.session_state.get("_ja_voice")
         if _jv:
             from src import voice_test
             if _jv["ok"]:
-                st.success(f"성공 — {_jv['seconds']}초 · 초당 {_jv['cps']}자 "
+                st.success(f"성공 ({_jv.get('model', '')}) — {_jv['seconds']}초 · 초당 {_jv['cps']}자 "
                            f"(문장부호 빼면 {_jv['cps_no_punct']}자)")
                 st.audio(_jv["audio"], format="audio/mpeg")
             else:
@@ -731,6 +733,21 @@ with st.sidebar:
             st.download_button("⬇ 측정 결과 JSON (Claude 에게 전달용)",
                                data=voice_test.result_json(_jv), file_name="ja_voice_test.json",
                                mime="application/json", key="ja_voice_dl", use_container_width=True)
+
+        st.markdown("---")
+        st.caption("Hailuo 2.3 Fast 가 받는 입력 항목을 Replicate 에서 읽어 옵니다 (영상은 만들지 않아 무료).")
+        if st.button("🎬 Hailuo 입력 항목 확인", key="hailuo_schema_btn", use_container_width=True):
+            from src import video_replicate as _vr
+            _vr._SCHEMA_CACHE.pop(_vr.HAILUO_MODEL, None)
+            st.session_state["_hailuo_schema"] = _vr.model_input_schema(_tk.get("REPLICATE_API_TOKEN", ""))
+        _hs = st.session_state.get("_hailuo_schema")
+        if _hs is not None:
+            if _hs:
+                st.success("읽기 성공 — 엔진이 이 항목 이름으로 요청합니다.")
+                st.json(_hs, expanded=False)
+            else:
+                st.error("항목을 읽지 못했습니다 — REPLICATE_API_TOKEN 확인. 이 경우 MiniMax 공통 이름으로 요청하고, "
+                         "실패하면 video-01 로 되돌립니다.")
 
         st.markdown("---")
         st.caption("Lyria 30초 음악 클립 1개를 받아 봅니다 (Google 요금이 발생할 수 있음).")
@@ -880,7 +897,8 @@ if CHANNEL == "scenestory" and st.session_state.current_project is None:
                                placeholder="예: 옆집 창문이 보이는 거리가 불륜 드라마의 무대가 된 이유")
         _c1, _c2 = st.columns(2)
         with _c1:
-            ss_length = st.radio("영상 길이", list(ss.LENGTH_PRESETS), index=2,
+            ss_length = st.radio("영상 길이", list(ss.LENGTH_PRESETS),
+                                 index=list(ss.LENGTH_PRESETS).index(ss.DEFAULT_LENGTH),
                                  format_func=lambda k: ss.LENGTH_PRESETS[k]["label"], key="ss_length")
         with _c2:
             ss_closing = st.selectbox("엔딩 멘트 (마지막 컷)", ss.CLOSING_PRESETS, key="ss_closing")
@@ -1650,21 +1668,34 @@ elif not step3_audio_locked:
                 voice_id = api_keys.get("ELEVENLABS_VOICE_ID_JA") or _JA      # 일본어 나레이션
             else:
                 voice_id = api_keys.get("ELEVENLABS_VOICE_ID", "8jHHF8rMqMlg8if2mOUe")
-            st.caption(f"음성 ID: `{voice_id}` · 모델: `eleven_multilingual_v2`")
+            from src.audio import DEFAULT_MODEL_ID as _TTS_DEFAULT, TTS_MODELS as _TTS_MODELS
+            _tts = st.radio("목소리 모델", list(_TTS_MODELS), format_func=lambda k: _TTS_MODELS[k],
+                            index=list(_TTS_MODELS).index(state.get("tts_model_pref") or _TTS_DEFAULT),
+                            horizontal=True, key="tts_model_pick",
+                            help="eleven_v4 가 실패하면 자동으로 multilingual_v2 로 다시 만듭니다.")
+            _used = f" · 지난번 사용: `{state['tts_model']}`" if state.get("tts_model") else ""
+            st.caption(f"음성 ID: `{voice_id}`{_used}")
             audio_btn = st.button("🎙 나레이션 음성 생성", key="audio_gen")
             if audio_btn:
                 with st.spinner("ElevenLabs 음성 생성 중… (약 20~40초)"):
                     try:
                         from src.audio import generate_narration_cdn
                         # 로컬 project_dir에 narration.mp3 저장 (fal CDN 대신)
+                        _tinfo = {}
                         cdn_url = generate_narration_cdn(
                             api_key=api_keys["ELEVENLABS_API_KEY"],
                             text=narration_text,
                             fal_key=api_keys.get("FAL_KEY", ""),
                             voice_id=voice_id,
                             project_dir=state.get("project_dir", "/tmp"),
+                            model_id=_tts,
+                            info=_tinfo,
                         )
                         state["audio_path"] = cdn_url
+                        state["tts_model_pref"] = _tts
+                        state["tts_model"] = _tinfo.get("model", _tts)
+                        if _tinfo.get("fallback_reason"):
+                            st.warning(f"{_tts} 실패로 {state['tts_model']} 로 만들었습니다: {_tinfo['fallback_reason']}")
                         manager.save_state(state)
                         st.session_state.current_project = state
                         st.success("음성 생성 완료!")
@@ -1691,7 +1722,7 @@ st.markdown(f"""
     {"✓" if done_cnt == total_cnt and total_cnt > 0 else "4"}
   </div>
   <div>
-    <div class="step-title">STEP 4 · 컷별 영상 생성 (MiniMax Video-01)</div>
+    <div class="step-title">STEP 4 · 컷별 영상 생성 (MiniMax Hailuo 2.3 Fast)</div>
     <div class="step-sub">9:16 세로 · Flux 이미지 첫 프레임 자동 사용 · 클립당 3~5분 · 컷별 재생성 가능</div>
   </div>
 </div>
@@ -1713,6 +1744,19 @@ else:
     _fal_key        = api_keys.get("FAL_KEY", "")
     _replicate_key  = api_keys.get("REPLICATE_API_TOKEN", "")
     _use_replicate  = bool(_replicate_key)
+
+    from src.video_replicate import VIDEO_MODELS as _VMODELS, DEFAULT_VIDEO_MODEL as _VDEF
+    _vm = st.radio("영상 모델", list(_VMODELS), format_func=lambda k: _VMODELS[k], horizontal=True,
+                   index=list(_VMODELS).index(state.get("video_model") or _VDEF), key="video_model_pick",
+                   disabled=VIDEO_BUSY,
+                   help="Hailuo 2.3 Fast 가 실패하면 그 컷은 자동으로 video-01 로 다시 만듭니다.")
+    if _vm != (state.get("video_model") or _VDEF):
+        state["video_model"] = _vm
+        manager.save_state(state)
+    _used_models = sorted({s.get("video_model") for s in scenes if s.get("video_model")})
+    if _used_models:
+        st.caption("만든 컷의 모델 · " + ", ".join(_used_models)
+                   + (" · 일부 컷은 Hailuo 실패로 video-01 사용" if any(s.get("video_fallback") for s in scenes) else ""))
 
     col_gen, col_stop, col_info2 = st.columns([2, 1, 4])
     with col_gen:
@@ -2124,6 +2168,9 @@ def _assemble_controls(label: str, key: str) -> None:
                               help="영상 길이에 맞춘 연주곡을 깔고, 나레이션이 나올 때는 자동으로 작아집니다.")
     if (use_sfx or use_bgm) and not api_keys.get("ELEVENLABS_API_KEY"):
         st.caption("ELEVENLABS_API_KEY 가 없어 소리를 만들 수 없습니다. assets/sfx, assets/bgm 에 올린 파일만 사용됩니다.")
+    _cap_opts = {"phrase": "말 따라 바뀌는 큰 자막 (기본)", "full": "예전 방식 (컷 나레이션 전체 표시)"}
+    _cap = st.radio("자막", list(_cap_opts), format_func=lambda k: _cap_opts[k], horizontal=True,
+                    index=list(_cap_opts).index(state.get("caption_mode") or "phrase"), key=f"{key}_cap")
     if st.button(label, key=key):
         with st.spinner("합성 중… 처음 한 번은 효과음·배경음악 생성까지 포함해 약 3~6분 걸립니다. 화면을 누르지 마세요."):
             try:
@@ -2133,7 +2180,9 @@ def _assemble_controls(label: str, key: str) -> None:
                     elevenlabs_key=api_keys.get("ELEVENLABS_API_KEY", ""),
                     with_sfx=use_sfx,
                     with_bgm=use_bgm,
+                    caption_mode=_cap,
                 )
+                state["caption_mode"] = _cap
                 state["final_video_path"] = local_path
                 state["status"] = "done"
                 manager.save_state(state)

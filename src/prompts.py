@@ -533,11 +533,11 @@ SCENE_MIN, SCENE_MAX = 18, 40
 
 # 길이 옵션: 컷 수, 낭독 합계(공백 제외 글자), 씬당 글자, 화면 표시용 이름
 LENGTH_PRESETS = {
-    "short": {"cuts": 8,  "total": (150, 190), "scene": (12, 30), "label": "짧게 · 약 35초 (8컷)"},
+    "short": {"cuts": 8,  "total": (150, 190), "scene": (12, 30), "label": "짧게 · 약 35초 (8컷) · 기본"},
     "mid":   {"cuts": 10, "total": (220, 270), "scene": (15, 35), "label": "보통 · 약 50초 (10컷)"},
     "long":  {"cuts": 12, "total": (310, 380), "scene": (18, 40), "label": "길게 · 약 70초 (12컷)"},
 }
-DEFAULT_LENGTH = "long"
+DEFAULT_LENGTH = "short"   # 2026-10: 교육형 쇼츠는 35~45초 유지율이 높다는 자료 기준 (예전 기본 long)
 
 
 def _spec(length: str) -> dict:

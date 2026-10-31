@@ -150,14 +150,21 @@ def _worker(job: dict, replicate_token: str, save_fn) -> None:
                 _p["last_poll"] = time.time()
 
             try:
+                _info = {}
                 url = generate_single_clip_url(
                     replicate_token=replicate_token,
                     prompt=scene.get("flow_prompt", ""),
                     image_url=img or scene.get("reference_image_url", ""),
                     poll_cb=_poll_cb,
                     style_lock=scene.get("scene_type", "") in STYLE_LOCK_TYPES,
+                    model_pref=state.get("video_model", ""),
+                    info=_info,
                 )
                 scene["video_url"] = url
+                scene["video_model"] = _info.get("model", "")
+                if _info.get("fallback_reason"):
+                    scene["video_fallback"] = _info["fallback_reason"]
+                    p["msg"] = "Hailuo 실패 → video-01 로 만듦"
                 media_store.forget_clip(scene)
                 media_store.keep_clip(scene, project_dir)   # 1시간 뒤 삭제되기 전에 보관
                 scene["status"]    = "done"

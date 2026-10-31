@@ -33,10 +33,10 @@ DEFAULT_CLOSING = CLOSING_PRESETS[0]
 
 LENGTH_PRESETS = {
     "short": {"label": "짧게 (30~39초)",       "cuts": 8,  "total": (130, 160)},
-    "mid":   {"label": "보통 (45~54초)",       "cuts": 10, "total": (185, 225)},
-    "long":  {"label": "길게 (60~75초) · 기본", "cuts": 12, "total": (250, 310)},
+    "mid":   {"label": "보통 (45~54초) · 기본", "cuts": 10, "total": (185, 225)},
+    "long":  {"label": "길게 (60~75초)",       "cuts": 12, "total": (250, 310)},
 }
-DEFAULT_LENGTH = "long"
+DEFAULT_LENGTH = "mid"     # 2026-10: 이야기형 쇼츠 30~45초 권장 자료 + 시니어 낭독 속도 고려 (예전 기본 long)
 
 SS_TYPES = {"TITLE", "SKETCH", "PHOTO"}
 SFX_OK = {"", "ambient_cafe", "deep_bass", "impact_whoosh"}
@@ -890,7 +890,7 @@ def prepare_title_scenes(state: dict) -> None:
 # 3) 합성용 자막 오버레이 (박스 없음, 큰 자막)
 # ─────────────────────────────────────────────────────────────────────────────
 def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str, light: bool,
-                       work: str = "", W: int = 1080, H: int = 1920) -> str:
+                       work: str = "", W: int = 1080, H: int = 1920, with_narration: bool = True) -> str:
     from PIL import Image, ImageDraw
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -919,7 +919,7 @@ def render_overlay_png(scene: dict, scene_no: int, total: int, out_path: str, li
         for i, ln in enumerate(wrap_ja(d, kw, f_kw, W - 2 * m, max_lines=2)):
             _t((W // 2, ky + i * 100), ln, f_kw, accent, 6, anchor="ma")
 
-    narr = (scene.get("narration") or "").strip()
+    narr = (scene.get("narration") or "").strip() if with_narration else ""
     if narr:
         # 72px(시니어용 큰 자막)부터: 3줄 안에, 말 중간에서 끊지 않는 가장 큰 글자 크기를 쓴다
         pick = None
