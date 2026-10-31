@@ -491,6 +491,80 @@ def save_image(keys: dict, state: dict, src: str, source: str) -> dict:
     return img
 
 
+# ── 섬네일 (1280×720 · 제목 글자 포함) ──
+_FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts")
+THUMB_ROSE = (227, 181, 164, 255)      # 로즈골드 (HASIRA_yo! 고유 색)
+THUMB_CREAM = (255, 244, 234, 255)
+THUMB_BROWN = (43, 26, 20)             # 짙은 갈색
+
+
+def thumb_defaults(state: dict) -> dict:
+    plan = state.get("plan") or {}
+    sec = (state.get("final") or {}).get("seconds") or int(state.get("target_min", 60)) * 60
+    hours = max(1, round(sec / 3600))
+    words = {1: "ONE HOUR", 2: "TWO HOURS", 3: "THREE HOURS"}      # Cormorant 숫자 1 이 'ı' 처럼 보여 글자로 쓴다
+    return {"big": plan.get("title_ja", ""), "small": f"CINEMATIC PIANO · {words.get(hours, f'{hours} HOURS')}",
+            "brand": "HASIRA_yo!"}
+
+
+def _latin_font(weight: int, size: int):
+    from PIL import ImageFont
+    for name in (f"cormorant-garamond-latin-{weight}-normal.woff", "cormorant-garamond-latin-600-normal.woff"):
+        p = os.path.join(_FONT_DIR, name)
+        if os.path.exists(p):
+            return ImageFont.truetype(p, size)
+    from src.scenestory import jp_font, JP_SERIF_BOLD
+    return jp_font(JP_SERIF_BOLD, size)
+
+
+def make_thumbnail(keys: dict, state: dict, big: str, small: str, brand: str = "HASIRA_yo!") -> str:
+    """16:9 섬네일: 그림 위 아래쪽 짙은 갈색 띠 + 작은 영문 줄(로즈골드) + 큰 일본어 제목(크림) + 채널명."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SERIF_BOLD, phrase_wrap
+    img_path = ensure_local(keys, state.get("image") or {}, project_files(state, "image.jpg"))
+    if not img_path:
+        raise RuntimeError("그림이 없습니다. ② 그림을 먼저 준비해 주세요.")
+    W, H = 1280, 720
+    im = Image.open(img_path).convert("RGB")
+    s = max(W / im.width, H / im.height)
+    im = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
+    l, t = (im.width - W) // 2, (im.height - H) // 2
+    im = im.crop((l, t, l + W, t + H)).convert("RGBA")
+
+    over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(over)
+    m = 64
+    big = (big or "").strip()
+    # 큰 제목: 2줄 안에 들어가는 가장 큰 글자
+    f_big, lines = None, [big]
+    for size in (92, 84, 76, 68, 60, 54):
+        f_big = jp_font(JP_SERIF_BOLD, size)
+        lines = phrase_wrap(d, big, f_big, W - 2 * m) if big else []
+        if len(lines) <= 2:
+            break
+    lines = lines[:2]
+    lh = int(f_big.size * 1.22)
+    f_small = _latin_font(600, 34)
+    f_brand = _latin_font(700, 36)
+    block = (lh * len(lines)) + 70
+    band_top = H - block - 70
+    d.rectangle([0, band_top, W, H], fill=THUMB_BROWN + (165,))
+    y = band_top + 30
+    if small:
+        d.text((m, y), small.upper(), font=f_small, fill=THUMB_ROSE)
+        y += 52
+    for i, ln in enumerate(lines):
+        d.text((m, y + i * lh), ln, font=f_big, fill=THUMB_CREAM, stroke_width=2, stroke_fill=THUMB_BROWN + (255,))
+    if brand:
+        d.text((W - m, band_top + 28), brand, font=f_brand, fill=THUMB_ROSE, anchor="ra")
+    out = project_files(state, "thumbnail_1280x720.jpg")
+    Image.alpha_composite(im, over).convert("RGB").save(out, "JPEG", quality=92)
+    th = state.setdefault("thumbnail", {})
+    th.update(local=out, big=big, small=small, brand=brand,
+              r2_key=keep_in_r2(keys, state, out, "thumbnail_1280x720.jpg", "image/jpeg"))
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ③ 루프 영상
 # ─────────────────────────────────────────────────────────────────────────────

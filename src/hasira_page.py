@@ -208,10 +208,33 @@ def _project(st, manager, api_keys):
                 st.session_state[f"_hz_img_done_{pid}"] = up.file_id
                 manager.save_state(state)
                 st.rerun()
-        if local and img.get("thumb_local") and os.path.exists(img["thumb_local"]):
-            with open(img["thumb_local"], "rb") as f:
-                st.download_button("⬇ 섬네일 바탕 그림 (1280×720)", f.read(), file_name="thumbnail_base.jpg",
-                                   mime="image/jpeg", key=f"hz_thumb_{pid}")
+        if local:
+            st.markdown("**섬네일 (1280×720 · 제목 글자 포함)**")
+            _td = h.thumb_defaults(state)
+            _th = state.get("thumbnail") or {}
+            tc1, tc2 = st.columns([3, 2])
+            with tc1:
+                _big = st.text_input("큰 제목 (일본어)", _th.get("big") or _td["big"], key=f"hz_tb_{pid}")
+            with tc2:
+                _small = st.text_input("작은 줄 (영문)", _th.get("small") or _td["small"], key=f"hz_ts_{pid}")
+            if st.button("🖼 섬네일 만들기" if not _th.get("local") else "🖼 섬네일 다시 만들기",
+                         key=f"hz_tmk_{pid}", disabled=busy):
+                try:
+                    h.make_thumbnail(api_keys, state, _big, _small)
+                    manager.save_state(state)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"섬네일 만들기 실패: {e}")
+            _tl = h.ensure_local(api_keys, _th, h.project_files(state, "thumbnail_1280x720.jpg")) if _th else ""
+            if _tl:
+                st.image(_tl, use_container_width=True)
+                with open(_tl, "rb") as f:
+                    st.download_button("⬇ 섬네일 내려받기 (1280×720 JPG)", f.read(), file_name="thumbnail.jpg",
+                                       mime="image/jpeg", key=f"hz_tdl_{pid}")
+            if img.get("thumb_local") and os.path.exists(img["thumb_local"]):
+                with open(img["thumb_local"], "rb") as f:
+                    st.download_button("⬇ 글자 없는 바탕 그림 (Canva 작업용)", f.read(), file_name="thumbnail_base.jpg",
+                                       mime="image/jpeg", key=f"hz_thumb_{pid}")
 
     # ── ③ 움직임 ──
     with st.container(border=True):
