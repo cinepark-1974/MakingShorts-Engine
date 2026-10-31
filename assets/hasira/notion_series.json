@@ -9,7 +9,10 @@
    "youtube_url": "https://youtu.be/9kwA80EcOQA",
    "upload_date": "2026-03-05",
    "memo": "오프닝 멘트 없음",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "温泉旅館の夜",
+   "place_read": "おんせんりょかんの よる",
+   "place_hangul": "온센료칸노 요루"
   },
   {
    "no": "02",
@@ -19,7 +22,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "フィレンツェの丘の夕焼け",
+   "place_read": "フィレンツェの おかの ゆうやけ",
+   "place_hangul": "후이렌체노 오카노 유-야케"
   },
   {
    "no": "03",
@@ -150,7 +156,10 @@
      "top": false,
      "prompt": "Cinematic classical instrumental, anthemic and triumphantly bittersweet. Atmosphere: London skyline from afar, sun setting through clouds, end credits of the most beautiful rainy adventure, promising to return. Instruments: piano with grand soaring melody, full bright strings ensemble with anthemic emotional build, warm cello, orchestral warmth lifting to hopeful climax. Tempo: BPM 72, steady building to quiet triumph. No sudden dynamic changes. No percussion. No harsh or cold tones."
     }
-   ]
+   ],
+   "place_ja": "雨のロンドンの午後",
+   "place_read": "あめの ロンドンの ごご",
+   "place_hangul": "아메노 론돈노 고고"
   },
   {
    "no": "04",
@@ -160,7 +169,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "パリの夕暮れの散歩道",
+   "place_read": "パリの ゆうぐれの さんぽみち",
+   "place_hangul": "파리노 유-구레노 산포미치"
   },
   {
    "no": "05",
@@ -170,7 +182,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "夜明けのドナウ川",
+   "place_read": "よあけの ドナウがわ",
+   "place_hangul": "요아케노 도나우가와"
   },
   {
    "no": "06",
@@ -180,7 +195,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "ウィーンのクラシックな夜",
+   "place_read": "ウィーンの クラシックな よる",
+   "place_hangul": "위-인노 쿠라싯쿠나 요루"
   },
   {
    "no": "07",
@@ -190,7 +208,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "ニースの陽だまりの海辺",
+   "place_read": "ニースの ひだまりの うみべ",
+   "place_hangul": "니-스노 히다마리노 우미베"
   },
   {
    "no": "08",
@@ -200,7 +221,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "夜更けのソウル、漢江",
+   "place_read": "よふけの ソウル、ハンガン",
+   "place_hangul": "요후케노 소우루, 한강"
   },
   {
    "no": "09",
@@ -210,7 +234,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "夜明けの釜山の海",
+   "place_read": "よあけの プサンの うみ",
+   "place_hangul": "요아케노 부산노 우미"
   },
   {
    "no": "10",
@@ -220,7 +247,10 @@
    "youtube_url": "",
    "upload_date": "",
    "memo": "",
-   "prompts": []
+   "prompts": [],
+   "place_ja": "プラハ旧市街の黄昏",
+   "place_read": "プラハ きゅうしがいの たそがれ",
+   "place_hangul": "프라하 큐-시가이노 타소가레"
   }
  ]
 }

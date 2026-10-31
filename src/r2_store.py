@@ -63,6 +63,25 @@ def download_file(keys: dict, key: str, local_path: str) -> str:
     return local_path
 
 
+def get_json(keys: dict, key: str):
+    """R2 의 작은 JSON 파일을 읽는다. 없으면 None."""
+    import json
+    try:
+        obj = _client(keys).get_object(Bucket=keys["R2_BUCKET"].strip(), Key=key)
+        return json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception as e:
+        if "NoSuchKey" in str(e) or "404" in str(e):
+            return None
+        raise
+
+
+def put_json(keys: dict, key: str, data) -> None:
+    import json
+    _client(keys).put_object(Bucket=keys["R2_BUCKET"].strip(), Key=key,
+                             Body=json.dumps(data, ensure_ascii=False, indent=1).encode("utf-8"),
+                             ContentType="application/json")
+
+
 def download_link(keys: dict, key: str, seconds: int = LINK_MAX_SECONDS, filename: str = "") -> str:
     params = {"Bucket": keys["R2_BUCKET"].strip(), "Key": key}
     if filename:

@@ -160,6 +160,142 @@ def theme_label(t: dict) -> str:
     return f"{t['no']}. {t['name_ko']} ({t['name_en']}){tag}{pr}"
 
 
+# ── 대사 (매뉴얼 Step 6 · 녹음용) ──
+OPENING_TMPL = "HASIRA_yo!へようこそ。今日は、{place}へ、ご案内します。"
+OPENING_READ = "ハシラヨへ ようこそ。きょうは、{read}へ、ごあんない します。"
+OPENING_HANGUL = "하시라요에 요-코소. 쿄-와, {hangul}에, 고안나이 시마스."
+OPENING_KO = "HASIRA_yo!에 오신 걸 환영합니다. 오늘은 {name}(으)로 안내하겠습니다."
+CLOSING = {
+    "ja": "行福しなさい、癒しなさい。今日もしばらく、寄りかかってください。チャンネル登録も、よろしくお願いします。",
+    "read": "こうふく しなさい、いやし なさい。きょうも しばらく、よりかかって ください。チャンネル とうろくも、よろしく おねがい します。",
+    "hangul": "코-후쿠 시나사이, 이야시 나사이. 쿄-모 시바라쿠, 요리카캇테 쿠다사이. 찬네루 토-로쿠모, 요로시쿠 오네가이 시마스.",
+    "ko": "행복하세요, 치유받으세요. 오늘도 잠시 기대어 가세요. 채널 구독도 잘 부탁드립니다.",
+}
+
+
+def opening_lines(theme: dict) -> dict:
+    if not theme or not theme.get("place_ja"):
+        return {}
+    return {"ja": OPENING_TMPL.format(place=theme["place_ja"]),
+            "read": OPENING_READ.format(read=theme.get("place_read", "")),
+            "hangul": OPENING_HANGUL.format(hangul=theme.get("place_hangul", "")),
+            "ko": OPENING_KO.format(name=theme.get("name_ko", ""))}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 제작 보드 (노션 「테마별 음악」 대신) — R2 hasira/_board.json 에 저장
+# ─────────────────────────────────────────────────────────────────────────────
+BOARD_KEY = "hasira/_board.json"
+BOARD_LOCAL = os.path.join("projects", "_hasira_board.json")
+BOARD_FIELDS = ["plan_month", "youtube_url", "shorts_url", "upload_date", "views_1w", "memo"]
+STAGES = ["예정", "기획", "음악", "합성 완료", "업로드 완료"]
+DEFAULT_MONTH = {"03": "2026-11", "02": "2026-11", "04": "2026-12", "05": "2026-12"}
+
+
+def _board_from_series() -> dict:
+    themes = {}
+    for t in load_series():
+        themes[t["no"]] = {
+            "no": t["no"], "name_ko": t["name_ko"], "name_en": t["name_en"],
+            "place_ja": t.get("place_ja", ""), "place_read": t.get("place_read", ""),
+            "place_hangul": t.get("place_hangul", ""),
+            "stage": "업로드 완료" if t.get("youtube_url") else ("음악" if t.get("status") == "음악생성" else "예정"),
+            "detail": "QC 통과 20곡 (Suno)" if t.get("status") == "음악생성" else "",
+            "plan_month": DEFAULT_MONTH.get(t["no"], ""), "youtube_url": t.get("youtube_url", ""),
+            "shorts_url": "", "upload_date": t.get("upload_date", ""), "views_1w": None,
+            "memo": t.get("memo", ""), "project_id": "", "has_prompts": bool(t.get("prompts")),
+        }
+    return {"themes": themes, "updated": ""}
+
+
+def load_board(keys: dict) -> dict:
+    board = None
+    if _r2_ok(keys):
+        from src import r2_store
+        try:
+            board = r2_store.get_json(keys, BOARD_KEY)
+        except Exception as e:
+            print(f"[hasira] 보드 읽기 실패(R2): {e}", flush=True)
+    if board is None and os.path.exists(BOARD_LOCAL):
+        try:
+            with open(BOARD_LOCAL, encoding="utf-8") as f:
+                board = json.load(f)
+        except Exception:
+            board = None
+    base = _board_from_series()
+    if not board:
+        return base
+    for no, t in base["themes"].items():          # 새로 생긴 기본 테마·필드 보충
+        cur = board.setdefault("themes", {}).setdefault(no, t)
+        for k, v in t.items():
+            cur.setdefault(k, v)
+    return board
+
+
+def save_board(keys: dict, board: dict) -> str:
+    board["updated"] = time.strftime("%Y-%m-%d %H:%M")
+    os.makedirs(os.path.dirname(BOARD_LOCAL), exist_ok=True)
+    with open(BOARD_LOCAL, "w", encoding="utf-8") as f:
+        json.dump(board, f, ensure_ascii=False, indent=1)
+    if _r2_ok(keys):
+        from src import r2_store
+        try:
+            r2_store.put_json(keys, BOARD_KEY, board)
+            return "r2"
+        except Exception as e:
+            print(f"[hasira] 보드 저장 실패(R2): {e}", flush=True)
+    return "local"
+
+
+def board_themes(board: dict) -> list:
+    return sorted(board.get("themes", {}).values(), key=lambda t: t["no"])
+
+
+def add_theme(board: dict, name_ko: str, name_en: str, place_ja: str = "",
+              place_read: str = "", place_hangul: str = "") -> dict:
+    nos = [int(n) for n in board.get("themes", {}) if str(n).isdigit()]
+    no = f"{(max(nos) if nos else 0) + 1:02d}"
+    t = {"no": no, "name_ko": name_ko.strip(), "name_en": name_en.strip(), "place_ja": place_ja.strip(),
+         "place_read": place_read.strip(), "place_hangul": place_hangul.strip(), "stage": "예정", "detail": "",
+         "plan_month": "", "youtube_url": "", "shorts_url": "", "upload_date": "", "views_1w": None,
+         "memo": "", "project_id": "", "has_prompts": False}
+    board.setdefault("themes", {})[no] = t
+    return t
+
+
+def stage_of(state: dict) -> tuple:
+    """프로젝트 상태 → (단계, 세부)."""
+    tracks = state.get("tracks", [])
+    done = sum(1 for t in tracks if t.get("status") == "done")
+    fin = state.get("final") or {}
+    if fin.get("seconds"):
+        return "합성 완료", f"{fmt_time(fin['seconds'], True)} · {fin.get('made_at', '')}"
+    if done:
+        loop = "루프 있음" if (state.get("loop") or {}).get("local") or (state.get("loop") or {}).get("r2_key") else "루프 없음"
+        return "음악", f"{done}/{len(tracks)}곡 · {loop}"
+    return "기획", f"{len(tracks)}곡 기획 · {state.get('created_at', '')[:8]}"
+
+
+def sync_board(keys: dict, state: dict) -> bool:
+    """프로젝트 진행 상황을 보드에 반영 (바뀐 경우에만 저장). 업로드 완료로 적힌 테마는 건드리지 않는다."""
+    no = state.get("notion_theme_no") or state.get("theme_no")
+    if not no:
+        return False
+    board = load_board(keys)
+    t = board.get("themes", {}).get(no)
+    if t is None:
+        return False
+    stage, detail = stage_of(state)
+    if t.get("stage") == "업로드 완료":
+        stage = t["stage"]
+    new = {"stage": stage, "detail": detail, "project_id": state.get("project_id", "")}
+    if all(t.get(k) == v for k, v in new.items()):
+        return False
+    t.update(new)
+    save_board(keys, board)
+    return True
+
+
 def strip_banned(text: str) -> str:
     """금지어가 들어간 태그·해시태그를 걸러낼 때 쓰는 검사용 소문자 문자열."""
     return (text or "").lower()

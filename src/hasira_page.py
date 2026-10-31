@@ -18,21 +18,25 @@ def _new_project(st, manager, api_keys):
     st.markdown(
         '<p style="text-align:center; font-size:14px; margin:4px 0 18px;">'
         '「낭만의 공간」 테마를 고르면 곡 프롬프트 · 그림 · 움직임을 준비하고, 1시간 16:9 영상으로 합성합니다. '
-        '규칙은 노션 HASIRA_yo_Manual_v5.0 기준입니다.</p>',
+        '규칙은 「운영 규칙」 탭(매뉴얼 v5.0) 기준입니다.</p>',
         unsafe_allow_html=True,
     )
-    series = h.load_series()
+    board = h.load_board(api_keys)
+    prompts_by_no = {t["no"]: t.get("prompts") or [] for t in h.load_series()}
+    series = [dict(t, prompts=prompts_by_no.get(t["no"], []), status=t.get("stage", ""))
+              for t in h.board_themes(board)]
     src = st.radio("테마 고르기", ["notion", "free"], horizontal=True, key="hz_src",
-                   format_func=lambda k: {"notion": "노션 「테마별 음악」 목록", "free": "새 테마 직접 입력"}[k])
+                   format_func=lambda k: {"notion": "제작 보드 테마 목록", "free": "새 테마 직접 입력"}[k])
     theme_obj, given = None, None
     if src == "notion" and series:
-        pending = [t for t in series if t.get("status") != "업로드완료"]
+        pending = sorted([t for t in series if t.get("status") not in ("업로드 완료", "합성 완료")],
+                         key=lambda t: (t.get("plan_month") or "9999", not t.get("prompts"), t["no"]))
         idx = series.index(pending[0]) if pending else 0
         theme_obj = st.selectbox("테마", series, index=idx, format_func=h.theme_label, key="hz_theme")
         if theme_obj.get("youtube_url"):
             st.caption(f"이미 올린 편 · {theme_obj['youtube_url']} · {theme_obj.get('memo', '')}")
         if theme_obj.get("prompts"):
-            use_given = st.checkbox(f"노션 프롬프트 {len(theme_obj['prompts'])}개를 그대로 사용 "
+            use_given = st.checkbox(f"저장된 프롬프트 {len(theme_obj['prompts'])}개(노션 LP 목록)를 그대로 사용 "
                                     f"(Top {sum(1 for p in theme_obj['prompts'] if p.get('top'))}곡 표시 유지)",
                                     value=True, key="hz_use_given")
             if use_given:
@@ -94,6 +98,13 @@ def _new_project(st, manager, api_keys):
             image={}, loop={}, final={}, voice={}, use_voice={"intro": True, "outro": True},
             tracks=h.new_tracks_from_plan(plan), status="planned",
         )
+        if not theme_obj:                         # 직접 입력한 새 테마도 제작 보드에 올린다
+            try:
+                nt = h.add_theme(board, theme.strip(), "")
+                h.save_board(api_keys, board)
+                state["notion_theme_no"] = nt["no"]
+            except Exception as e:
+                print(f"[hasira] 보드에 새 테마 추가 실패: {e}", flush=True)
         manager.save_state(state)
         st.session_state.current_project = state
         st.rerun()
@@ -322,7 +333,21 @@ def _project(st, manager, api_keys):
     with st.container(border=True):
         st.markdown("**④-2 인트로 · 아웃트로 목소리 (매뉴얼 Part 0 · 내 목소리 5~10초)**")
         st.caption("아웃트로는 한 번 올리면 R2 공용 보관함에 저장돼 다음 편에도 자동으로 들어갑니다. 인트로는 테마가 바뀌므로 편마다 올립니다. "
-                   "대사는 노션 Hasira_yo › 「오프닝 · 클로징 대사 (녹음용)」에 있습니다.")
+                   "읽을 대사는 바로 아래에 있습니다.")
+        _th = h.load_board(api_keys).get("themes", {}).get(state.get("notion_theme_no", ""), {})
+        _op = h.opening_lines(_th)
+        dc = st.columns(2)
+        with dc[0]:
+            if _op:
+                st.markdown("인트로 대사")
+                st.code(_op["ja"], language=None)
+                st.caption(f"읽기 · {_op['read']}  \n한글 발음 · {_op['hangul']}  \n뜻 · {_op['ko']}")
+            else:
+                st.caption("이 테마는 인트로 대사가 아직 없습니다. 제작 보드 「대사」 탭 틀에 장소 이름만 넣어 읽으면 됩니다.")
+        with dc[1]:
+            st.markdown("아웃트로 대사 (공통)")
+            st.code(h.CLOSING["ja"], language=None)
+            st.caption(f"한글 발음 · {h.CLOSING['hangul']}  \n뜻 · {h.CLOSING['ko']}")
         uv = state.setdefault("use_voice", {"intro": True, "outro": True})
         vc = st.columns(2)
         for col, kind in zip(vc, h.VOICE_KINDS):
@@ -414,10 +439,142 @@ def _project(st, manager, api_keys):
                     st.caption(f"{k} · {v}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 제작 보드 · 대사 · 운영 규칙 (노션 대신)
+# ─────────────────────────────────────────────────────────────────────────────
+RULES_MD = """
+**채널 정의** · 힐링과 성장을 위한 감정 기록 채널. 낮과 밤을 가리지 않고 낭만과 로망이 머무는 순간을 음악으로 기록한다.
+"카페 음악"이 아닌 "영화적 낭만을 일상에 붙이는 채널". 중심 시리즈 「낭만의 공간」.
+
+**대상 · 색감** · 일본 40~60대 + 글로벌 Cinematic Classical 리스너 · 벚꽃 톤(웜 로즈/앰버)
+
+**브랜드 서명** · 行福しなさい、癒しなさい。今日もしばらく寄りかかってください。
+
+**금지어 (제목·태그·설명)** · cafe music, jazz, lo-fi, BGM, study music, AI music, Suno
+
+**곡 프롬프트 정책** · 장르 선언(Cinematic romantic classical instrumental) → Atmosphere(감각 묘사) →
+Instruments(피아노 + 첼로·바이올린·비올라, 보조 하프·피치카토·패드) → Tempo(BPM 54~68) → Guardrails("No …" 3개 이상).
+금지: jazz, 드럼·퍼커션, 전자음, 밝은 고주파, 급격한 다이나믹, 촬영 용어, 보컬
+
+**QC 기준** · 30초: 분위기 안정 / 2분: 감정 과잉 없음 / 전체: 영화 엔딩 크레딧에 어울림. 폐기 사유 1줄(상업BGM·웅장·감정과잉 등)
+
+**1시간 구성** · 20곡 내외(곡당 2~4분) · 배치 번호순 또는 ABACAD · 곡 사이 크로스페이드 · -14 LUFS ·
+1920×1080 30fps H.264, AAC 320kbps · 화면은 Ken Burns 1~3%(완전 정지 금지)
+
+**사람의 몫 (수익화 대비)** · 내 목소리 인트로·아웃트로 5~10초 / 업로드 시 AI 도구 사용 공개 체크 /
+설명란에 선곡 의도·감정 설계 1~2줄
+
+**업로드** · 제목: 검색 키워드 + 감정 문장 + HASIRA_yo! (예: Cinematic Piano 1 Hour | 温泉旅館の夜 — 静かな時間をあなたに | HASIRA_yo!)
+· 설명 250자+ · 챕터 · 브랜드 서명 · #태그 3~5 · 태그 15~20 · 썸네일 벚꽃 톤
+
+**운영 리듬 (2026-10 결정)** · Long-form 월 2편(첫째·셋째 금요일 20:00 JST) · 나머지 주는 Shorts ·
+두 달에 한 번 4편을 묶은 Vol 편 · ElevenLabs Creator 월 147분 안에서 운영
+
+**키워드 3층** · 검색: cinematic piano 1 hour, シネマティック ピアノ 1時間, relaxing classical music /
+니치: cinematic end credit piano music, 映画のエンドクレジット風ピアノ, romantic classical instrumental for reading /
+브랜드: HASIRA_yo + 테마
+"""
+
+
+def _board_tab(st, manager, api_keys):
+    import pandas as pd
+    board = h.load_board(api_keys)
+    themes = h.board_themes(board)
+    # 이 서버에 남아 있는 프로젝트로 진행 상황 갱신
+    for p in manager.list_projects():
+        if p.get("channel") == "hasira":
+            try:
+                h.sync_board(api_keys, manager.load_state(p["dir"]))
+            except Exception:
+                pass
+    board = h.load_board(api_keys)
+    themes = h.board_themes(board)
+    counts = {s: sum(1 for t in themes if t.get("stage") == s) for s in h.STAGES}
+    st.caption(" · ".join(f"{k} {v}" for k, v in counts.items()) +
+               (f" · 마지막 저장 {board.get('updated')}" if board.get("updated") else ""))
+    df = pd.DataFrame([{
+        "번호": t["no"], "테마": t["name_ko"], "영문": t["name_en"], "단계": t.get("stage", "예정"),
+        "진행": t.get("detail", ""), "예정월": t.get("plan_month", ""), "YouTube": t.get("youtube_url", ""),
+        "Shorts": t.get("shorts_url", ""), "업로드일": t.get("upload_date", ""),
+        "1주 조회수": t.get("views_1w"), "메모": t.get("memo", ""),
+    } for t in themes])
+    edited = st.data_editor(
+        df, hide_index=True, use_container_width=True, key="hz_board_editor",
+        disabled=["번호", "진행"],
+        column_config={
+            "단계": st.column_config.SelectboxColumn(options=h.STAGES, width="small"),
+            "YouTube": st.column_config.LinkColumn(), "Shorts": st.column_config.LinkColumn(),
+            "1주 조회수": st.column_config.NumberColumn(format="%d"),
+            "예정월": st.column_config.TextColumn(help="예: 2026-11"),
+        },
+    )
+    if st.button("💾 보드 저장", type="primary", key="hz_board_save"):
+        for _, row in edited.iterrows():
+            t = board["themes"].get(row["번호"])
+            if t is None:
+                continue
+            t.update(name_ko=row["테마"], name_en=row["영문"], stage=row["단계"], plan_month=row["예정월"] or "",
+                     youtube_url=row["YouTube"] or "", shorts_url=row["Shorts"] or "",
+                     upload_date=row["업로드일"] or "", memo=row["메모"] or "",
+                     views_1w=None if pd.isna(row["1주 조회수"]) else int(row["1주 조회수"]))
+            if t["youtube_url"] and t["stage"] != "업로드 완료":
+                t["stage"] = "업로드 완료"
+        where = h.save_board(api_keys, board)
+        st.success("저장했습니다 (R2)." if where == "r2" else "저장했습니다. R2 설정이 없어 이 서버에만 남습니다.")
+        st.rerun()
+    with st.expander("✚ 새 테마 추가"):
+        with st.form("hz_add_theme", border=False):
+            c1, c2 = st.columns(2)
+            nk = c1.text_input("테마 (한글)", placeholder="마지막 전철 창가")
+            ne = c2.text_input("영문", placeholder="Romance Last Train Window")
+            pj = c1.text_input("인트로에 넣을 일본어 장소 (선택)", placeholder="終電の窓辺")
+            pr = c2.text_input("그 읽기 (선택)", placeholder="しゅうでんの まどべ")
+            ph = c1.text_input("한글 발음 (선택)", placeholder="슈-덴노 마도베")
+            if st.form_submit_button("추가"):
+                if nk.strip() and ne.strip():
+                    h.add_theme(board, nk, ne, pj, pr, ph)
+                    h.save_board(api_keys, board)
+                    st.rerun()
+                else:
+                    st.error("한글·영문 테마 이름을 넣어 주세요.")
+
+
+def _lines_tab(st, api_keys):
+    st.markdown("인트로는 편마다 테마에 맞는 것을, 아웃트로는 공통 하나를 한 번만 녹음해 ④-2 칸에 올립니다. "
+                "조용한 방에서 핸드폰과 입 사이 한 뼘, 말 앞뒤로 1초씩 비우고 평소보다 한 박자 느리게 읽습니다. "
+                "아이폰 음성 메모(.m4a)를 그대로 올려도 됩니다.")
+    st.markdown("**아웃트로 (공통 · 약 10초)**")
+    st.code(h.CLOSING["ja"], language=None)
+    st.caption(f"읽기 · {h.CLOSING['read']}  \n한글 발음 · {h.CLOSING['hangul']}  \n뜻 · {h.CLOSING['ko']}  \n"
+               "10초를 넘기면 마지막 구독 문장을 빼고 브랜드 서명까지만 녹음합니다.")
+    st.markdown("**인트로 (테마별 · 약 7초)**")
+    for t in h.board_themes(h.load_board(api_keys)):
+        op = h.opening_lines(t)
+        with st.container(border=True):
+            st.markdown(f"**{t['no']}. {t['name_ko']}** · {t.get('stage', '')}")
+            if op:
+                st.code(op["ja"], language=None)
+                st.caption(f"한글 발음 · {op['hangul']}  \n뜻 · {op['ko']}")
+            else:
+                st.caption("일본어 장소 이름이 없습니다 — 틀: " + h.OPENING_TMPL.format(place="＿＿＿"))
+
+
 def render(st, manager, api_keys, show_banner):
     show_banner("hasira")
     cur = st.session_state.get("current_project")
     if cur is None:
-        _new_project(st, manager, api_keys)
+        t1, t2, t3, t4 = st.tabs(["📋 제작 보드", "🎼 새 편 만들기", "🎙 대사", "📖 운영 규칙"])
+        with t1:
+            _board_tab(st, manager, api_keys)
+        with t2:
+            _new_project(st, manager, api_keys)
+        with t3:
+            _lines_tab(st, api_keys)
+        with t4:
+            st.markdown(RULES_MD)
     else:
+        try:
+            h.sync_board(api_keys, cur)
+        except Exception as e:
+            print(f"[hasira] 보드 갱신 실패: {e}", flush=True)
         _project(st, manager, api_keys)
