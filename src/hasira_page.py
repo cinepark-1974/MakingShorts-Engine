@@ -113,32 +113,48 @@ def _new_project(st, manager, api_keys):
 # ─────────────────────────────────────────────────────────────────────────────
 # 진행 패널 (백그라운드 작업)
 # ─────────────────────────────────────────────────────────────────────────────
-def _job_panel(st, state):
+JOB_KIND_LABEL = {"loop": "③ 움직임 루프", "music": "④ 음악", "render": "⑤ 최종 합성"}
+
+
+def _job_panel(st, state, where: str = "top", kinds: tuple = None):
+    """백그라운드 작업 진행 표시. 4초마다 스스로 새로 고친다.
+    where: 표시 위치(top · loop · music · render) — 같은 작업을 버튼 바로 옆에도 보여 준다.
+    끝난 작업(완료·오류)은 다음 작업을 시작할 때까지 계속 보인다 (오류가 순식간에 사라지지 않게)."""
     pid = state["project_id"]
 
     @st.fragment(run_every=4)
     def _panel():
         job = h.get_job(pid)
-        if job is None:
+        if job is None or (kinds and job.get("kind") not in kinds):
             return
         running = h.is_running(pid)
-        if not running and job.get("_shown"):
-            return
+        el = int((job.get("finished_at") or time.time()) - job["started_at"])
+        pct = min(max(job.get("pct", 0.0), 0.0), 1.0)
         with st.container(border=True):
-            el = int((job.get("finished_at") or time.time()) - job["started_at"])
-            head = "진행 중" if running else ("오류로 멈춤" if job["error"] else "끝")
-            st.markdown(f"**⚙️ {job['label']} — {head}** · {el // 60}분 {el % 60:02d}초")
-            st.progress(min(max(job.get("pct", 0.0), 0.0), 1.0), text=job.get("msg", ""))
-            if job["error"]:
-                st.error(job["error"])
             if running:
-                if st.button("⏹ 중지", key=f"hz_stop_{pid}"):
+                st.markdown(f"**⏳ {job['label']} 진행 중** · {el // 60}분 {el % 60:02d}초 경과 · {int(pct * 100)}%")
+                st.progress(pct, text=job.get("msg", "") or "작업 중…")
+                st.caption("이 화면을 닫아도 서버에서 계속 진행됩니다. 4초마다 자동으로 새로 고칩니다.")
+                if st.button("⏹ 중지", key=f"hz_stop_{pid}_{where}"):
                     h.request_stop(pid)
+            elif job["error"]:
+                st.markdown(f"**❌ {job['label']} 오류로 멈춤** · {el // 60}분 {el % 60:02d}초")
+                st.error(job["error"])
             else:
-                job["_shown"] = True
-                st.rerun()       # 결과를 화면 전체에 반영
+                st.markdown(f"**✅ {job['label']} 끝** · {el // 60}분 {el % 60:02d}초")
+                st.caption(job.get("msg", ""))
+        if not running and not job.get("_refreshed") and where == "top":
+            job["_refreshed"] = True
+            st.rerun()       # 끝난 순간 한 번만 화면 전체를 새로 고쳐 결과(완성 링크 등)를 반영
 
     _panel()
+
+
+def _busy_note(st, state, kind: str):
+    """다른 작업 때문에 버튼이 잠겼을 때 이유를 버튼 바로 아래에 적는다."""
+    job = h.get_job(state["project_id"])
+    if job and h.is_running(state["project_id"]) and job.get("kind") != kind:
+        st.caption(f"⏳ {job['label']} 작업이 진행 중이라 잠겨 있습니다. 끝나면 자동으로 풀립니다.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,7 +171,7 @@ def _project(st, manager, api_keys):
         st.caption(plan["title_ko"])
     if plan.get("concept_ko"):
         st.write(plan["concept_ko"])
-    _job_panel(st, state)
+    _job_panel(st, state, "top")
 
     # ── ② 그림 ──
     with st.container(border=True):
@@ -228,6 +244,8 @@ def _project(st, manager, api_keys):
                 st.rerun()
         if not has_img:
             st.caption("② 그림을 먼저 준비해 주세요.")
+        _busy_note(st, state, "loop")
+        _job_panel(st, state, "loop", ("loop",))
 
     # ── ④ 음악 ──
     with st.container(border=True):
@@ -268,6 +286,8 @@ def _project(st, manager, api_keys):
                         "A/B 2개씩 만든 뒤, QC 를 통과한 MP3 를 그 곡 자리에 올립니다.")
             st.download_button("⬇ Suno 작업용 곡 목록 (텍스트)", h.suno_sheet(state).encode("utf-8"),
                                file_name=f"suno_{pid}.txt", mime="text/plain", key=f"hz_suno_{pid}")
+        _busy_note(st, state, "music")
+        _job_panel(st, state, "music", ("music",))
         ups = st.file_uploader("곡 한꺼번에 올리기 (MP3·WAV·M4A, 여러 개 가능) — 비어 있는 자리부터 번호 순서로 채웁니다. "
                                "자리가 다 차면 목록 끝에 추가되고 파일 이름이 곡 제목이 됩니다.",
                                type=["mp3", "wav", "m4a"], accept_multiple_files=True,
@@ -392,10 +412,15 @@ def _project(st, manager, api_keys):
         if not h._r2_ok(api_keys):
             st.warning("R2 설정이 없어 완성 파일을 내려받을 링크를 만들 수 없습니다. "
                        "사이드바 「☁️ R2 연결 테스트」를 먼저 통과시켜 주세요.")
-        if st.button("🎬 최종 영상 만들기", type="primary", disabled=busy or not items or not loop_ready,
+        _rjob = h.get_job(pid)
+        _rendering = busy and _rjob and _rjob.get("kind") == "render"
+        if st.button("⏳ 최종 영상 만드는 중… (아래 진행 표시)" if _rendering else "🎬 최종 영상 만들기",
+                     type="primary", disabled=busy or not items or not loop_ready,
                      use_container_width=True, key=f"hz_render_{pid}"):
             h.start_render_job(state, api_keys, manager.save_state)
             st.rerun()
+        _busy_note(st, state, "render")
+        _job_panel(st, state, "render", ("render",))
         if not loop_ready:
             st.caption("③ 루프를 먼저 만들어 주세요.")
         elif not items:
