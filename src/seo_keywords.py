@@ -147,12 +147,12 @@ def _parse_suggest(raw: str) -> list[str]:
     return out
 
 
-def _autocomplete(seed: str, count: int = 10) -> list[str]:
-    """YouTube 검색창 자동완성 (비공식·무료). 실패하면 빈 리스트."""
+def _autocomplete(seed: str, count: int = 10, hl: str = "ko", gl: str = "KR") -> list[str]:
+    """YouTube 검색창 자동완성 (비공식·무료). 실패하면 빈 리스트. hl/gl: 언어·나라 (일본: ja/JP)."""
     url = "https://suggestqueries.google.com/complete/search"
     for client in ("youtube", "firefox"):
         try:
-            params = {"client": client, "q": seed, "hl": "ko", "gl": "KR", "ds": "yt"}
+            params = {"client": client, "q": seed, "hl": hl, "gl": gl, "ds": "yt"}
             resp = requests.get(url, params=params, timeout=5,
                                 headers={"User-Agent": "Mozilla/5.0"})
             items = [x for x in _parse_suggest(resp.text) if x.strip() and x.strip() != seed.strip()]

@@ -568,7 +568,7 @@ def make_thumbnail(keys: dict, state: dict, big: str, small: str, brand: str = "
 # ─────────────────────────────────────────────────────────────────────────────
 # ③ 루프 영상
 # ─────────────────────────────────────────────────────────────────────────────
-X264 = ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+X264 = ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-bf", "0",
         "-g", str(FPS * 2), "-keyint_min", str(FPS * 2), "-sc_threshold", "0"]
 FILL = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
 

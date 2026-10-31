@@ -827,9 +827,22 @@ def show_channel_banner(ch: str):
         st.markdown(f"## {CHANNELS[ch]}")
 
 
+# SceneStory 朗読ドラマ (자동 제작) 프로젝트는 전용 화면
+if CHANNEL == "scenestory" and (st.session_state.current_project or {}).get("mode") == "rodoku":
+    from src import rodoku_page
+    rodoku_page.render_project(st, manager, api_keys, show_channel_banner)
+    st.stop()
+
 if CHANNEL == "scenestory" and st.session_state.current_project is None:
     from src import scenestory as ss
     show_channel_banner("scenestory")
+    _ss_way = st.radio("제작 방식", ["rodoku", "shorts"], horizontal=True, key="ss_way",
+                       format_func=lambda k: {"rodoku": "📖 朗読ドラマ 자동 제작 (16:9 · 15~20분 · 기본)",
+                                              "shorts": "🎬 작품 장면 쇼츠 (예전 방식)"}[k])
+    if _ss_way == "rodoku":
+        from src import rodoku_page
+        rodoku_page.render_new(st, manager, api_keys)
+        st.stop()
     st.markdown(
         '<p style="text-align:center; color:#1E3A4E; font-size:14px; margin:4px 0 18px;">'
         '키워드 하나만 넣으면 Claude 가 웹에서 실제 작품 속 장면 후보 3개를 찾아 옵니다. '
