@@ -1,0 +1,226 @@
+{
+ "_source": "Notion · Hasira_yo › 테마별 음악 / LP_prompts.csv (2026-10-31 가져옴)",
+ "themes": [
+  {
+   "no": "01",
+   "name_ko": "일본 온천 료칸의 낭만 저녁",
+   "name_en": "Romance Evening in Ryokan",
+   "status": "업로드완료",
+   "youtube_url": "https://youtu.be/9kwA80EcOQA",
+   "upload_date": "2026-03-05",
+   "memo": "오프닝 멘트 없음",
+   "prompts": []
+  },
+  {
+   "no": "02",
+   "name_ko": "피렌체 언덕에서의 낭만 노을",
+   "name_en": "Romance Sunset on Hills of Florence",
+   "status": "음악생성",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "03",
+   "name_ko": "런던의 낭만 비 오는 오후",
+   "name_en": "Romance Rainy Afternoon in London",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": [
+    {
+     "code": "LP_01",
+     "title_ko": "빅벤의 빗소리",
+     "top": true,
+     "prompt": "Cinematic romantic classical instrumental with anthemic British soul. Atmosphere: rain around Big Ben, grey sky but heart is full, bittersweet triumph of being alive in London. Instruments: soaring piano melody, bright uplifting strings, warm cello with emotional build. Tempo: BPM 68, steady with anthemic lift. No sudden dynamic changes. No percussion. No electronic sounds."
+    },
+    {
+     "code": "LP_02",
+     "title_ko": "템즈강 아침",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, hopeful and anthemic. Atmosphere: morning light breaking through London clouds over the Thames, city awakening with quiet grandeur, everything feels possible. Instruments: bright piano with soaring melody, rich strings building gently, warm pad. Tempo: BPM 68, forward-moving and uplifting. No harsh frequencies. No drums. No heavy dynamics."
+    },
+    {
+     "code": "LP_03",
+     "title_ko": "노팅힐 골목",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with bittersweet charm. Atmosphere: wandering colorful Notting Hill streets after rain, pastel houses glistening, lighthearted melancholy like a Britpop ballad. Instruments: playful piano melody, bright pizzicato strings, gentle harp with emotional warmth. Tempo: BPM 70, cheerful walking pace. No sudden changes. No electronic elements. No aggressive dynamics."
+    },
+    {
+     "code": "LP_04",
+     "title_ko": "하이드파크 벤치",
+     "top": true,
+     "prompt": "Cinematic classical instrumental, anthemic and warmly melancholic. Atmosphere: autumn in Hyde Park, golden leaves falling, bittersweet beauty that makes your chest ache in the best way. Instruments: emotional piano with soaring melody, expressive strings building to gentle climax, warm cello. Tempo: BPM 66, reflective with hopeful build. No harsh swells. No percussion. No cold tones."
+    },
+    {
+     "code": "LP_05",
+     "title_ko": "이층버스 창밖",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with British optimism. Atmosphere: top of a double-decker bus, London passing by in the rain, smiling at the beautiful grey city, feeling of adventure. Instruments: bright soaring piano, warm strings ensemble with anthemic build, uplifting pad. Tempo: BPM 70, steady forward motion with joy. No sudden dynamics. No harsh frequencies. No heavy elements."
+    },
+    {
+     "code": "LP_06",
+     "title_ko": "골동품 서점",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, intimate yet emotionally rich. Atmosphere: hidden Bloomsbury bookshop, warm light inside, rain outside, small perfect moment of discovery and comfort. Instruments: gentle piano with tender melody, soft viola, warm ambient pad building quietly. Tempo: BPM 64, comfortable with emotional depth. No dramatic builds. No percussion. No cold tones."
+    },
+    {
+     "code": "LP_07",
+     "title_ko": "타워브릿지 저녁",
+     "top": true,
+     "prompt": "Cinematic romantic classical instrumental, grand and anthemic. Atmosphere: Tower Bridge at dusk, clouds parting dramatically, London looking magnificent and triumphant, romance in the grandeur. Instruments: piano with soaring emotional melody, rich strings ensemble with anthemic build, warm cello. Tempo: BPM 68, majestic and flowing. No sudden dynamic changes. No percussion. No electronic sounds."
+    },
+    {
+     "code": "LP_08",
+     "title_ko": "웨스트엔드 극장거리",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, vibrant and emotionally charged. Atmosphere: West End at night, neon on wet pavement, post-show euphoria, magic and possibility in the London air. Instruments: expressive piano with bright melody, soaring violin, warm orchestral texture building. Tempo: BPM 70, lively yet elegant with emotional lift. No harsh crescendos. No harsh sounds. No aggressive elements."
+    },
+    {
+     "code": "LP_09",
+     "title_ko": "킹스크로스 출발",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with anthemic departure. Atmosphere: Kings Cross grand hall, trains departing, beginning of something beautiful, hopeful anticipation and bittersweet excitement. Instruments: piano with building emotional melody, bright strings rising gently, warm cello foundation. Tempo: BPM 70, steady with growing excitement. No harsh crescendos. No percussion. No metallic tones."
+    },
+    {
+     "code": "LP_10",
+     "title_ko": "첼시 꽃시장",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, delicate yet uplifting. Atmosphere: Chelsea morning flower market, roses vivid against grey sky, small beautiful rebellion of color in the rain. Instruments: light piano with sweet melody, delicate pizzicato strings, soft harp with gentle lift. Tempo: BPM 66, gentle and brightening. No dramatic swells. No drums. No cold tones."
+    },
+    {
+     "code": "LP_11",
+     "title_ko": "펍의 따뜻한 창가",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with cozy British warmth. Atmosphere: golden pub window on rainy evening, warmth and belonging inside, feeling of home away from home. Instruments: warm piano melody with emotional tenderness, gentle strings, soft cello with quiet anthemic quality. Tempo: BPM 64, comforting with emotional depth. No sudden movements. No heavy instruments. No rhythmic elements."
+    },
+    {
+     "code": "LP_12",
+     "title_ko": "리젠트 운하",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, peaceful with hidden emotional depth. Atmosphere: Regents Canal stroll, colorful narrowboats, green reflections, secret beautiful London that tourists miss. Instruments: piano with flowing melody, soft strings with gentle emotional build, warm ambient pad. Tempo: BPM 66, unhurried with quiet beauty. No dramatic changes. No percussion. No electronic sounds."
+    },
+    {
+     "code": "LP_13",
+     "title_ko": "대영박물관을 나서며",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with sense of wonder. Atmosphere: stepping out of British Museum into grey light, mind expanded by centuries of beauty, anthemic gratitude for human creativity. Instruments: piano with soaring melody, warm strings ensemble building, subtle orchestral grandeur. Tempo: BPM 66, graceful with anthemic wonder. No sudden dynamics. No bright frequencies. No aggressive elements."
+    },
+    {
+     "code": "LP_14",
+     "title_ko": "햄스테드 히스 언덕",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, elevated and triumphantly melancholic. Atmosphere: Hampstead Heath hilltop, wind in face, all of London spread below, feeling small but alive and grateful. Instruments: piano with soaring emotional melody, bright strings with anthemic build, warm swelling pad. Tempo: BPM 68, open and uplifting with bittersweet triumph. No dynamic surprises. No percussion. No harsh tones."
+    },
+    {
+     "code": "LP_15",
+     "title_ko": "세인트폴 성당",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with sacred grandeur. Atmosphere: sunlight breaking onto St Pauls dome through clouds, moment of grace, anthemic beauty in the everyday. Instruments: warm piano with reverent melody, rich strings building gently, cello with emotional depth. Tempo: BPM 62, reverent but warmly triumphant. No sudden movements. No heavy instruments. No rhythmic elements."
+    },
+    {
+     "code": "LP_16",
+     "title_ko": "사우스뱅크 야경",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, luminous and emotionally anthemic. Atmosphere: South Bank at night, London Eye glowing, river alive with light, romantic and alive with possibility. Instruments: bright piano with soaring melody, warm strings ensemble with emotional build, gentle cello. Tempo: BPM 68, flowing with anthemic warmth. No dramatic builds. No percussion. No cold or metallic tones."
+    },
+    {
+     "code": "LP_17",
+     "title_ko": "빈티지 찻집",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with gentle British charm. Atmosphere: afternoon tea in vintage London tearoom, porcelain and warmth, tender nostalgia for simpler beautiful moments. Instruments: delicate piano with sweet emotional melody, soft viola, warm pad with quiet depth. Tempo: BPM 64, relaxed with bittersweet tenderness. No sudden changes. No electronic elements. No aggressive dynamics."
+    },
+    {
+     "code": "LP_18",
+     "title_ko": "비 그친 켄싱턴",
+     "top": true,
+     "prompt": "Cinematic classical instrumental, triumphantly hopeful. Atmosphere: rain just stopped in Kensington Gardens, sun breaking through, everything sparkling and renewed, pure anthemic joy of a fresh start. Instruments: bright piano with soaring uplifting melody, strings with triumphant build, soft harp accent. Tempo: BPM 70, joyful and anthemic. No dramatic swells. No percussion. No harsh frequencies."
+    },
+    {
+     "code": "LP_19",
+     "title_ko": "패딩턴역에서 떠나며",
+     "top": false,
+     "prompt": "Cinematic romantic classical instrumental with bittersweet British farewell. Atmosphere: train leaving Paddington, London fading through clearing skies, grateful not sad, anthemic farewell to a city you love. Instruments: piano with emotional soaring melody, strings ensemble building with bittersweet triumph, warm cello. Tempo: BPM 68, steady with anthemic forward motion. No harsh crescendos. No percussion. No aggressive dynamics."
+    },
+    {
+     "code": "LP_20",
+     "title_ko": "또 만나자 런던",
+     "top": false,
+     "prompt": "Cinematic classical instrumental, anthemic and triumphantly bittersweet. Atmosphere: London skyline from afar, sun setting through clouds, end credits of the most beautiful rainy adventure, promising to return. Instruments: piano with grand soaring melody, full bright strings ensemble with anthemic emotional build, warm cello, orchestral warmth lifting to hopeful climax. Tempo: BPM 72, steady building to quiet triumph. No sudden dynamic changes. No percussion. No harsh or cold tones."
+    }
+   ]
+  },
+  {
+   "no": "04",
+   "name_ko": "파리의 낭만 저녁 산책",
+   "name_en": "Romance Evening Stroll in Paris",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "05",
+   "name_ko": "부다페스트의 낭만 새벽 다뉴브강",
+   "name_en": "Romance Dawn on the Danube in Budapest",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "06",
+   "name_ko": "빈의 낭만 클래식 밤",
+   "name_en": "Romance Classical Night in Vienna",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "07",
+   "name_ko": "니스의 낭만 햇살 해변",
+   "name_en": "Romance Sunlit Shore in Nice",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "08",
+   "name_ko": "서울의 낭만 늦은 밤 한강",
+   "name_en": "Romance Late Night by Hangang in Seoul",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "09",
+   "name_ko": "부산의 낭만 새벽 바다",
+   "name_en": "Romance Dawn Sea in Busan",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  },
+  {
+   "no": "10",
+   "name_ko": "프라하의 낭만 구시가 황혼",
+   "name_en": "Romance Twilight in Old Town Prague",
+   "status": "",
+   "youtube_url": "",
+   "upload_date": "",
+   "memo": "",
+   "prompts": []
+  }
+ ]
+}
