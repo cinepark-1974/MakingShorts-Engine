@@ -691,6 +691,7 @@ def save_voice(keys: dict, state: dict, kind: str, filename: str, data: bytes, s
         raise ValueError(f"{filename}: 오디오 파일로 읽을 수 없습니다.")
     v = {"local": dest, "seconds": round(sec, 2), "file_name": os.path.basename(filename),
          "r2_key": keep_in_r2(keys, state, dest, f"voice/{kind}{ext}", "audio/mpeg")}
+    shared = shared and kind == "outro"          # 인트로는 편마다 테마가 달라 공용으로 두지 않는다
     if shared and _r2_ok(keys):                 # 다음 편에서도 그대로 쓰도록 공용 보관
         from src import r2_store
         try:
@@ -710,7 +711,7 @@ def get_voice(keys: dict, state: dict, kind: str) -> str:
     got = ensure_local(keys, v, project_files(state, "voice", f"{kind}.mp3")) if v else ""
     if got:
         return got
-    if _r2_ok(keys) and not (state.get("voice") or {}).get(f"_{kind}_shared_missing"):
+    if kind == "outro" and _r2_ok(keys) and not (state.get("voice") or {}).get(f"_{kind}_shared_missing"):
         shared = {"r2_key": f"hasira/_shared/{kind}.audio"}
         got = ensure_local(keys, shared, project_files(state, "voice", f"{kind}_shared.audio"))
         if got:

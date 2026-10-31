@@ -321,7 +321,8 @@ def _project(st, manager, api_keys):
     # ── ④-2 인트로·아웃트로 목소리 ──
     with st.container(border=True):
         st.markdown("**④-2 인트로 · 아웃트로 목소리 (매뉴얼 Part 0 · 내 목소리 5~10초)**")
-        st.caption("한 번 올리면 R2 공용 보관함에 저장돼 다음 편에도 자동으로 들어갑니다. 테마별 인트로만 새로 올리면 됩니다.")
+        st.caption("아웃트로는 한 번 올리면 R2 공용 보관함에 저장돼 다음 편에도 자동으로 들어갑니다. 인트로는 테마가 바뀌므로 편마다 올립니다. "
+                   "대사는 노션 Hasira_yo › 「오프닝 · 클로징 대사 (녹음용)」에 있습니다.")
         uv = state.setdefault("use_voice", {"intro": True, "outro": True})
         vc = st.columns(2)
         for col, kind in zip(vc, h.VOICE_KINDS):
