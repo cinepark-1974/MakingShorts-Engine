@@ -43,8 +43,8 @@ def _new_project(st, manager, api_keys):
         elif provider == "lyria":
             st.caption("Lyria 3.5 는 곡당 약 2분입니다. 요금은 Google 요금 문서에서 확인되지 않았습니다.")
         else:
-            st.caption("Suno 는 공식 공개 API 가 없어 자동 연결하지 않습니다. Suno 웹에서 만든 MP3 를 "
-                       "프로젝트 화면 ④ 단계에서 올리면 파일 이름이 곡 제목이 됩니다.")
+            st.caption("Suno 는 공식 공개 API 가 없어 자동 연결하지 않습니다. 기획이 끝나면 ④ 단계에 "
+                       "곡마다 Suno 에 붙여 넣을 제목·스타일 문장이 나오고, 만든 MP3 를 그 자리에 올립니다.")
         go = st.form_submit_button("🎼 기획 만들기", type="primary", use_container_width=True)
 
     if go:
@@ -65,7 +65,7 @@ def _new_project(st, manager, api_keys):
             title=plan.get("title_ja") or kw.strip(), plan=plan, keyword=kw.strip(),
             target_min=int(target), track_sec=int(track_min) * 60, provider=provider,
             visual_mode=visual, repeat_fill=True, image={}, loop={}, final={},
-            tracks=[] if provider == "upload" else h.new_tracks_from_plan(plan),
+            tracks=h.new_tracks_from_plan(plan),
             status="planned",
         )
         manager.save_state(state)
@@ -197,14 +197,13 @@ def _project(st, manager, api_keys):
                         index=list(h.PROVIDERS).index(state.get("provider", "elevenlabs")), key=f"hz_pv_{pid}")
         if prov != state.get("provider"):
             state["provider"] = prov
-            if prov != "upload" and not any(t.get("source") != "upload" for t in state.get("tracks", [])):
-                state["tracks"] = state.get("tracks", []) + [
-                    dict(t, no=len(state.get("tracks", [])) + i + 1) for i, t in enumerate(h.new_tracks_from_plan(plan))]
+            if not state.get("tracks") and plan.get("tracks"):      # 예전 프로젝트: 기획 목록 되살리기
+                state["tracks"] = h.new_tracks_from_plan(plan)
             manager.save_state(state)
             st.rerun()
         tracks = state.get("tracks", [])
         done = [t for t in tracks if t.get("status") == "done"]
-        todo = [t["no"] for t in tracks if t.get("status") != "done" and t.get("source") != "upload"]
+        todo = [t["no"] for t in tracks if t.get("status") != "done" and t.get("prompt")]
         total_unique = sum(t.get("seconds", 0) for t in done)
         st.caption(f"완성 {len(done)}/{len(tracks)}곡 · 곡 합계 {h.fmt_time(total_unique, True)} · "
                    f"목표 {h.LENGTH_OPTIONS.get(state.get('target_min', 60), '')} "
@@ -225,7 +224,13 @@ def _project(st, manager, api_keys):
                 st.caption("Lyria 는 사이드바 「🔧 연결 테스트 → 🎵 Lyria 연결 테스트」가 성공한 뒤에 쓰세요. "
                            "연결 문제가 나면 첫 곡에서 바로 멈춥니다.")
 
-        ups = st.file_uploader("Suno 등에서 만든 곡 올리기 (MP3·WAV·M4A, 여러 개 가능 · 파일 이름 = 곡 제목)",
+        if prov == "upload":
+            st.markdown("Suno 작업 순서 — Custom 모드에서 **Instrumental** 을 켜고, 아래 곡 목록의 "
+                        "Title · Style 문장을 그대로 붙여 넣어 만든 뒤 MP3 를 그 곡 자리에 올립니다.")
+            st.download_button("⬇ Suno 작업용 곡 목록 (텍스트)", h.suno_sheet(state).encode("utf-8"),
+                               file_name=f"suno_{pid}.txt", mime="text/plain", key=f"hz_suno_{pid}")
+        ups = st.file_uploader("곡 한꺼번에 올리기 (MP3·WAV·M4A, 여러 개 가능) — 비어 있는 자리부터 번호 순서로 채웁니다. "
+                               "자리가 다 차면 목록 끝에 추가되고 파일 이름이 곡 제목이 됩니다.",
                                type=["mp3", "wav", "m4a"], accept_multiple_files=True,
                                key=f"hz_up_mus_{pid}", disabled=busy)
         seen = st.session_state.setdefault(f"_hz_mus_seen_{pid}", [])
@@ -244,7 +249,7 @@ def _project(st, manager, api_keys):
             st.rerun()
 
         with st.expander(f"곡 목록 ({len(tracks)}곡)", expanded=bool(tracks) and len(done) < len(tracks)):
-            for t in tracks:
+            for t in sorted(tracks, key=lambda x: x["no"]):
                 icon = {"done": "✅", "generating": "⚙️", "error": "❌"}.get(t.get("status"), "⏳")
                 c1, c2 = st.columns([5, 1])
                 with c1:
@@ -254,7 +259,23 @@ def _project(st, manager, api_keys):
                     if t.get("error"):
                         st.caption(t["error"][:300])
                     if t.get("status") == "done" and h.usable(t.get("local", "")):
+                        if t.get("source") == "upload" and t.get("file_name"):
+                            st.caption(f"올린 파일 · {t['file_name']}")
                         st.audio(t["local"])
+                    elif prov == "upload" and t.get("prompt"):
+                        st.code(f"Title: {t.get('title_en') or t.get('title_ja', '')}\n"
+                                f"Style: {h.suno_style(state, t)}", language=None)
+                        one = st.file_uploader(f"#{t['no']:02d} 자리에 올리기", type=["mp3", "wav", "m4a"],
+                                               key=f"hz_slot_{pid}_{t['no']}", disabled=busy,
+                                               label_visibility="collapsed")
+                        if one is not None and one.file_id not in seen:
+                            seen.append(one.file_id)
+                            try:
+                                h.add_uploaded_track(api_keys, state, one.name, one.getvalue(), no=t["no"])
+                                manager.save_state(state)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(str(e))
                 with c2:
                     if st.button("🗑", key=f"hz_del_{pid}_{t['no']}", disabled=busy, help="목록에서 빼기"):
                         state["tracks"] = [x for x in tracks if x["no"] != t["no"]]

@@ -338,25 +338,57 @@ def _gen_lyria(api_key: str, prompt: str, dest: str) -> str:
     return dest
 
 
-def add_uploaded_track(keys: dict, state: dict, filename: str, data: bytes) -> dict:
-    """직접 만든 곡(Suno 등) 추가. 파일 이름(확장자 제외)을 곡 제목으로 쓴다."""
+def suno_style(state: dict, track: dict) -> str:
+    """Suno 「Style of Music」 칸에 붙여 넣을 문장 (Instrumental 켜고 사용)."""
+    style = (state.get("plan") or {}).get("music_style", "").rstrip(" .")
+    return f"{style}. {track.get('prompt', '').rstrip(' .')}. Instrumental, no vocals."
+
+
+def suno_sheet(state: dict) -> str:
+    """기획 곡 목록 전체를 Suno 작업용 글 파일로."""
+    plan = state.get("plan") or {}
+    lines = [f"HASIRA_yo! — {plan.get('title_ja', state.get('title', ''))}",
+             "Suno: Custom 모드 · Instrumental 켜기 · 아래 Title / Style 을 그대로 붙여 넣기", ""]
+    for t in sorted(state.get("tracks", []), key=lambda x: x["no"]):
+        if not t.get("prompt"):
+            continue
+        lines += [f"#{t['no']:02d}", f"Title: {t.get('title_en') or t.get('title_ja', '')}",
+                  f"(곡 제목 표기: {t.get('title_ja', '')})", f"Style: {suno_style(state, t)}", ""]
+    return "\n".join(lines)
+
+
+def add_uploaded_track(keys: dict, state: dict, filename: str, data: bytes, no: int = None) -> dict:
+    """직접 만든 곡(Suno 등) 넣기.
+    no 를 주면 기획 목록의 그 자리에, 안 주면 아직 비어 있는 첫 자리에 넣는다(기획 제목 유지).
+    빈 자리가 없으면 목록 끝에 추가하고 파일 이름(확장자 제외)을 곡 제목으로 쓴다."""
     tracks = state.setdefault("tracks", [])
-    no = max([t["no"] for t in tracks] or [0]) + 1
+    slot = None
+    if no is not None:
+        slot = next((t for t in tracks if t["no"] == no), None)
+    else:
+        slot = next((t for t in sorted(tracks, key=lambda x: x["no"])
+                     if t.get("status") != "done" and t.get("prompt")), None)
     ext = os.path.splitext(filename)[1].lower() or ".mp3"
-    dest = project_files(state, "music", f"track_{no:02d}{ext}")
-    with open(dest, "wb") as f:
+    tno = slot["no"] if slot else max([t["no"] for t in tracks] or [0]) + 1
+    dest = project_files(state, "music", f"track_{tno:02d}{ext}")
+    tmp = dest + ".part"
+    with open(tmp, "wb") as f:
         f.write(data)
-    sec = duration(dest)
+    sec = duration(tmp)
     if sec <= 0:
-        os.remove(dest)
+        os.remove(tmp)
         raise ValueError(f"{filename}: 오디오 파일로 읽을 수 없습니다.")
-    title = os.path.splitext(os.path.basename(filename))[0].strip()
-    t = {"no": no, "title_ja": title, "title_en": title, "prompt": "", "status": "done", "local": dest,
-         "seconds": round(sec, 2), "source": "upload", "error": "",
-         "r2_key": keep_in_r2(keys, state, dest, f"music/track_{no:02d}{ext}", "audio/mpeg")}
-    tracks.append(t)
+    os.replace(tmp, dest)
+    fname = os.path.splitext(os.path.basename(filename))[0].strip()
+    info = {"status": "done", "local": dest, "seconds": round(sec, 2), "source": "upload", "error": "",
+            "file_name": os.path.basename(filename),
+            "r2_key": keep_in_r2(keys, state, dest, f"music/track_{tno:02d}{ext}", "audio/mpeg")}
+    if slot is None:
+        slot = {"no": tno, "title_ja": fname, "title_en": fname, "prompt": ""}
+        tracks.append(slot)
+    slot.update(info)
     state["final"] = {}
-    return t
+    return slot
 
 
 # ─────────────────────────────────────────────────────────────────────────────
