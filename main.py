@@ -1017,7 +1017,7 @@ if st.session_state.current_project is None:
     if SEO_MODULE_OK:
         with st.expander("💡 SEO 인기 키워드 추천 (클릭하면 자동 입력됩니다)", expanded=False):
             # 탭: 큐레이션 / 실시간
-            tab_bank, tab_live = st.tabs(["🗓 오늘의 추천 주제", "📡 YouTube 실시간 트렌드"])
+            tab_bank, tab_live = st.tabs(["🗓 오늘의 추천 주제", "🔎 YouTube 실제 검색어"])
 
             with tab_bank:
                 # 매일 바뀌는 추천 주제: YouTube 자동완성(실제 검색어) + Claude 기획, 이미 만든 주제 제외
@@ -1052,10 +1052,12 @@ if st.session_state.current_project is None:
                 _ch_code = chapter.split()[0] if chapter else ""
                 st.caption(
                     ("선택한 챕터의 " if _ch_code else "")
-                    + "궁금증 검색어(예: '커피 마시면', '카페인 몇시간')로 YouTube 자동완성을 조회합니다. "
-                    "누를 때마다 다른 검색어 묶음을 조회하고, 이미 만든 주제는 뺍니다."
+                    + "궁금증 앞부분(예: '커피 마시면', '아메리카노 왜')으로 YouTube 자동완성을 조회합니다. "
+                    "사람들이 실제로 치는 검색어이지만 인기 순위·검색량은 아닙니다. "
+                    "분야(건강·메뉴·추출·원두·역사)를 섞어 조회하고, 같은 궁금증의 다른 표현은 하나로 합칩니다. "
+                    "📈 를 누르면 Google 트렌드에서 YouTube 검색 관심도 추이를 볼 수 있습니다."
                 )
-                if st.button("🔄 실시간 조회", key="seo_refresh_live"):
+                if st.button("🔄 검색어 조회", key="seo_refresh_live"):
                     with st.spinner("실제 검색어를 모으는 중… (약 5초)"):
                         st.session_state["seo_live_result"] = collect_question_queries(
                             chapter=chapter,
@@ -1067,21 +1069,29 @@ if st.session_state.current_project is None:
                 if _live and _live.get("items"):
                     st.caption(
                         f"조회한 씨앗: {', '.join(_live['seeds'])} · "
-                        f"검색어 {_live['raw']}개 중 {len(_live['items'])}개 사용 가능"
+                        f"검색어 {_live['raw']}개 중 {len(_live['items'])}개 사용 가능 · 여러 표현으로 쳐지는 궁금증이 앞에 옵니다"
                     )
                     _live_cols = st.columns(2)
                     for _j, _kw in enumerate(_live["items"]):
                         with _live_cols[_j % 2]:
-                            if st.button(f"📡  {_kw['topic']}", key=f"seo_live_{_j}", use_container_width=True):
-                                st.session_state["_seo_pending_topic"] = _kw["topic"]
-                                st.rerun()
+                            _b1, _b2 = st.columns([6, 1])
+                            _nv = _kw.get("n_variants", 1)
+                            _lab = f"🔎  {_kw['topic']}" + (f"  · 표현 {_nv}가지" if _nv > 1 else "")
+                            with _b1:
+                                if st.button(_lab, key=f"seo_live_{_j}", use_container_width=True,
+                                             help=" / ".join(_kw.get("variants") or [_kw["topic"]])):
+                                    st.session_state["_seo_pending_topic"] = _kw["topic"]
+                                    st.rerun()
+                            with _b2:
+                                if _kw.get("trends"):
+                                    st.link_button("📈", _kw["trends"], help="Google 트렌드 (한국 · YouTube 검색)")
                 elif _live is not None:
                     if _live.get("raw"):
                         st.warning("검색어는 받아왔지만 숏폼 주제로 쓸 만한 것이 없었습니다. 한 번 더 조회하면 다른 씨앗으로 찾습니다.")
                     else:
                         st.warning("YouTube 자동완성을 받아오지 못했습니다. 잠시 뒤 다시 조회해 주세요.")
                 else:
-                    st.info("'실시간 조회' 버튼을 눌러 사람들이 실제로 궁금해하는 검색어를 가져오세요.")
+                    st.info("'검색어 조회' 버튼을 눌러 사람들이 실제로 궁금해하는 검색어를 가져오세요.")
 
     # 엔딩 멘트 (12컷 고정 문장)
     from src.prompts import CLOSING_PRESETS

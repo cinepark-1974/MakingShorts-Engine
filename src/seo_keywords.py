@@ -8,6 +8,7 @@
 
 import os
 import json
+import re
 import time
 import requests
 from pathlib import Path
@@ -318,12 +319,31 @@ QUESTION_SEEDS_BY_CHAPTER = {
     "CH10": ["원두 보관", "원두 분쇄", "모카포트", "커피 그라인더 차이", "캡슐커피 차이"],
 }
 
-QUESTION_SEEDS_GENERAL = [
-    "커피 마시면", "커피 먹으면", "커피 왜", "커피 차이", "커피 이유", "커피 공복",
-    "커피 하루", "커피 잠", "카페인 몇시간", "디카페인", "아메리카노 왜", "아메리카노 차이",
-    "라떼 차이", "에스프레소 왜", "원두 보관", "원두 차이", "커피 효능", "커피 부작용",
-    "콜드브루 차이", "핸드드립 왜", "아이스 아메리카노 왜", "커피 산미",
-]
+# 챕터를 고르지 않았을 때: 분야별로 묶어 두고, 조회할 때 분야를 번갈아 뽑는다
+# (예전에는 한 묶음에서 무작위로 뽑아 건강·잠 검색어로 쏠렸다)
+QUESTION_SEED_GROUPS = {
+    "건강": ["커피 마시면", "커피 먹으면", "커피 공복", "커피 하루", "커피 잠", "카페인 몇시간",
+             "디카페인", "커피 효능", "커피 부작용"],
+    "메뉴": ["아메리카노 왜", "아메리카노 차이", "라떼 차이", "아이스 아메리카노 왜", "카푸치노 라떼", "플랫화이트"],
+    "추출": ["에스프레소 왜", "핸드드립 왜", "콜드브루 차이", "핸드드립 물 온도", "에스프레소 크레마"],
+    "원두": ["원두 보관", "원두 차이", "커피 산미", "원두 로스팅", "아라비카 로부스타"],
+    "역사": ["커피 기원", "커피 역사", "아메리카노 유래", "커피 처음"],
+    "일반": ["커피 왜", "커피 차이", "커피 이유"],
+}
+QUESTION_SEEDS_GENERAL = [sd for g in QUESTION_SEED_GROUPS.values() for sd in g]
+
+
+def _pick_seeds_spread(rnd, n: int) -> list:
+    """분야를 섞어 번갈아 한 개씩 뽑는다 → 한 분야로 쏠리지 않게."""
+    groups = [rnd.sample(v, len(v)) for v in QUESTION_SEED_GROUPS.values()]
+    rnd.shuffle(groups)
+    out, i = [], 0
+    while len(out) < n and any(groups):
+        g = groups[i % len(groups)]
+        if g:
+            out.append(g.pop())
+        i += 1
+    return out
 
 # 쓸 수 없는 검색어(드라마·노래·쇼핑·브랜드·매장·밈·커피 외 용도)
 _BLOCK_WORDS = [
@@ -342,6 +362,19 @@ _BLOCK_WORDS = [
     "그림", "색칠", "네일", "캔들", "디퓨저",
 ]
 
+# 지명 + 커피 = 매장 찾기 검색어 (예: 잠실 커피). 지명 목록 + "○○역" 형태를 거른다.
+_PLACE_WORDS = [
+    "잠실", "강남", "성수", "홍대", "연남", "합정", "망원", "을지로", "익선동", "이태원", "한남", "신사", "압구정",
+    "여의도", "종로", "서촌", "북촌", "삼청동", "명동", "건대", "신촌", "혜화", "판교", "분당", "일산", "수원",
+    "인천", "송도", "부산", "해운대", "광안리", "서면", "대구", "대전", "광주", "울산", "제주", "강릉", "속초",
+    "양양", "전주", "경주", "여수", "동탄", "위례", "용인", "평택", "청주", "천안", "김포", "파주", "가평",
+    "근처", "맛집", "카페거리",
+]
+_PLACE_RE = re.compile(r"\S+역(?:\s|$)")
+
+# 같은 궁금증의 다른 표현을 합칠 때 빼는 말 (보수적으로 — 뜻이 바뀌는 말은 빼지 않는다)
+_MERGE_DROP = ["마시면", "먹으면", "이유", "왜", "방법", "하는법", "법", "는", "은", "을", "를", "의"]
+
 # 궁금증·상식 주제의 표시어 — 이 중 하나는 있어야 통과
 _QUESTION_MARKERS = [
     "왜", "이유", "차이", "비교", "vs", "마시면", "먹으면", "몇", "언제", "얼마", "하루", "공복",
@@ -351,14 +384,34 @@ _QUESTION_MARKERS = [
 ]
 
 
+def _is_place_query(q: str) -> bool:
+    s = q.strip()
+    return any(w in s for w in _PLACE_WORDS) or bool(_PLACE_RE.search(s))
+
+
 def _is_usable_query(q: str) -> bool:
     """숏폼 상식 주제로 쓸 수 있는 검색어인지 판단."""
     s = q.strip().lower()
     if len(s.replace(" ", "")) < 4:
         return False
-    if any(w in s for w in _BLOCK_WORDS):
+    if any(w in s for w in _BLOCK_WORDS) or _is_place_query(s):
         return False
     return any(m in s for m in _QUESTION_MARKERS)
+
+
+def _merge_key(q: str) -> str:
+    """띄어쓰기·뜻이 같은 군말을 빼고 비교 (예: '커피 잠깨는법' = '커피 잠 깨는 법')."""
+    k = "".join(q.split()).lower()
+    for w in sorted(_MERGE_DROP, key=len, reverse=True):
+        if len(k) - len(w) >= 4:
+            k = k.replace(w, "")
+    return k
+
+
+def trends_link(q: str) -> str:
+    """Google 트렌드 — 한국 · 최근 12개월 · YouTube 검색 기준 관심도 추이."""
+    from urllib.parse import quote
+    return f"https://trends.google.com/trends/explore?geo=KR&gprop=youtube&q={quote(q.strip())}"
 
 
 def _norm(t: str) -> str:
@@ -379,23 +432,37 @@ def collect_question_queries(chapter: str = "", made_titles: list = None,
     from concurrent.futures import ThreadPoolExecutor
 
     code = (chapter or "").split()[0] if chapter else ""
-    pool = QUESTION_SEEDS_BY_CHAPTER.get(code) or QUESTION_SEEDS_GENERAL
+    pool = QUESTION_SEEDS_BY_CHAPTER.get(code)
     rnd = random.Random(refresh_salt or time.time())
-    seeds = pool[:] if len(pool) <= n_seeds else rnd.sample(pool, n_seeds)
+    if pool:
+        seeds = pool[:] if len(pool) <= n_seeds else rnd.sample(pool, n_seeds)
+    else:
+        seeds = _pick_seeds_spread(rnd, n_seeds)
 
     with ThreadPoolExecutor(max_workers=min(8, len(seeds))) as ex:
         results = list(ex.map(lambda sd: _autocomplete(sd, count=per_seed), seeds))
 
     raw = [q for lst in results for q in lst]
     made = [_norm(t) for t in (made_titles or []) if t]
-    seen, items = set(), []
+    groups, order = {}, []
     for q in raw:
         k = _norm(q)
-        if k in seen or not _is_usable_query(q):
+        if not _is_usable_query(q):
             continue
         if any(k in m or m in k for m in made if len(m) >= 4):
             continue
-        seen.add(k)
-        items.append({"topic": q.strip(), "grade": "A", "source": "youtube", "signal": q.strip()})
+        mk = _merge_key(q)
+        if mk not in groups:
+            groups[mk] = {"topic": q.strip(), "variants": []}
+            order.append(mk)
+        if q.strip() not in groups[mk]["variants"]:
+            groups[mk]["variants"].append(q.strip())
+    items = []
+    for mk in order:
+        g = groups[mk]
+        n = len(g["variants"])
+        items.append({"topic": g["topic"], "grade": "A", "source": "youtube", "signal": g["topic"],
+                      "variants": g["variants"], "n_variants": n, "trends": trends_link(g["topic"])})
     rnd.shuffle(items)
+    items.sort(key=lambda x: -x["n_variants"])      # 여러 표현으로 쳐지는 궁금증을 앞에
     return {"seeds": seeds, "raw": len(raw), "items": items[:max_items]}
