@@ -498,16 +498,165 @@ SCRIPT_MODEL = "claude-sonnet-4-6"
 # 엔딩 멘트 후보 (자막용, 낭독용). 낭독용은 브랜드명을 띄어 써서 자연스럽게 읽히게 한다.
 BRAND = "너도나도아는커피"
 BRAND_TTS = "너도나도 아는 커피"
+STORY_CLOSING = "이야기 마지막 줄 + 너도나도아는커피 (기본)"
+BRAND_TAG = "너도나도아는커피."
 CLOSING_PRESETS = [
+    STORY_CLOSING,
     "알고 마시면 더 맛있습니다. 너도나도아는커피.",
     "커피 한 잔의 과학, 너도나도아는커피였습니다.",
     "오늘 이야기가 맛있었다면, 너도나도아는커피.",
 ]
-DEFAULT_CLOSING = CLOSING_PRESETS[0]
+DEFAULT_CLOSING = CLOSING_PRESETS[1]     # 예전 고정 멘트 모드의 기본값
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0) 이야기 작가 단계 (2026-10) — 정보 나열이 아니라 실화 한 편으로 대본을 세운다
+#    ① 이야기 작가(웹 검색) → ② 화면 설계(아래 SYSTEM_INSTRUCTION, 나레이션 고정) → ③ 팩트체크·수정
+# ─────────────────────────────────────────────────────────────────────────────
+STORY_FRAMES = {
+    "EVENT": "그날의 사건 — 실존 인물·실제 사건 하나를 따라간다",
+    "BODY_DAY": "내 몸의 하루 — 시청자의 하루를 시간 순서로 따라간다 (카페인·건강)",
+    "SCENE": "카페에서 생긴 장면 — 오해·주문 실수 같은 한 장면으로 차이를 보여 준다 (비교·용어)",
+}
+
+STORY_SYSTEM = """당신은 유튜브 쇼츠 '너도나도아는커피'의 이야기 작가입니다. 25년차 영화·드라마 작가의 감각으로 씁니다.
+이 채널은 커피 상식을 '강의'가 아니라 '짧은 실화 한 편'으로 들려줍니다.
+웹 검색으로 사실을 확인한 뒤, 아래 JSON 하나만 출력합니다 (설명 문장·코드블록 표시 금지).
+
+[틀 고르기 — 주제에 맞는 것 하나]
+EVENT    그날의 사건: 실존 인물·실제 사건 하나를 따라간다.
+         예) 1908년 드레스덴, 멜리타 벤츠가 아들 공책의 압지를 찢어 구멍 뚫은 놋쇠 컵에 깔았다 → 종이 필터.
+BODY_DAY 내 몸의 하루: 시청자의 하루를 시각 순서로 따라간다. 주어는 "당신" 또는 구체적 인물 한 명.
+         예) 오후 3시 아메리카노 한 잔 → 밤 11시, 머릿속 졸음 신호 자리를 카페인이 아직 차지하고 있다.
+SCENE    카페에서 생긴 장면: 주문 실수·오해가 벌어지는 한 장면으로 차이를 보여 준다.
+         예) 멜버른에서 온 손님이 서울 카페에서 롱블랙을 시켰는데, 잔을 받고 고개를 갸웃한다. 붓는 순서가 달랐다.
+
+[이야기 규칙]
+- 뼈대는 하나: 인물(또는 "당신") 한 명 + 장소 + 시각/연도 + 손에 잡히는 사물 하나 + 반전 하나.
+- 1컷 첫 문장은 장면 한가운데서 시작한다. 시각·장소·행동으로 연다. ("1908년 독일 드레스덴. 한 주부가 아들 공책을 찢었습니다.")
+  인사말, 채널 소개, "~에 대해 알아볼까요", "여러분", "오늘은 ~을 알려드릴게요" 금지.
+- 정보(원리·수치)는 이야기 안의 행동과 결과로 보여 준다. 설명만 하는 컷은 전체에서 1~2컷까지.
+- 반전은 뒤에서 세 번째 컷 근처에 둔다. ("그 이름이 지금 필터 상자에 적힌, 멜리타입니다.")
+- 마지막 컷은 이야기의 마지막 한 줄. 1컷의 사물·단어로 돌아가 오늘 시청자의 잔과 이어 준다 (루프).
+  ("오늘 아침 드리퍼 속 그 종이, 공책 한 장에서 시작됐습니다.") 브랜드명은 쓰지 않는다 (엔진이 붙인다).
+- 구체적인 명사를 쓴다: "기계" 대신 "놋쇠 컵", "옛날" 대신 "1908년 6월".
+- 문장은 귀로 듣는 말. 한 문장에 정보 하나. 종결을 섞는다 (~죠 / ~거든요 / ~습니다 / ~예요 / 명사 종결).
+- 괄호·슬래시·화살표·기호(→ / : + ~ %)를 쓰지 않는다.
+
+[사실 규칙]
+- 인물·연도·장소·사건·수치는 웹 검색으로 확인한 것만 쓴다. 확인한 근거를 sources 에 남긴다.
+- 널리 퍼졌지만 전설로 분류되는 이야기(예: 염소치기 칼디)는 "전해지는 이야기로는"을 문장에 붙이고 status 를 "전설"로 적는다.
+- 실존 인물의 얼굴을 그리게 하지 않는다. visual_hint 에서 인물은 손·뒷모습·실루엣·소지품으로만 보여 준다.
+
+[narration 과 narration_tts]
+- narration: 화면 자막용. 숫자·단위를 그대로 써도 된다 ("1908년", "72페니히").
+- narration_tts: ElevenLabs 낭독용. 같은 내용을 숫자·영문·기호 없이 한글 소리로 ("천구백팔 년", "칠십이 페니히").
+
+[출력 JSON]
+{
+  "frame": "EVENT | BODY_DAY | SCENE",
+  "logline": "이 편을 한 줄로 (인물·사건·반전이 들어가게)",
+  "spine": {"who": "", "where": "", "when": "", "object": "", "turn": "반전 한 줄", "link_today": "오늘 시청자의 잔과 이어지는 점"},
+  "title_idea": "유튜브 제목 후보 (사람들이 검색할 말이 들어가게, 25자 이내)",
+  "sources": [{"fact": "확인한 사실", "url": "근거 URL", "status": "확인 | 전설"}],
+  "beats": [
+    {"no": 1, "narration": "", "narration_tts": "", "visual_hint": "이 컷 화면 한 장 (한국어, 사물·장소·빛을 확정적으로 한 가지 상태로)"}
+  ]
+}"""
+
+STORY_LOCK_RULES = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[이야기 고정 모드 — 이번 편에서 가장 우선하는 규칙]
+- 이야기 작가가 쓴 beats 가 주어진다. 씬 수 = beats 수.
+- 각 씬의 narration, narration_tts 는 beats 의 문장을 한 글자도 바꾸지 말고 그대로 복사한다.
+- 위 [나레이션 작성 원칙]의 이야기 구조(훅 → 차이 → 원리 …)와 [12컷 구성 원칙]의 컷 배치표, 엔딩 멘트 규칙은 적용하지 않는다.
+- 너의 일은 화면 설계다: 각 beat 의 visual_hint 를 따라 scene_type, visual_source, image_prompt, flow_prompt,
+  sfx, overlay_text, data_points, callouts 를 쓴다. 1컷은 HOOK(visual_source "ai") 그대로.
+- 과거 사건 장면(인물·시대·장소)은 실존 인물 얼굴 없이 손·뒷모습·소지품·공간으로 그린다.
+  Unsplash 로 찾기 어려운 시대 장면은 visual_source "ai" 의 펜·잉크 수채 일러스트로 그린다 (scene_type EXTRACTION/MACHINE/SCIENCE_DATA 중 가까운 것).
+- overlay_text 는 그 컷의 핵심 사물·숫자·반전 단어 (8자 이내)."""
+
+
+def _ask_with_search(client, system: str, user: str, max_uses: int = 6, max_tokens: int = 8000) -> tuple:
+    """웹 검색을 켜고 JSON 을 받는다. 반환 (dict, 웹검색 사용 여부)."""
+    messages = [{"role": "user", "content": user}]
+    try:
+        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}]
+        resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=max_tokens, system=system,
+                                      messages=messages, tools=tools)
+        for _ in range(3):   # 긴 검색은 pause_turn 으로 멈춘다 → 이어서 요청
+            if getattr(resp, "stop_reason", "") != "pause_turn":
+                break
+            messages = messages + [{"role": "assistant", "content": resp.content}]
+            resp = client.messages.create(model=SCRIPT_MODEL, max_tokens=max_tokens, system=system,
+                                          messages=messages, tools=tools)
+        return _extract_json(_text_of(resp)), True
+    except Exception as e:
+        print(f"[prompts] 웹 검색 이야기 작성 실패 → 검색 없이 작성: {e}", flush=True)
+    return _call_json(client, system, user, max_tokens=max_tokens), False
+
+
+def lint_story(story: dict, length: str = "") -> list:
+    sp = _spec(length)
+    beats = story.get("beats") or []
+    out = []
+    if len(beats) != sp["cuts"]:
+        out.append(f"beats 가 {sp['cuts']}개가 아니라 {len(beats)}개입니다.")
+    lo, hi = sp["total"]
+    slo, shi = sp["scene"]
+    tot = 0
+    for b in beats:
+        t = (b.get("narration_tts") or "").strip()
+        c = _nchars(t)
+        tot += c
+        if not t:
+            out.append(f"{b.get('no')}컷 narration_tts 가 비어 있습니다.")
+        elif c < slo or c > shi + 6:
+            out.append(f"{b.get('no')}컷 낭독 {c}자 (허용 {slo}~{shi}자).")
+        if re.search(r"[0-9A-Za-z]", t):
+            out.append(f"{b.get('no')}컷 narration_tts 에 숫자·영문이 있습니다: \"{t}\"")
+        for bad in ("알아볼까요", "여러분", "알려드릴게요", "알려 드릴게요"):
+            if bad in (b.get("narration") or ""):
+                out.append(f"{b.get('no')}컷에 강의형 말투 '{bad}' 가 있습니다.")
+    if tot and not (lo <= tot <= hi + 10):
+        out.append(f"전체 낭독 {tot}자 (목표 {lo}~{hi}자).")
+    return out
+
+
+def write_story(client, chapter: str, topic: str, length: str = "", say=None) -> dict:
+    """① 이야기 작가: 웹 검색으로 실화를 찾아 컷 수만큼 이야기 비트를 쓴다. 규칙 위반이면 한 번 고친다."""
+    say = say or (lambda m: None)
+    sp = _spec(length)
+    lo, hi = sp["total"]
+    slo, shi = sp["scene"]
+    user = (f"챕터: {chapter}\n주제: {topic}\n\n"
+            f"컷 수: 정확히 {sp['cuts']}컷 (beats {sp['cuts']}개)\n"
+            f"낭독 분량: narration_tts 합계 공백 제외 {lo}~{hi}자, 컷당 {slo}~{shi}자 "
+            f"(초당 약 {TTS_CHARS_PER_SEC}자 → 약 {round(lo / TTS_CHARS_PER_SEC)}~{round(hi / TTS_CHARS_PER_SEC)}초)\n"
+            "주제에 맞는 틀 하나를 고르고, 웹 검색으로 사실을 확인한 뒤 JSON 만 출력하세요.")
+    story, searched = _ask_with_search(client, STORY_SYSTEM, user, max_uses=6)
+    issues = lint_story(story, length)
+    if issues:
+        say("   이야기 분량·말투 다듬는 중…")
+        fix = (user + "\n\n[고칠 점]\n" + "\n".join(f"- {i}" for i in issues) +
+               "\n\n[지난 초안]\n" + json.dumps(story, ensure_ascii=False) +
+               "\n\n이야기와 사실은 그대로 두고 고칠 점만 반영한 JSON 전체를 출력하세요.")
+        try:
+            story = _call_json(client, STORY_SYSTEM, fix, max_tokens=8000)
+        except Exception as e:
+            print(f"[prompts] 이야기 다듬기 실패 → 초안 사용: {e}", flush=True)
+    story["web_search"] = searched
+    story["issues"] = lint_story(story, length)
+    return story
 
 
 def closing_tts(text: str) -> str:
     return (text or DEFAULT_CLOSING).replace(BRAND, BRAND_TTS)
+
+
+def is_story_closing(closing: str) -> bool:
+    return (closing or "").strip() == STORY_CLOSING
 
 
 def _system(closing: str, length: str = "") -> str:
@@ -524,6 +673,9 @@ def _system(closing: str, length: str = "") -> str:
 - 씬당: 공백 제외 {slo}~{shi}자
 - 12컷 구성 원칙은 {sp['cuts']}컷에 맞게 압축한다: 1컷 훅(HOOK), 마지막 컷 엔딩 멘트, 그 사이는 차이 → 왜 → 그래서 → 결론 순서 유지.
 - 인포그래픽(ai) 씬은 전체의 절반 이상."""
+    if is_story_closing(closing):
+        override += STORY_LOCK_RULES
+        return SYSTEM_INSTRUCTION.replace("{{CLOSING}}", "(이야기 마지막 줄 — 아래 [이야기 고정 모드] 참고)") + override
     return SYSTEM_INSTRUCTION.replace("{{CLOSING}}", closing or DEFAULT_CLOSING) + override
 POINTER_PHRASES = ["보시다시피", "왼쪽이", "오른쪽이", "단면을 보면", "위에서부터",
                    "숫자로 보면", "이 비율입니다", "이 순서대로", "화면을 보면", "여기를 보면"]
@@ -608,6 +760,8 @@ def lint_script(data: dict, closing: str = "", length: str = "") -> list:
             continue
         c = _nchars(tts)
         total += c
+        if is_story_closing(closing) and sc is scenes[-1]:      # 이야기 모드: 브랜드 꼬리말은 분량에서 뺀다
+            c -= _nchars(BRAND_TAG.replace(BRAND, BRAND_TTS)) if BRAND_TTS in tts else 0
         if c < SCENE_MIN or c > SCENE_MAX:
             issues.append(f"{n}씬: 낭독 분량 {c}자 (허용 {SCENE_MIN}~{SCENE_MAX}자).")
         if re.search(r"[0-9A-Za-z]", tts):
@@ -647,9 +801,10 @@ def lint_script(data: dict, closing: str = "", length: str = "") -> list:
         if q and q in _seen_q:
             issues.append(f"{_seen_q[q]}씬과 {n}씬의 사진 검색어가 같습니다 → 같은 사진이 나옵니다.")
         _seen_q.setdefault(q, n)
-    want = closing_tts(closing)
-    if scenes and want not in (scenes[-1].get("narration_tts") or ""):
-        issues.append(f"마지막 씬 낭독이 엔딩 멘트 '{want}' 가 아닙니다.")
+    if not is_story_closing(closing):
+        want = closing_tts(closing)
+        if scenes and want not in (scenes[-1].get("narration_tts") or ""):
+            issues.append(f"마지막 씬 낭독이 엔딩 멘트 '{want}' 가 아닙니다.")
     return issues
 
 
@@ -716,13 +871,30 @@ REVISE_RULES = """당신은 '너도나도아는커피' 대본 수석 에디터�
 - 설명 없이 JSON 전체만 출력합니다."""
 
 
+REVISE_STORY_RULES = """당신은 '너도나도아는커피' 대본 수석 에디터입니다. 이 대본은 실화 한 편을 따라가는 이야기형 대본입니다.
+초안 JSON 을 받아 규칙 위반과 팩트체크 결과만 고친 최종 JSON 전체를 출력합니다.
+- 이야기의 인물·장소·연도·사물·반전·마지막 줄은 살립니다. 사실 오류가 있는 문장만 바로잡습니다.
+- '수정필요'는 correction 대로 고칩니다. '근거없음'인 일화는 지우지 말고 "전해지는 이야기로는"을 붙여 전설로 표시하거나,
+  수치만 근거없음이면 수치를 빼고 문장을 살립니다.
+- 강의형 문장(~에 대해 알아볼까요, 여러분, 오늘은 ~를 알려드릴게요)을 새로 넣지 않습니다.
+- data_points 에는 '확인' 판정 수치만 남깁니다. 없으면 [].
+- narration_tts 는 narration 과 같은 내용을 숫자·영문·기호 없이 한글 소리로.
+- scene_no, scene_type, visual_source, image_prompt, flow_prompt, sfx 는 사실 오류가 없는 한 그대로 둡니다.
+- 설명 없이 JSON 전체만 출력합니다."""
+
+
 def revise_script(client, data: dict, issues: list, facts: dict, closing: str = "", length: str = "") -> dict:
+    rules = REVISE_STORY_RULES if is_story_closing(closing) or data.get("story") else REVISE_RULES
     user = (
         "[규칙 위반]\n" + ("\n".join(f"- {i}" for i in issues) or "- 없음") +
         "\n\n[팩트체크 결과]\n" + json.dumps(facts.get("claims", []), ensure_ascii=False, indent=1) +
         "\n\n[초안 JSON]\n" + json.dumps(data, ensure_ascii=False)
     )
-    return _call_json(client, _system(closing, length) + "\n\n" + REVISE_RULES, user, max_tokens=14000)
+    story = data.get("story")
+    out = _call_json(client, _system(closing, length) + "\n\n" + rules, user, max_tokens=14000)
+    if story and not out.get("story"):
+        out["story"] = story
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -746,10 +918,17 @@ def _finalize(data: dict, closing: str = "") -> dict:
             sc["narration_tts"] = sc.get("narration", "")
         if not sc.get("visual_source"):
             sc["visual_source"] = "ai" if sc.get("scene_type", "") in _AI_TYPES else "photo"
-    # 12씬은 엔딩 멘트로 고정 (자막은 브랜드 표기, 낭독은 띄어 읽기)
     last = data["scenes"][-1]
-    last["narration"] = closing or DEFAULT_CLOSING
-    last["narration_tts"] = closing_tts(closing)
+    if is_story_closing(closing):
+        # 이야기 모드: 마지막 컷 = 이야기의 마지막 한 줄 + 짧은 브랜드 꼬리말
+        if BRAND not in (last.get("narration") or ""):
+            last["narration"] = (last.get("narration") or "").rstrip() + " " + BRAND_TAG
+        if BRAND_TTS not in (last.get("narration_tts") or ""):
+            last["narration_tts"] = (last.get("narration_tts") or "").rstrip() + " " + BRAND_TAG.replace(BRAND, BRAND_TTS)
+    else:
+        # 고정 멘트 모드: 마지막 컷은 엔딩 멘트 (자막은 브랜드 표기, 낭독은 띄어 읽기)
+        last["narration"] = closing or DEFAULT_CLOSING
+        last["narration_tts"] = closing_tts(closing)
     # 음성은 narration_tts 합본으로 만든다 (컷 길이 배분도 이 텍스트 기준)
     data["full_narration"] = " ".join(
         (sc.get("narration_tts") or "").strip() for sc in data["scenes"]
@@ -771,37 +950,64 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
     sp = _spec(length)
     client = anthropic.Anthropic(api_key=api_key)
 
-    user_prompt = (
-        f"챕터: '{chapter}', 주제: '{topic}'.\n\n"
-        f"아래 조건을 모두 지켜서 {sp['cuts']}컷 대본을 JSON으로 출력해줘.\n\n"
-        "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것. 1컷은 HOOK.\n"
-        "② 인포그래픽(visual_source: 'ai') 씬이 전체의 절반 이상일 것.\n"
-        "③ narration 은 전체가 한 편의 해설로 이어지게: 훅 → 차이 → 왜(원리) → 그래서 → 결론(1컷 훅으로 돌아가는 루프 엔딩).\n"
-        f"   씬당 공백 제외 {sp['scene'][0]}~{sp['scene'][1]}자, 합계 {sp['total'][0]}~{sp['total'][1]}자. 화면을 가리키는 말은 전체 최대 3번.\n"
-        "④ 모든 씬에 narration(자막용)과 narration_tts(ElevenLabs 낭독용, 숫자·영문을 한글 소리로)를 함께 쓸 것.\n"
-        "   확인할 수 없는 수치는 쓰지 말 것.\n"
-        "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
-        "⑥ 'ai' 씬은 data_points(확인된 수치만)와 callouts(지시선 라벨+좌표)를 작성할 것. photo 씬은 둘 다 []."
-    )
-
-    say("① 초안 작성 중…")
-    draft = _call_json(client, _system(closing, length), user_prompt, max_tokens=12000)
+    story = None
+    if is_story_closing(closing):
+        say("① 이야기 작가: 실화를 찾고 이야기를 쓰는 중 (웹 검색)…")
+        story = write_story(client, chapter, topic, length, say)
+        beats = story.get("beats") or []
+        say(f"   틀 {story.get('frame', '')} · {story.get('logline', '')}")
+        user_prompt = (
+            f"챕터: '{chapter}', 주제: '{topic}'.\n\n"
+            f"[이야기 고정 모드] 아래 beats {len(beats)}개를 씬 {len(beats)}개로 옮기고 화면을 설계해 JSON 으로 출력해줘.\n"
+            "narration, narration_tts 는 그대로 복사하고, visual_hint 를 따라 나머지 필드를 채울 것.\n"
+            "'ai' 씬은 data_points(확인된 수치만)와 callouts 를 작성, photo 씬은 둘 다 [].\n\n"
+            "[이야기 뼈대]\n" + json.dumps({k: story.get(k) for k in ("frame", "logline", "spine")}, ensure_ascii=False) +
+            "\n\n[beats]\n" + json.dumps(beats, ensure_ascii=False, indent=1)
+        )
+        say("② 화면 설계 중…")
+        draft = _call_json(client, _system(closing, length), user_prompt, max_tokens=12000)
+        # 화면 설계 단계가 문장을 건드렸으면 이야기 원문으로 되돌린다
+        for sc, b in zip(draft.get("scenes") or [], beats):
+            for k in ("narration", "narration_tts"):
+                if b.get(k):
+                    sc[k] = b[k]
+        draft["story"] = {k: story.get(k) for k in ("frame", "logline", "spine", "title_idea", "sources",
+                                                    "web_search", "issues")}
+        if story.get("title_idea"):
+            draft["title"] = story["title_idea"]
+    else:
+        user_prompt = (
+            f"챕터: '{chapter}', 주제: '{topic}'.\n\n"
+            f"아래 조건을 모두 지켜서 {sp['cuts']}컷 대본을 JSON으로 출력해줘.\n\n"
+            "① 씬 유형(scene_type)과 visual_source를 자동 판단할 것. 1컷은 HOOK.\n"
+            "② 인포그래픽(visual_source: 'ai') 씬이 전체의 절반 이상일 것.\n"
+            "③ narration 은 전체가 한 편의 해설로 이어지게: 훅 → 차이 → 왜(원리) → 그래서 → 결론(1컷 훅으로 돌아가는 루프 엔딩).\n"
+            f"   씬당 공백 제외 {sp['scene'][0]}~{sp['scene'][1]}자, 합계 {sp['total'][0]}~{sp['total'][1]}자. 화면을 가리키는 말은 전체 최대 3번.\n"
+            "④ 모든 씬에 narration(자막용)과 narration_tts(ElevenLabs 낭독용, 숫자·영문을 한글 소리로)를 함께 쓸 것.\n"
+            "   확인할 수 없는 수치는 쓰지 말 것.\n"
+            "⑤ image_prompt: 'ai' 씬은 FLUX 영문 프롬프트, 'photo' 씬은 Unsplash 검색 키워드.\n"
+            "⑥ 'ai' 씬은 data_points(확인된 수치만)와 callouts(지시선 라벨+좌표)를 작성할 것. photo 씬은 둘 다 []."
+        )
+        say("① 초안 작성 중…")
+        draft = _call_json(client, _system(closing, length), user_prompt, max_tokens=12000)
     draft_issues = lint_script(draft, closing, length)
 
-    say("② 사실 검증 중 (웹 검색)…")
+    say("③ 사실 검증 중 (웹 검색)…")
     facts = fact_check(client, topic, draft)
     flagged = [c for c in facts.get("claims", []) if c.get("verdict") in ("수정필요", "근거없음")]
 
     data, rounds = draft, 0
     if draft_issues or flagged:
-        say("③ 검증 결과 반영해 자동 수정 중…")
+        say("④ 검증 결과 반영해 자동 수정 중…")
         data = revise_script(client, draft, draft_issues, facts, closing, length)
         rounds = 1
         remaining = lint_script(data, closing, length)
         if remaining:
-            say("④ 남은 문제 한 번 더 수정 중…")
+            say("⑤ 남은 문제 한 번 더 수정 중…")
             data = revise_script(client, data, remaining, {"claims": []}, closing, length)
             rounds = 2
+    if story and not data.get("story"):
+        data["story"] = draft.get("story")
     data = _finalize(data, closing)
 
     final_issues = lint_script(data, closing, length)
@@ -814,6 +1020,7 @@ def generate_script_and_prompts(api_key: str, chapter: str, topic: str, progress
         "remaining_issues": final_issues,
         "tts_chars":       total,
         "est_seconds":     round(total / TTS_CHARS_PER_SEC),
+        "story":           data.get("story"),
     }
     data["closing"] = closing
     data["length"] = length

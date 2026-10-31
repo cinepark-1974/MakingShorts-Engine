@@ -1086,8 +1086,9 @@ if st.session_state.current_project is None:
     # 엔딩 멘트 (12컷 고정 문장)
     from src.prompts import CLOSING_PRESETS
     _closing_opts = CLOSING_PRESETS + ["직접 입력"]
-    _closing_pick = st.selectbox("엔딩 멘트 (마지막 컷)", _closing_opts, index=0, key="closing_pick",
-                                 help="자막에는 '너도나도아는커피'로, 성우 낭독은 '너도나도 아는 커피'로 띄어 읽습니다.")
+    _closing_pick = st.selectbox("대본 방식 · 엔딩", _closing_opts, index=0, key="closing_pick",
+                                 help="기본: 이야기 작가가 실화 한 편을 찾아 쓰고, 마지막 컷은 그 이야기의 마지막 줄 + 너도나도아는커피. "
+                                      "다른 항목을 고르면 예전 해설형 대본 + 고정 엔딩 멘트로 만듭니다.")
     if _closing_pick == "직접 입력":
         _closing_text = st.text_input("엔딩 멘트 직접 입력", value="", key="closing_custom",
                                       placeholder="예: 알고 마시면 더 맛있습니다. 너도나도아는커피.").strip()
@@ -1137,6 +1138,9 @@ if st.session_state.current_project is None:
                     new_state["full_narration"] = result.get("full_narration", "")
                     new_state["scenes"] = result.get("scenes", [])
                     new_state["verification"] = result.get("verification", {})
+                    new_state["story"] = result.get("story")
+                    if (result.get("story") or {}).get("title_idea"):
+                        new_state["title"] = result["story"]["title_idea"]
                     new_state["closing"] = result.get("closing", _closing_text)
                     new_state["length"] = result.get("length", _length_key)
                     new_state["status"] = "script_ready"
@@ -1305,6 +1309,25 @@ if step1_done:
         ">{state.get('full_narration','(없음)')}</div>
         """, unsafe_allow_html=True)
 
+    # 이야기 뼈대 (이야기 작가 단계)
+    _story = state.get("story") or {}
+    if _story:
+        from src.prompts import STORY_FRAMES as _SF
+        _sp = _story.get("spine") or {}
+        with st.expander(f"📖 이야기 뼈대 — {_SF.get(_story.get('frame', ''), _story.get('frame', ''))}", expanded=True):
+            if _story.get("logline"):
+                st.markdown(f"**{_story['logline']}**")
+            _cells = [("누가", _sp.get("who")), ("어디서", _sp.get("where")), ("언제", _sp.get("when")),
+                      ("사물", _sp.get("object")), ("반전", _sp.get("turn")), ("오늘 내 잔과", _sp.get("link_today"))]
+            st.markdown("  \n".join(f"{k} · {v}" for k, v in _cells if v))
+            for _src in (_story.get("sources") or []):
+                if isinstance(_src, dict) and _src.get("fact"):
+                    _u = f" — [출처]({_src['url']})" if str(_src.get("url", "")).startswith("http") else ""
+                    _tag = " (전해지는 이야기)" if _src.get("status") == "전설" else ""
+                    st.caption(f"{_src['fact']}{_tag}{_u}")
+            if not _story.get("web_search"):
+                st.warning("이야기 작가 단계에서 웹 검색을 쓰지 못했습니다. 사실 확인 결과를 꼭 보세요.")
+
     # 대본 자동 검증 리포트
     _ver = state.get("verification") or {}
     if _ver:
@@ -1395,6 +1418,7 @@ if step1_done:
                         state["full_narration"] = result.get("full_narration", "")
                         state["scenes"] = result.get("scenes", [])
                         state["verification"] = result.get("verification", {})
+                        state["story"] = result.get("story")
                         state["status"] = "script_ready"
                         state["audio_path"] = ""
                         state["final_video_path"] = ""
