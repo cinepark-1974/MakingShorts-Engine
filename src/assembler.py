@@ -406,6 +406,36 @@ PUNCH_IN = 1.10        # 컷 후반 확대 배율 (화면이 3초 안팎마다 �
 PUNCH_MIN_SEC = 4.5    # 이보다 짧은 컷은 나누지 않음
 
 
+def _caption_track(captions: list, target: float, out_path: str) -> str:
+    """[(시작, 끝, png)] → ffmpeg concat 목록 (자막 사이 빈 구간은 투명 PNG). 자막이 없으면 ''."""
+    from PIL import Image
+    caps = sorted([c for c in (captions or []) if c and c[1] > c[0]], key=lambda c: c[0])
+    if not caps:
+        return ""
+    base = os.path.splitext(out_path)[0]
+    blank = base + "_capblank.png"
+    with Image.open(caps[0][2]) as im:
+        Image.new("RGBA", im.size, (0, 0, 0, 0)).save(blank)
+    rows, t = [], 0.0
+    for a, b, png in caps:
+        a, b = max(a, t), min(b, target)
+        if b <= a:
+            continue
+        if a - t > 0.001:
+            rows.append((blank, a - t))
+        rows.append((png, b - a))
+        t = b
+    if target - t > 0.001:
+        rows.append((blank, target - t))
+    lst = base + "_captions.txt"
+    with open(lst, "w", encoding="utf-8") as f:
+        f.write("ffconcat version 1.0\n")
+        for path, d in rows:
+            f.write(f"file '{os.path.abspath(path)}'\nduration {d:.3f}\n")
+        f.write(f"file '{os.path.abspath(rows[-1][0])}'\n")   # 마지막 항목의 duration 이 적용되도록 한 번 더
+    return lst
+
+
 def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str,
                       instant: bool = False, captions: list = None, punch_in: bool = True) -> None:
     """instant=True: 자막·그래픽을 0초부터 바로 보이게 (1컷 훅 — 피드 첫 화면).
@@ -440,10 +470,15 @@ def render_scene_clip(src: str, overlay_png: str, target: float, out_path: str,
     fc += "[base][ov]overlay=0:0:format=auto[v0]"
     inputs = ["-i", src, "-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", overlay_png]
     last = "[v0]"
-    for k, (a, b, png) in enumerate(captions or []):
-        inputs += ["-loop", "1", "-framerate", str(FPS), "-t", f"{target:.3f}", "-i", png]
-        fc += f";{last}[{k + 2}:v]overlay=0:0:format=auto:enable='between(t,{a:.3f},{b:.3f})'[v{k + 1}]"
-        last = f"[v{k + 1}]"
+    cap_list = _caption_track(captions, target, out_path)
+    if cap_list:
+        # 자막 PNG 들을 한 줄짜리 영상 트랙으로 이어 붙여 overlay 한 번만 한다.
+        # (예전처럼 자막마다 전체 길이 입력을 따로 열면 자막 30개 · 58초 쇼츠에서 ffmpeg 가 1.8GB 를 써
+        #  Streamlit Cloud 메모리 한도를 넘었다 → 'Oh no. Error running app')
+        inputs += ["-f", "concat", "-safe", "0", "-i", cap_list]
+        fc += (f";[2:v]fps={FPS},format=rgba,setpts=PTS-STARTPTS[cap]"
+               f";{last}[cap]overlay=0:0:format=auto:eof_action=pass[v1]")
+        last = "[v1]"
     fc += f";{last}format=yuv420p[out]"
     cmd = [
         "ffmpeg", "-y", *inputs,
