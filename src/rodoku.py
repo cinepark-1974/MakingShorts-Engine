@@ -307,7 +307,7 @@ ART_PREFIX = (
     "details, wide cinematic 16:9 composition."
 )
 ART_SUFFIX = (
-    " The vermilion red object is the only saturated red in the whole image; everything else stays muted. "
+    " The vermilion red object is the only red in the whole image. "
     "People are seen from behind, in silhouette or small in the distance, no facial features. "
     "No text, no letters, no numbers, no signboard writing."
 )
