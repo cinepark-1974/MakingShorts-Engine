@@ -130,9 +130,10 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
-     "image_prompt": "English. One still watercolor scene for this chapter: place, light, one object, one figure seen from behind. Definitive single state."}
+     "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state."}
   ],
   "seo_keywords": ["検索されやすい言葉5〜8個"],
+  "red_accent": "English. この物語を貫く『朱色のもの』ひとつ（例: a thin red thread, a red umbrella, a red camellia, a red knitted scarf, a red postbox）",
   "turn_chapter": 4,
   "music": {
     "a": "English. 反転の前（第1章〜反転の直前）に流す劇伴。この物語の場所・時代・季節・感情に合わせる。楽器・テンポ(BPM 56〜76)・ムードを確定的に一文で",
@@ -145,7 +146,9 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - 不倫・初恋・再会・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：はがき、指輪の跡、喫茶店の伝票、古いラジオ）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
-- image_prompt は人物の顔を描かない（後ろ姿・手・シルエット）。文字・看板の文字は入れない。
+- image_prompt は人物の顔を描かない（後ろ姿・手・シルエット・遠景の小さな人物）。文字・看板の文字は入れない。
+- チャンネルの目印：毎章の絵に red_accent の朱色のものを必ずひとつ入れ、それが画面で唯一の鮮やかな赤になる。
+  反転の章ではその赤の意味が変わる置き方にする（例：結ばれていた赤い糸がほどけている、閉じていた赤い傘が開いている）。
 - turn_chapter は反転が起きる章の番号。music は歌のない劇伴（instrumental, no vocals）。朗読の邪魔をしない静かな編成にする
   （ピアノ・弦・アコースティックギター・クラリネット・アコーディオンなど。昭和の喫茶店なら古いレコードのような質感なども可）。
   実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。"""
@@ -295,9 +298,72 @@ UPLOAD_SETTINGS = [
 # ─────────────────────────────────────────────────────────────────────────────
 # 전체 작업
 # ─────────────────────────────────────────────────────────────────────────────
+# ── 그림체: 손으로 그린 일본 애니메이션 미술 배경 + 장마다 단 하나의 주홍색 (채널 표식) ──
+ART_PREFIX = (
+    "Hand-painted Japanese animation film background art, gouache and poster-color painting with visible soft "
+    "brush texture, nostalgic Showa-era Japan, simple cel-shaded figures with thin warm-brown outlines, "
+    "lived-in everyday details, muted moss green, faded indigo, cream and warm amber palette, "
+    "wide cinematic 16:9 composition."
+)
+ART_SUFFIX = (
+    " The vermilion red object is the only saturated red in the whole image; everything else stays muted. "
+    "People are seen from behind, in silhouette or small in the distance, no facial features. "
+    "No text, no letters, no numbers, no signboard writing."
+)
+
+CLOUD_INDEX = "scenestory/_index.json"
+
+
+def save_cloud(keys: dict, state: dict) -> None:
+    """서버가 재시작돼도 작업이 사라지지 않게 상태 JSON 을 R2 에 함께 둔다."""
+    if not hz._r2_ok(keys):
+        return
+    from src import r2_store
+    pid = state.get("project_id", "")
+    try:
+        r2_store.put_json(keys, f"scenestory/{pid}/state.json", state)
+        idx = r2_store.get_json(keys, CLOUD_INDEX) or {}
+        row = {"title": (state.get("plan") or {}).get("title_ja") or state.get("title", ""),
+               "stage": state.get("stage", ""), "at": time.strftime("%Y-%m-%d %H:%M")}
+        if idx.get(pid) != row:
+            idx[pid] = row
+            r2_store.put_json(keys, CLOUD_INDEX, idx)
+    except Exception as e:
+        print(f"[rodoku] R2 상태 저장 실패: {e}", flush=True)
+
+
+def cloud_index(keys: dict) -> dict:
+    if not hz._r2_ok(keys):
+        return {}
+    from src import r2_store
+    try:
+        return r2_store.get_json(keys, CLOUD_INDEX) or {}
+    except Exception:
+        return {}
+
+
+def cloud_state(keys: dict, pid: str) -> dict:
+    from src import r2_store
+    return r2_store.get_json(keys, f"scenestory/{pid}/state.json") or {}
+
+
+def _rss_mb() -> int:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return 0
+
+
 def start_auto(state: dict, keys: dict, save_fn, made_titles: list) -> bool:
+    def save_both(s):
+        save_fn(s)
+        save_cloud(keys, s)
     return hz._start(state["project_id"], "rodoku", "낭독 드라마 자동 제작", _worker,
-                     (state, keys, save_fn, list(made_titles)))
+                     (state, keys, save_both, list(made_titles)))
 
 
 def _stage(job, state, save_fn, key, i, msg=""):
@@ -305,6 +371,7 @@ def _stage(job, state, save_fn, key, i, msg=""):
     job["pct"] = i / len(STAGES)
     state["stage"] = key
     state["status"] = dict(STAGES)[key]
+    print(f"[rodoku] {state.get('project_id', '')} {job['msg']} · 메모리 {_rss_mb()}MB", flush=True)
     hz._save(save_fn, state)
     if job.get("stop"):
         raise RuntimeError("중지했습니다. '이어서 만들기'를 누르면 여기서부터 계속합니다.")
@@ -348,12 +415,14 @@ def _worker(job, state, keys, save_fn, made_titles):
     state["manuscript_chars"] = sum(c.get("chars", 0) for c in chs)
 
     # ④ 그림
-    from src.scenestory import SKETCH_PREFIX, SKETCH_SUFFIX
     for c in chs:
         img = c.setdefault("image", {})
         if not hz.ensure_local(keys, img, pf(state, f"ch{c['no']:02d}.jpg")):
             _stage(job, state, save_fn, "images", 3, f"제{c['no']}장 그림")
-            prompt = SKETCH_PREFIX + " " + c["image_prompt"].strip().rstrip(".") + "." + SKETCH_SUFFIX
+            body = c["image_prompt"].strip().rstrip(".") + "."
+            if "red" not in body.lower():   # 예전 설계엔 주홍색 지정이 없다 → 기본값을 넣는다
+                body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
+            prompt = ART_PREFIX + " " + body + ART_SUFFIX
             url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
             dest = pf(state, f"ch{c['no']:02d}.jpg")
             hz._download(url, dest)

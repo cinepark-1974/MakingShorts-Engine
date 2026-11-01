@@ -35,6 +35,7 @@ def render_new(st, manager, api_keys):
         R.start_auto(state, api_keys, manager.save_state, made)
         st.session_state.current_project = state
         st.rerun()
+    _recover(st, manager, api_keys)
     with st.expander("지금 일본에서 찾는 검색어 미리 보기 (선택)"):
         if st.button("🔎 검색어 조회", key="rd_peek"):
             with st.spinner("일본 YouTube 자동완성 조회 중…"):
@@ -43,6 +44,31 @@ def render_new(st, manager, api_keys):
         if pk:
             st.caption("씨앗: " + ", ".join(pk["seeds"]))
             st.write(" · ".join(pk["queries"]) or "받아온 검색어가 없습니다.")
+
+
+def _recover(st, manager, api_keys):
+    """서버 재시작으로 목록에서 사라진 작업을 R2 에 남은 상태로 되살린다."""
+    idx = R.cloud_index(api_keys)
+    if not idx:
+        return
+    local = {p.get("id") for p in manager.list_projects()}
+    lost = [(pid, row) for pid, row in sorted(idx.items(), reverse=True) if pid not in local][:8]
+    if not lost:
+        return
+    with st.container(border=True):
+        st.markdown("**↩ 서버 재시작으로 목록에서 사라진 작업** — 클라우드(R2)에 저장된 진행 상태로 되살립니다. "
+                    "끝난 단계(원고·그림·낭독 등)는 다시 만들지 않습니다.")
+        for pid, row in lost:
+            c1, c2 = st.columns([3, 1])
+            c1.caption(f"{row.get('title', '')} · 마지막 단계: {dict(R.STAGES).get(row.get('stage', ''), row.get('stage', ''))} · {row.get('at', '')}")
+            if c2.button("되살리기", key=f"rd_rec_{pid}", use_container_width=True):
+                state = R.cloud_state(api_keys, pid)
+                if not state:
+                    st.error("R2 에서 상태를 찾지 못했습니다.")
+                    return
+                manager.save_state(state)
+                st.session_state.current_project = state
+                st.rerun()
 
 
 def _dl(st, keys, item, label, key, mime):
@@ -82,7 +108,25 @@ def render_project(st, manager, api_keys, show_banner):
                 R.start_auto(state, api_keys, manager.save_state, made)
                 st.rerun()
         with b2:
-            st.caption("오류로 멈췄다면 위 상자의 이유를 확인한 뒤 이어서 만들기를 누르세요.")
+            st.caption("오류로 멈췄거나 서버가 재시작됐다면 이어서 만들기를 누르세요. 끝난 단계는 다시 하지 않습니다.")
+    chs0 = state.get("chapters") or []
+    if not running and any((c.get("image") or {}).get("local") or (c.get("image") or {}).get("r2_key") for c in chs0):
+        with st.expander("🎨 그림만 새 그림체로 다시 그리기"):
+            st.caption("장별 그림을 지우고 새로 그립니다. 원고·낭독·배경음악은 그대로 두고, 합성·예고편·섬네일은 새 그림으로 다시 만듭니다. "
+                       f"Replicate 그림 {len(chs0)}장 비용이 다시 듭니다.")
+            if st.button("그림 다시 그리고 이어서 만들기", key="rd_redraw", use_container_width=True):
+                for c in chs0:
+                    c["image"] = {}
+                for k in ("final", "trailer", "thumbnail", "upload_pack"):
+                    state.pop(k, None)
+                state["stage"] = "images"
+                import shutil
+                shutil.rmtree(os.path.dirname(R.pf(state, "work", "x")), ignore_errors=True)   # 예전 그림의 화면 루프
+                manager.save_state(state)
+                made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"
+                        and p.get("id") != pid]
+                R.start_auto(state, api_keys, manager.save_state, made)
+                st.rerun()
 
     tr = state.get("trend") or {}
     if plan:
