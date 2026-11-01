@@ -22,7 +22,8 @@ def render_new(st, manager, api_keys):
                            index=list(R.LENGTHS).index(R.DEFAULT_MIN), horizontal=True, key="rd_minutes")
     with c2:
         st.caption("걸리는 시간 약 15~25분 (집필·낭독·그림·합성). 화면을 닫아도 서버에서 계속 진행됩니다. "
-                   "비용: Claude 집필 + ElevenLabs 일본어 낭독(약 4천~5천 자) + Replicate 그림 5~6장 + 배경음악 1곡(처음 한 번).")
+                   "비용: Claude 집필 + ElevenLabs 일본어 낭독(약 4천~5천 자) + Replicate 그림 5~6장 + "
+                   "이 편 전용 배경음악 2곡(반전 전·후 각 3분, 음악 약 6분).")
     miss = [k for k in NEED_KEYS if not str(api_keys.get(k, "")).strip()]
     if miss:
         st.error("Secrets 에 없는 키: " + ", ".join(miss))
@@ -113,6 +114,19 @@ def render_project(st, manager, api_keys, show_banner):
                     if hz.usable(au.get("local", "")):
                         st.audio(au["local"])
                         st.caption(f"낭독 {au.get('seconds', 0)}초 · {au.get('model', '')}")
+
+    bgm = state.get("bgm") or {}
+    if bgm:
+        with st.container(border=True):
+            st.markdown(f"**배경음악 (이 편 전용)** · 第{plan.get('turn_chapter', '?')}章 제목 카드에서 곡이 바뀝니다")
+            for kind, lab in (("a", "반전 전"), ("b", "반전 후")):
+                it = bgm.get(kind) or {}
+                loc = hz.ensure_local(api_keys, it, R.pf(state, "music", f"bgm_{kind}.mp3")) if (it.get("local") or it.get("r2_key")) else ""
+                if loc:
+                    st.audio(loc)
+                    st.caption(f"{lab} · {it.get('seconds', 0)}초 · {it.get('prompt', '')[:160]}")
+                elif it.get("error"):
+                    st.warning(f"{lab} 곡을 만들지 못했습니다 (이 곡 없이 합성): {it['error']}")
 
     fin = state.get("final") or {}
     if fin.get("seconds"):

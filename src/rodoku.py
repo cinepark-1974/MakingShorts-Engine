@@ -44,7 +44,8 @@ _BLOCK_JA = ["歌", "曲", "カラオケ", "mv", "ドラマ 無料", "アニメ"
              "マッチング", "婚活", "出会い", "風俗", "エロ", "av", "ニュース", "芸能", "炎上"]
 
 STAGES = [("trend", "트렌드 조회"), ("plan", "소재·설계"), ("write", "집필"), ("images", "그림"),
-          ("voice", "목소리"), ("render", "합성"), ("trailer", "예고편"), ("pack", "섬네일·업로드 정보")]
+          ("voice", "목소리"), ("music", "배경음악"), ("render", "합성"), ("trailer", "예고편"),
+          ("pack", "섬네일·업로드 정보")]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +132,12 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
      "image_prompt": "English. One still watercolor scene for this chapter: place, light, one object, one figure seen from behind. Definitive single state."}
   ],
-  "seo_keywords": ["検索されやすい言葉5〜8個"]
+  "seo_keywords": ["検索されやすい言葉5〜8個"],
+  "turn_chapter": 4,
+  "music": {
+    "a": "English. 反転の前（第1章〜反転の直前）に流す劇伴。この物語の場所・時代・季節・感情に合わせる。楽器・テンポ(BPM 56〜76)・ムードを確定的に一文で",
+    "b": "English. 反転の章から最後まで流す劇伴。aと同じ世界観で、感情の色を変える（例：秘密が明かされた後の静かな痛み、温かい赦し）"
+  }
 }
 
 設計ルール
@@ -139,7 +145,10 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - 不倫・初恋・再会・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：はがき、指輪の跡、喫茶店の伝票、古いラジオ）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
-- image_prompt は人物の顔を描かない（後ろ姿・手・シルエット）。文字・看板の文字は入れない。"""
+- image_prompt は人物の顔を描かない（後ろ姿・手・シルエット）。文字・看板の文字は入れない。
+- turn_chapter は反転が起きる章の番号。music は歌のない劇伴（instrumental, no vocals）。朗読の邪魔をしない静かな編成にする
+  （ピアノ・弦・アコースティックギター・クラリネット・アコーディオンなど。昭和の喫茶店なら古いレコードのような質感なども可）。
+  実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。"""
 
 
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list) -> dict:
@@ -367,14 +376,17 @@ def _worker(job, state, keys, save_fn, made_titles):
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
 
+    # ⑤-2 배경음악 — 편마다 이야기에 맞춰 새로 2곡 (반전 전 / 반전 후)
+    _make_music(job, state, keys, save_fn)
+
     # ⑥ 합성
     if not hz.usable((state.get("final") or {}).get("local", "")) and not (state.get("final") or {}).get("r2_key"):
-        _stage(job, state, save_fn, "render", 5, "화면 루프 만드는 중")
+        _stage(job, state, save_fn, "render", 6, "화면 루프 만드는 중")
         _render(job, state, keys, save_fn)
 
     # ⑦ 예고편
     if not (state.get("trailer") or {}).get("local"):
-        _stage(job, state, save_fn, "trailer", 6, "예고 쇼츠 만드는 중")
+        _stage(job, state, save_fn, "trailer", 7, "예고 쇼츠 만드는 중")
         try:
             _trailer(job, state, keys)
         except Exception as e:
@@ -383,13 +395,43 @@ def _worker(job, state, keys, save_fn, made_titles):
         hz._save(save_fn, state)
 
     # ⑧ 섬네일·업로드 정보
-    _stage(job, state, save_fn, "pack", 7)
+    _stage(job, state, save_fn, "pack", 8)
     _pack(state, keys)
     state["stage"] = "done"
     state["status"] = "완성"
     hz._save(save_fn, state)
     fin = state["final"]
     job["msg"], job["pct"] = f"완성 — {hz.fmt_time(fin['seconds'], True)} · {fin['bytes'] / 1e6:.0f}MB", 1.0
+
+
+MUSIC_TAIL = (" Instrumental only, no vocals, no drums. Quiet and intimate, it sits softly under a Japanese "
+              "voice-over, no sudden swells, gentle natural ending. About three minutes long.")
+MUSIC_FALLBACK = {
+    "a": "Gentle cinematic solo piano with soft strings, nostalgic and tender, slow 66 BPM, warm evening mood.",
+    "b": "Solo piano with a single cello, bittersweet and quietly hopeful, slow 62 BPM, the feeling after a long-kept secret is told.",
+}
+
+
+def _make_music(job, state, keys, save_fn):
+    """설계의 music.a / music.b 로 이 편 전용 배경음악 2곡 (각 3분). 실패한 곡은 건너뛴다 — 음악 없이도 합성은 된다."""
+    music = (state.get("plan") or {}).get("music") or {}
+    bgm = state.setdefault("bgm", {})
+    for kind in ("a", "b"):
+        it = bgm.setdefault(kind, {})
+        dest = pf(state, "music", f"bgm_{kind}.mp3")
+        if hz.ensure_local(keys, it, dest):
+            continue
+        it.pop("error", None)   # 지난번 실패한 곡은 이어서 만들기 때 다시 시도
+        _stage(job, state, save_fn, "music", 5, f"{'반전 전' if kind == 'a' else '반전 후'} 곡 만드는 중 (ElevenLabs Music 3분)")
+        prompt = (music.get(kind) or MUSIC_FALLBACK[kind]).strip().rstrip(".") + "." + MUSIC_TAIL
+        try:
+            hz._gen_elevenlabs(keys.get("ELEVENLABS_API_KEY", ""), prompt, 180, dest)
+            it.update(local=dest, prompt=prompt, seconds=round(hz.duration(dest), 2),
+                      r2_key=keep(keys, state, dest, f"bgm_{kind}.mp3", "audio/mpeg"))
+        except Exception as e:
+            it["error"] = f"{type(e).__name__}: {e}"[:300]
+            print(f"[rodoku] 배경음악 {kind} 실패: {e}", flush=True)
+        hz._save(save_fn, state)
 
 
 def _render(job, state, keys, save_fn):
@@ -400,7 +442,7 @@ def _render(job, state, keys, save_fn):
     for c in chs:
         lp = pf(state, "work", f"loop{c['no']:02d}.mp4")
         if not hz.usable(lp):
-            job["msg"] = f"[6/8] 합성 · 제{c['no']}장 화면 루프"
+            job["msg"] = f"[7/9] 합성 · 제{c['no']}장 화면 루프"
             hz.build_kenburns_loop(c["image"]["local"], lp)
         loops[c["no"]] = lp
     title = state["plan"].get("title_ja", "")
@@ -411,7 +453,7 @@ def _render(job, state, keys, save_fn):
     t = OPEN_CARD_SEC
     kanji = "一二三四五六七八九十"
     for c in chs:
-        job["msg"] = f"[6/8] 합성 · 제{c['no']}장 이어 붙이는 중"
+        job["msg"] = f"[7/9] 합성 · 제{c['no']}장 이어 붙이는 중"
         a = c["audio"]["seconds"] or hz.duration(c["audio"]["local"])
         seg_len = a + CHAPTER_PAD_SEC
         card = _card_png(pf(state, "work", f"t{c['no']:02d}.png"), c["title_ja"],
@@ -443,26 +485,39 @@ def _render(job, state, keys, save_fn):
         labels.append(f"[{k}:a]aresample=44100,aformat=channel_layouts=stereo[s{k}]")
         k += 1
     fc = ";".join(labels) + ";" + "".join(f"[s{i}]" for i in range(k)) + f"concat=n={k}:v=0:a=1[narr]"
-    # 배경음악 (SceneStory 피아노, 3분짜리를 반복)
-    from src import sound, scenestory
-    bgm = sound.get_bgm(178, keys.get("ELEVENLABS_API_KEY", ""), pf(state, "sound", "x").rsplit("/", 1)[0],
-                        prompt=scenestory.BGM_PROMPT, own_dir="bgm/scenestory")
-    if bgm:
-        args += ["-stream_loop", "-1", "-i", bgm]
-        fc += (f";[{k}:a]aresample=44100,volume={BGM_VOLUME},afade=t=in:d=3,"
-               f"afade=t=out:st={max(total - 5, 0):.2f}:d=5[bg];[narr][bg]amix=inputs=2:duration=first:normalize=0[mx]")
+    # 배경음악: 반전 전 곡(a) → 반전 장 제목 카드에서 3초 크로스페이드 → 반전 후 곡(b). 각 곡은 필요한 만큼 반복
+    bg = state.get("bgm") or {}
+    ga = bg.get("a", {}).get("local") if hz.usable(bg.get("a", {}).get("local", "")) else ""
+    gb = bg.get("b", {}).get("local") if hz.usable(bg.get("b", {}).get("local", "")) else ""
+    try:
+        turn_no = int((state.get("plan") or {}).get("turn_chapter") or 0)
+    except (TypeError, ValueError):
+        turn_no = 0
+    turn_no = turn_no if 2 <= turn_no <= len(chs) else max(len(chs) - 1, 2)
+    t_turn = next((a for (a, _), c in zip(marks, chs) if c["no"] == turn_no), total * 0.65)
+    fade = f"volume={BGM_VOLUME},afade=t=in:d=3,afade=t=out:st={max(total - 5, 0):.2f}:d=5"
+    if ga and gb:
+        args += ["-stream_loop", "-1", "-i", ga, "-stream_loop", "-1", "-i", gb]
+        fc += (f";[{k}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{t_turn + 3:.2f}[ba]"
+               f";[{k + 1}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{max(total - t_turn + 3, 4):.2f}[bb]"
+               f";[ba][bb]acrossfade=d=3:c1=tri:c2=tri,{fade}[bg]")
+    elif ga or gb:
+        args += ["-stream_loop", "-1", "-i", ga or gb]
+        fc += f";[{k}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total + 1:.2f},{fade}[bg]"
+    if ga or gb:
+        fc += ";[narr][bg]amix=inputs=2:duration=first:normalize=0[mx]"
         out_label = "[mx]"
     else:
         out_label = "[narr]"
     audio = pf(state, "work", "audio.m4a")
     hz._run_ffmpeg([*args, "-filter_complex", fc + f";{out_label}loudnorm=I=-16:TP=-1.5:LRA=11[a]", "-map", "[a]",
-                    "-t", f"{total:.2f}", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", audio], total, job, "[6/8] 합성 · 소리")
+                    "-t", f"{total:.2f}", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", audio], total, job, "[7/9] 합성 · 소리")
     final = pf(state, f"SceneStory_{state['project_id']}.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", audio, "-map", "0:v:0", "-map", "1:a:0",
                     "-c", "copy", "-t", f"{total:.2f}", "-movflags", "+faststart", final], check=True, timeout=900)
     info = {"local": final, "seconds": round(hz.duration(final), 2), "bytes": os.path.getsize(final),
             "chapters": [[round(a, 2), b] for a, b in marks], "made_at": time.strftime("%Y-%m-%d %H:%M")}
-    job["msg"] = f"[6/8] 합성 · R2 에 올리는 중 ({info['bytes'] / 1e6:.0f}MB)"
+    job["msg"] = f"[7/9] 합성 · R2 에 올리는 중 ({info['bytes'] / 1e6:.0f}MB)"
     info["r2_key"] = keep(keys, state, final, os.path.basename(final), "video/mp4")
     state["final"] = info
     hz._save(save_fn, state)
