@@ -298,12 +298,13 @@ UPLOAD_SETTINGS = [
 # ─────────────────────────────────────────────────────────────────────────────
 # 전체 작업
 # ─────────────────────────────────────────────────────────────────────────────
-# ── 그림체: 손으로 그린 일본 애니메이션 미술 배경 + 장마다 단 하나의 주홍색 (채널 표식) ──
+# ── 그림체: 단순하고 따뜻한 손그림 인물 + 빛나는 정밀 배경(하늘·구름·빛·반사) + 장마다 단 하나의 주홍색 (채널 표식) ──
 ART_PREFIX = (
-    "Hand-painted Japanese animation film background art, gouache and poster-color painting with visible soft "
-    "brush texture, nostalgic Showa-era Japan, simple cel-shaded figures with thin warm-brown outlines, "
-    "lived-in everyday details, muted moss green, faded indigo, cream and warm amber palette, "
-    "wide cinematic 16:9 composition."
+    "Japanese hand-drawn animation film still. Simple, warm, rounded character design with clean thin outlines "
+    "and flat cel shading, set in a hyper-detailed luminous painted background: saturated deep cobalt-blue sky, "
+    "towering cumulus clouds with glowing golden rims, sunbeams through leaves, soft lens flare, tiny drifting "
+    "light particles, mirror-like reflections on still water or wet ground, lived-in nostalgic Showa-era Japan "
+    "details, wide cinematic 16:9 composition."
 )
 ART_SUFFIX = (
     " The vermilion red object is the only saturated red in the whole image; everything else stays muted. "
