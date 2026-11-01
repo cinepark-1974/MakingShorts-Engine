@@ -24,12 +24,17 @@ def render_new(st, manager, api_keys):
         st.caption("걸리는 시간 약 15~25분 (집필·낭독·그림·합성). 화면을 닫아도 서버에서 계속 진행됩니다. "
                    "비용: Claude 집필 + ElevenLabs 일본어 낭독(약 4천~5천 자) + Replicate 그림 5~6장 + "
                    "이 편 전용 배경음악 2곡(반전 전·후 각 3분, 음악 약 6분).")
+    motion_on = st.toggle("🎞 움직이는 그림 (장마다 MiniMax 6초 클립 → 초당 7.5장 손그림 애니메이션 느낌으로 반복)",
+                          value=True, key="rd_motion",
+                          help="끄면 그림을 천천히 확대·축소(Ken Burns)만 합니다. 켜면 Replicate 영상 비용이 장 수만큼 추가되고 "
+                               "제작 시간이 10~20분 늘어납니다. 실패한 장은 자동으로 Ken Burns 로 대신합니다.")
     miss = [k for k in NEED_KEYS if not str(api_keys.get(k, "")).strip()]
     if miss:
         st.error("Secrets 에 없는 키: " + ", ".join(miss))
     if st.button("🤖 자동 제작 시작", type="primary", use_container_width=True, disabled=bool(miss), key="rd_start"):
         state = manager.create_new_project(chapter="朗読ドラマ", topic="朗読ドラマ 자동", channel="scenestory")
-        state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued")
+        state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued",
+                     motion_on=bool(motion_on))
         manager.save_state(state)
         made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"]
         R.start_auto(state, api_keys, manager.save_state, made)
@@ -117,6 +122,7 @@ def render_project(st, manager, api_keys, show_banner):
             if st.button("그림 다시 그리고 이어서 만들기", key="rd_redraw", use_container_width=True):
                 for c in chs0:
                     c["image"] = {}
+                    c["motion"] = {}
                 for k in ("final", "trailer", "thumbnail", "upload_pack"):
                     state.pop(k, None)
                 state["stage"] = "images"
@@ -152,6 +158,14 @@ def render_project(st, manager, api_keys, show_banner):
                     img = hz.ensure_local(api_keys, c.get("image") or {}, R.pf(state, f"ch{c['no']:02d}.jpg")) if c.get("image") else ""
                     if img:
                         st.image(img, use_container_width=True)
+                    mo = c.get("motion") or {}
+                    if mo.get("error"):
+                        st.caption(f"움직임 실패 → Ken Burns 로 대신: {mo['error'][:150]}")
+                    elif mo.get("local") or mo.get("r2_key"):
+                        mv = hz.ensure_local(api_keys, mo, R.pf(state, f"ch{c['no']:02d}_motion.mp4"))
+                        if mv:
+                            st.video(mv)
+                            st.caption("움직임 원본 6초 (합성 때 초당 7.5장으로 줄여 앞뒤로 반복)")
                     if c.get("text"):
                         st.text(c["text"])
                     au = c.get("audio") or {}

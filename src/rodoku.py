@@ -44,7 +44,7 @@ _BLOCK_JA = ["歌", "曲", "カラオケ", "mv", "ドラマ 無料", "アニメ"
              "マッチング", "婚活", "出会い", "風俗", "エロ", "av", "ニュース", "芸能", "炎上"]
 
 STAGES = [("trend", "트렌드 조회"), ("plan", "소재·설계"), ("write", "집필"), ("images", "그림"),
-          ("voice", "목소리"), ("music", "배경음악"), ("render", "합성"), ("trailer", "예고편"),
+          ("motion", "움직임"), ("voice", "목소리"), ("music", "배경음악"), ("render", "합성"), ("trailer", "예고편"),
           ("pack", "섬네일·업로드 정보")]
 
 
@@ -130,7 +130,8 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
-     "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state."}
+     "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
+     "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない"}
   ],
   "seo_keywords": ["検索されやすい言葉5〜8個"],
   "red_accent": "English. この物語を貫く『朱色のもの』ひとつ（例: a thin red thread, a red umbrella, a red camellia, a red knitted scarf, a red postbox）",
@@ -263,6 +264,19 @@ def _body_clip(loop: str, start: float, sec: float, out: str) -> str:
 TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です。朗読ドラマ本文から、続きを聴きたくなる一節を選びます。
 本文の連続した文をそのまま抜き出し（改変しない）、空白を除いて120〜180字。結末のネタばらしはしない。
 JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内、#朗読 #シニア恋愛 を含む）"}"""
+
+
+def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
+    """움직임 클립 → 초당 7.5장 앞뒤 루프 → 9:16 가운데 자르기 → sec 초 길이."""
+    one = out.replace(".mp4", "_one.mp4")
+    n = max(int(hz.duration(raw) * ANIME_FPS), 4)
+    vf = (f"[0:v]fps={ANIME_FPS},split[f][b];[b]reverse,trim=start_frame=1:end_frame={n - 1},setpts=PTS-STARTPTS[r];"
+          f"[f][r]concat=n=2:v=1:a=0,fps={hz.FPS},scale=-2:1920,crop=1080:1920,setsar=1,format=yuv420p[v]")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-filter_complex", vf, "-map", "[v]",
+                    *hz.X264, "-crf", "21", "-an", one], check=True, timeout=600)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", one, "-t", f"{sec}",
+                    "-c", "copy", out], check=True, timeout=300)
+    return out
 
 
 def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
@@ -400,7 +414,8 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
-                              "image_prompt": c.get("image_prompt", "")} for c in plan["chapters"]]
+                              "image_prompt": c.get("image_prompt", ""),
+                              "motion_prompt": c.get("motion_prompt", "")} for c in plan["chapters"]]
     plan, chs = state["plan"], state["chapters"]
 
     # ③ 집필
@@ -430,6 +445,9 @@ def _worker(job, state, keys, save_fn, made_titles):
             img.update(local=dest, r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.jpg", "image/jpeg"))
             hz._save(save_fn, state)
 
+    # ④-2 움직임 — 장마다 6초 움직임 클립 (실패한 장은 Ken Burns 로 대신)
+    _make_motion(job, state, keys, save_fn)
+
     # ⑤ 목소리
     from src.audio import generate_narration
     voice = keys.get("ELEVENLABS_VOICE_ID_JA") or JA_VOICE_ID
@@ -437,7 +455,7 @@ def _worker(job, state, keys, save_fn, made_titles):
     for c in chs:
         au = c.setdefault("audio", {})
         if not hz.ensure_local(keys, au, pf(state, f"ch{c['no']:02d}.mp3")):
-            _stage(job, state, save_fn, "voice", 4, f"제{c['no']}장 낭독")
+            _stage(job, state, save_fn, "voice", 5, f"제{c['no']}장 낭독")
             dest = pf(state, f"ch{c['no']:02d}.mp3")
             head = f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章、{c['title_ja']}。\n\n"
             info = {}
@@ -451,12 +469,12 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ⑥ 합성
     if not hz.usable((state.get("final") or {}).get("local", "")) and not (state.get("final") or {}).get("r2_key"):
-        _stage(job, state, save_fn, "render", 6, "화면 루프 만드는 중")
+        _stage(job, state, save_fn, "render", 7, "화면 루프 만드는 중")
         _render(job, state, keys, save_fn)
 
     # ⑦ 예고편
     if not (state.get("trailer") or {}).get("local"):
-        _stage(job, state, save_fn, "trailer", 7, "예고 쇼츠 만드는 중")
+        _stage(job, state, save_fn, "trailer", 8, "예고 쇼츠 만드는 중")
         try:
             _trailer(job, state, keys)
         except Exception as e:
@@ -465,7 +483,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         hz._save(save_fn, state)
 
     # ⑧ 섬네일·업로드 정보
-    _stage(job, state, save_fn, "pack", 8)
+    _stage(job, state, save_fn, "pack", 9)
     _pack(state, keys)
     state["stage"] = "done"
     state["status"] = "완성"
@@ -492,7 +510,7 @@ def _make_music(job, state, keys, save_fn):
         if hz.ensure_local(keys, it, dest):
             continue
         it.pop("error", None)   # 지난번 실패한 곡은 이어서 만들기 때 다시 시도
-        _stage(job, state, save_fn, "music", 5, f"{'반전 전' if kind == 'a' else '반전 후'} 곡 만드는 중 (ElevenLabs Music 3분)")
+        _stage(job, state, save_fn, "music", 6, f"{'반전 전' if kind == 'a' else '반전 후'} 곡 만드는 중 (ElevenLabs Music 3분)")
         prompt = (music.get(kind) or MUSIC_FALLBACK[kind]).strip().rstrip(".") + "." + MUSIC_TAIL
         try:
             hz._gen_elevenlabs(keys.get("ELEVENLABS_API_KEY", ""), prompt, 180, dest)
@@ -504,16 +522,69 @@ def _make_music(job, state, keys, save_fn):
         hz._save(save_fn, state)
 
 
+MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift slowly, "
+                   "light shimmers softly on the water, tiny light particles float")
+ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
+
+
+def _make_motion(job, state, keys, save_fn):
+    """그림 한 장 → MiniMax 6초 움직임 클립. state['motion_on'] 이 False 면 건너뛴다(Ken Burns)."""
+    if state.get("motion_on") is False:
+        return
+    from src.video_replicate import generate_single_clip_url
+    for c in state["chapters"]:
+        mo = c.setdefault("motion", {})
+        if hz.ensure_local(keys, mo, pf(state, f"ch{c['no']:02d}_motion.mp4")):
+            continue
+        img = hz.ensure_local(keys, c.get("image") or {}, pf(state, f"ch{c['no']:02d}.jpg"))
+        if not img:
+            continue
+        mo.pop("error", None)   # 지난번 실패한 장은 이어서 만들기 때 다시 시도
+        _stage(job, state, save_fn, "motion", 4, f"제{c['no']}장 움직임 (MiniMax 6초, 보통 2~5분)")
+        prompt = ((c.get("motion_prompt") or MOTION_FALLBACK).strip().rstrip(".") +
+                  ". Static locked-off camera, no camera movement, no zoom, no pan, no cuts. The people stay in "
+                  "place, only the small repeating elements move. Keep the hand-drawn animation look. No text.")
+        dest = pf(state, f"ch{c['no']:02d}_motion.mp4")
+        try:
+            url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img,
+                                           prompt_optimizer=False)
+            hz._download(url, dest)
+            mo.update(local=dest, prompt=prompt,
+                      r2_key=keep(keys, state, dest, f"ch{c['no']:02d}_motion.mp4", "video/mp4"))
+        except Exception as e:
+            mo["error"] = f"{type(e).__name__}: {e}"[:300]
+            print(f"[rodoku] 제{c['no']}장 움직임 실패 → Ken Burns: {e}", flush=True)
+        hz._save(save_fn, state)
+
+
+def build_anime_loop(raw: str, out: str) -> str:
+    """6초 움직임 클립 → 초당 7.5장으로 줄여 손그림 애니메이션 느낌 → 앞으로+거꾸로 이어 끊김 없는 약 12초 루프."""
+    n = max(int(hz.duration(raw) * ANIME_FPS), 4)
+    vf = (f"[0:v]fps={ANIME_FPS},split[f][b];[b]reverse,trim=start_frame=1:end_frame={n - 1},setpts=PTS-STARTPTS[r];"
+          f"[f][r]concat=n=2:v=1:a=0,fps={hz.FPS},{hz.FILL},format=yuv420p[v]")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-filter_complex", vf, "-map", "[v]",
+                    *hz.X264, "-crf", "20", "-an", "-movflags", "+faststart", out], check=True, timeout=900)
+    return out
+
+
 def _render(job, state, keys, save_fn):
     chs = state["chapters"]
     segs, audio_parts, marks = [], [], []
     # 오프닝 카드 (1장 그림 · 작품 제목)
     loops = {}
     for c in chs:
-        lp = pf(state, "work", f"loop{c['no']:02d}.mp4")
+        raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
+        lp = pf(state, "work", f"loop{c['no']:02d}{'_anime' if raw else ''}.mp4")
         if not hz.usable(lp):
-            job["msg"] = f"[7/9] 합성 · 제{c['no']}장 화면 루프"
-            hz.build_kenburns_loop(c["image"]["local"], lp)
+            job["msg"] = f"[8/10] 합성 · 제{c['no']}장 화면 루프 ({'움직임' if raw else 'Ken Burns'})"
+            if raw:
+                try:
+                    build_anime_loop(raw, lp)
+                except Exception as e:
+                    print(f"[rodoku] 제{c['no']}장 움직임 루프 실패 → Ken Burns: {e}", flush=True)
+                    lp = pf(state, "work", f"loop{c['no']:02d}.mp4")
+            if not hz.usable(lp):
+                hz.build_kenburns_loop(c["image"]["local"], lp)
         loops[c["no"]] = lp
     title = state["plan"].get("title_ja", "")
     op = _card_clip(loops[1], _card_png(pf(state, "work", "open.png"), title, "SceneStory 朗読ドラマ"),
@@ -523,7 +594,7 @@ def _render(job, state, keys, save_fn):
     t = OPEN_CARD_SEC
     kanji = "一二三四五六七八九十"
     for c in chs:
-        job["msg"] = f"[7/9] 합성 · 제{c['no']}장 이어 붙이는 중"
+        job["msg"] = f"[8/10] 합성 · 제{c['no']}장 이어 붙이는 중"
         a = c["audio"]["seconds"] or hz.duration(c["audio"]["local"])
         seg_len = a + CHAPTER_PAD_SEC
         card = _card_png(pf(state, "work", f"t{c['no']:02d}.png"), c["title_ja"],
@@ -581,13 +652,13 @@ def _render(job, state, keys, save_fn):
         out_label = "[narr]"
     audio = pf(state, "work", "audio.m4a")
     hz._run_ffmpeg([*args, "-filter_complex", fc + f";{out_label}loudnorm=I=-16:TP=-1.5:LRA=11[a]", "-map", "[a]",
-                    "-t", f"{total:.2f}", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", audio], total, job, "[7/9] 합성 · 소리")
+                    "-t", f"{total:.2f}", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", audio], total, job, "[8/10] 합성 · 소리")
     final = pf(state, f"SceneStory_{state['project_id']}.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", audio, "-map", "0:v:0", "-map", "1:a:0",
                     "-c", "copy", "-t", f"{total:.2f}", "-movflags", "+faststart", final], check=True, timeout=900)
     info = {"local": final, "seconds": round(hz.duration(final), 2), "bytes": os.path.getsize(final),
             "chapters": [[round(a, 2), b] for a, b in marks], "made_at": time.strftime("%Y-%m-%d %H:%M")}
-    job["msg"] = f"[7/9] 합성 · R2 에 올리는 중 ({info['bytes'] / 1e6:.0f}MB)"
+    job["msg"] = f"[8/10] 합성 · R2 에 올리는 중 ({info['bytes'] / 1e6:.0f}MB)"
     info["r2_key"] = keep(keys, state, final, os.path.basename(final), "video/mp4")
     state["final"] = info
     hz._save(save_fn, state)
@@ -610,7 +681,15 @@ def _trailer(job, state, keys):
     generate_narration(keys.get("ELEVENLABS_API_KEY", ""), excerpt, au, voice_id=voice)
     sec = min(hz.duration(au) + 1.5, 58.0)
     tmp = pf(state, "trailer", "x").rsplit("/", 1)[0]
-    vloop = _vertical_loop(c["image"]["local"], os.path.join(tmp, "vloop.mp4"), sec=int(sec) + 1)
+    raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
+    vloop = ""
+    if raw:
+        try:
+            vloop = _vertical_anime(raw, os.path.join(tmp, "vloop.mp4"), sec=int(sec) + 1)
+        except Exception as e:
+            print(f"[rodoku] 예고편 움직임 실패 → Ken Burns: {e}", flush=True)
+    if not vloop:
+        vloop = _vertical_loop(c["image"]["local"], os.path.join(tmp, "vloop.mp4"), sec=int(sec) + 1)
     top = os.path.join(tmp, "top.png")
     from PIL import Image, ImageDraw
     from src.scenestory import jp_font, JP_SERIF_BOLD, JP_SANS_BOLD
