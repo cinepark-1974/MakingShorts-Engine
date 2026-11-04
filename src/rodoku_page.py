@@ -218,6 +218,17 @@ def render_project(st, manager, api_keys, show_banner):
                     st.video(trl["local"])
                 st.caption(f"{trl.get('seconds', 0)}초 · 第{trl.get('chapter', '')}章에서 · 쇼츠 제목: {trl.get('shorts_title', '')}")
                 _dl(st, api_keys, trl, "⬇ 예고 쇼츠 내려받기", "rd_tr", "video/mp4", out_name(state, "trailer", "mp4"))
+                cv = trl.get("cover") or {}
+                cvl = hz.ensure_local(api_keys, cv, R.pf(state, "trailer", "cover_1080x1920.jpg")) if (cv.get("local") or cv.get("r2_key")) else ""
+                if cvl:
+                    c1, c2 = st.columns([1, 2])
+                    c1.image(cvl, caption="쇼츠 표지 1080×1920")
+                    with c2:
+                        _dl(st, api_keys, cv, "⬇ 쇼츠 표지 내려받기", "rd_cv", "image/jpeg", out_name(state, "trailer-cover", "jpg"))
+                        st.caption("YouTube 스튜디오(PC) → 콘텐츠 → Shorts → 연필 아이콘 → 미리보기 이미지에서 올립니다. "
+                                   "목록에서는 가운데 부분만 보이도록 글자를 가운데에 두었습니다.")
+                elif cv.get("error"):
+                    st.caption(f"쇼츠 표지를 만들지 못했습니다: {cv['error'][:150]}")
 
     pack = state.get("upload_pack")
     if pack:

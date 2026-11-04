@@ -622,6 +622,15 @@ def _worker(job, state, keys, save_fn, made_titles):
             state["trailer"] = {"error": f"{type(e).__name__}: {e}"[:300]}
             print(f"[rodoku] 예고편 실패: {e}", flush=True)
         hz._save(save_fn, state)
+    trl = state.get("trailer") or {}
+    if trl.get("local") and not hz.ensure_local(keys, trl.get("cover") or {}, pf(state, "trailer", "cover_1080x1920.jpg")):
+        _stage(job, state, save_fn, "trailer", 8, "예고 쇼츠 표지 그리는 중")
+        try:
+            _shorts_cover(state, keys)
+        except Exception as e:
+            trl["cover"] = {"error": f"{type(e).__name__}: {e}"[:300]}
+            print(f"[rodoku] 쇼츠 표지 실패: {e}", flush=True)
+        hz._save(save_fn, state)
 
     # ⑧ 섬네일·업로드 정보
     _stage(job, state, save_fn, "pack", 9)
@@ -883,6 +892,74 @@ def _trailer(job, state, keys):
     state["trailer"] = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
                         "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
                         "r2_key": keep(keys, state, out, "trailer.mp4", "video/mp4")}
+
+
+def _shorts_cover(state, keys):
+    """예고 쇼츠 표지 1080×1920 — 영상에서 뽑은 장면이 아니라 표지용 세로 그림을 새로 그려 글자를 얹는다.
+    쇼츠 표지는 목록에서 가운데 3:2 정도만 보이므로 글자는 화면 가운데 띠 안에 둔다."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SERIF_BOLD, JP_SANS_BOLD, phrase_wrap
+    plan, trl = state["plan"], state["trailer"]
+    c = next((x for x in state["chapters"] if x["no"] == trl.get("chapter")), state["chapters"][0])
+    yw = plan.get("young_woman") or {}
+    body = (c.get("image_prompt") or "").strip().rstrip(".") + "."
+    if c.get("with_young") and yw.get("look_en"):
+        body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
+    if "red" not in body.lower():
+        body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
+    prompt = (ART_PREFIX.replace("wide cinematic 16:9 composition", "tall vertical 9:16 poster composition") + " " + body +
+              " The main subject sits in the lower half of the frame, the upper-middle area is calm open sky or plain wall." +
+              ART_SUFFIX)
+    base = pf(state, "trailer", "cover_base.jpg")
+    try:
+        tries = []
+        for attempt in range(2):
+            cand = pf(state, "trailer", f"cover_try{attempt + 1}.jpg")
+            hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect="9:16"), cand)
+            rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
+            tries.append((cand, rv))
+            if rv.get("ok"):
+                break
+        shutil.copyfile(min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))[0], base)
+    except Exception as e:   # 세로 그림을 못 그리면 그 장 그림을 세로로 잘라 쓴다
+        print(f"[rodoku] 표지 그림 실패 → 장 그림 자르기: {e}", flush=True)
+        shutil.copyfile(c["image"]["local"], base)
+    W, H = 1080, 1920
+    im = Image.open(base).convert("RGB")
+    s = max(W / im.width, H / im.height)
+    im = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
+    l, t = (im.width - W) // 2, (im.height - H) // 2
+    im = im.crop((l, t, l + W, t + H)).convert("RGBA")
+    over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(over)
+    ink, cream, rose = (20, 14, 12, 255), (255, 244, 234, 255), (227, 181, 164, 255)
+    # 가운데 띠: 위아래로 옅어지는 어두운 바탕 위에 큰 질문 + 작품 제목
+    top_y, bot_y = 620, 1240
+    for y in range(top_y - 120, bot_y + 120):
+        a = 150 if top_y <= y <= bot_y else int(150 * (1 - min(abs(y - top_y), abs(y - bot_y)) / 120))
+        d.line([(0, y), (W, y)], fill=(16, 12, 10, a))
+    hook = (trl.get("hook_line") or plan.get("title_ja", "")).strip()
+    f_hook, lines = None, [hook]
+    for size in (112, 100, 90, 80, 72):
+        f_hook = jp_font(JP_SANS_BOLD, size)
+        lines = phrase_wrap(d, hook, f_hook, W - 140)
+        if len(lines) <= 3:
+            break
+    lh = int(f_hook.size * 1.25)
+    y = top_y + 60
+    d.text((W // 2, y), "朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 44), fill=rose, anchor="ma")
+    y += 90
+    for ln in lines[:3]:
+        d.text((W // 2, y), ln, font=f_hook, fill=cream, anchor="ma", stroke_width=5, stroke_fill=ink)
+        y += lh
+    y += 24
+    d.text((W // 2, y), f"『{plan.get('title_ja', '')}』", font=jp_font(JP_SERIF_BOLD, 54), fill=rose, anchor="ma",
+           stroke_width=3, stroke_fill=ink)
+    d.text((W // 2, H - 150), "SceneStory", font=jp_font(JP_SERIF_BOLD, 40), fill=rose, anchor="ma",
+           stroke_width=3, stroke_fill=ink)
+    out = pf(state, "trailer", "cover_1080x1920.jpg")
+    Image.alpha_composite(im, over).convert("RGB").save(out, "JPEG", quality=92)
+    trl["cover"] = {"local": out, "r2_key": keep(keys, state, out, "trailer_cover.jpg", "image/jpeg")}
 
 
 def _pack(state, keys):

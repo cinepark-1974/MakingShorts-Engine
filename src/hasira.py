@@ -462,13 +462,13 @@ def track_prompt(state: dict, track: dict, seconds: int) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # ② 그림 (16:9)
 # ─────────────────────────────────────────────────────────────────────────────
-def generate_image(replicate_token: str, prompt: str) -> str:
-    """Replicate flux-dev 16:9 → URL (1시간 뒤 삭제되므로 바로 내려받아 보관할 것)."""
+def generate_image(replicate_token: str, prompt: str, aspect: str = "16:9") -> str:
+    """Replicate flux-dev (기본 16:9) → URL (1시간 뒤 삭제되므로 바로 내려받아 보관할 것)."""
     from src import image_replicate as ir
     os.environ["REPLICATE_API_TOKEN"] = replicate_token
-    inputs = {"prompt": prompt, "aspect_ratio": "16:9", "num_inference_steps": 28, "guidance": 3.5,
+    inputs = {"prompt": prompt, "aspect_ratio": aspect, "num_inference_steps": 28, "guidance": 3.5,
               "output_format": "jpg", "output_quality": 95, "num_outputs": 1}
-    return ir._to_url(ir._run_prediction(ir.FLUX_DEV_MODEL, inputs, ir.TIMEOUT_DEV, "[hasira/flux-dev 16:9]"))
+    return ir._to_url(ir._run_prediction(ir.FLUX_DEV_MODEL, inputs, ir.TIMEOUT_DEV, f"[flux-dev {aspect}]"))
 
 
 def save_image(keys: dict, state: dict, src: str, source: str) -> dict:
