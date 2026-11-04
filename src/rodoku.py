@@ -355,6 +355,47 @@ def _card_png(out: str, big: str, small: str = "", W: int = 1920, H: int = 1080)
 
 
 OUTRO_JA = "お聴きくださり、ありがとうございました。また、次のお話で。"   # 짧게 — 등록 안내는 화면 카드 글자로만
+COLD_SYSTEM = """あなたは朗読ドラマの編集者です。本文から、動画の冒頭（タイトルの前）に置く一文を選びます。
+条件: 本文の文をそのまま抜き出す（改変しない）。空白を除いて15〜45字。聴いた人が「なぜ？」と続きを知りたくなる文。
+物語の結末・最後の答えは明かさない。JSONだけを出力: {"line": "抜き出した一文"}"""
+
+
+def pick_cold_open(api_key: str, state: dict) -> str:
+    """콜드 오픈 한 문장 — 반전 장 본문에서 그대로 뽑는다 (본문에 없는 문장이면 버린다)."""
+    plan, chs = state["plan"], state["chapters"]
+    try:
+        tno = int(plan.get("turn_chapter") or 0)
+    except (TypeError, ValueError):
+        tno = 0
+    c = next((x for x in chs if x["no"] == tno), chs[max(len(chs) - 2, 0)])
+    text = c.get("text", "")
+    try:
+        line = (_json_call(api_key, COLD_SYSTEM, f"作品: {plan.get('title_ja')}\n\n[本文]\n{text}", 400).get("line") or "").strip()
+    except Exception as e:
+        print(f"[rodoku] 콜드 오픈 고르기 실패: {e}", flush=True)
+        line = ""
+    if line and re.sub(r"\s", "", line) in re.sub(r"\s", "", text) and 8 <= _n(line) <= 60:
+        return line
+    return ""
+
+
+def _caption_png(out: str, text: str, W: int = 1920, H: int = 1080) -> str:
+    """콜드 오픈 자막 — 아래쪽 1/3 에 낭독 문장."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SERIF_BOLD, phrase_wrap
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    f = jp_font(JP_SERIF_BOLD, 60)
+    lines = phrase_wrap(d, text, f, W - 360)[:2]
+    y0 = H - 120 - len(lines) * 84
+    d.rectangle([0, y0 - 40, W, H], fill=(16, 12, 10, 120))
+    for i, ln in enumerate(lines):
+        d.text((W // 2, y0 + i * 84), ln, font=f, fill=(255, 244, 234, 255), anchor="ma",
+               stroke_width=3, stroke_fill=(20, 14, 12, 255))
+    img.save(out, "PNG")
+    return out
+
+
 OUTRO_CARD = ("ご視聴ありがとうございました", "チャンネル登録で、次のお話が届きます")
 
 
@@ -606,6 +647,12 @@ def _worker(job, state, keys, save_fn, made_titles):
     # ④-2 움직임 — 장마다 6초 움직임 클립 (실패한 장은 Ken Burns 로 대신)
     _make_motion(job, state, keys, save_fn)
 
+    # ④-3 콜드 오픈 문장 (영상 첫머리, 제목 전에 반전 장의 한 문장)
+    if "cold" not in state:
+        _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 고르는 중")
+        state["cold"] = {"text": pick_cold_open(ak, state)}
+        hz._save(save_fn, state)
+
     # ⑤ 목소리
     from src.audio import generate_narration
     voice = keys.get("ELEVENLABS_VOICE_ID_JA") or JA_VOICE_ID
@@ -621,6 +668,19 @@ def _worker(job, state, keys, save_fn, made_titles):
             au.update(local=dest, seconds=round(hz.duration(dest), 2), model=info.get("model", ""),
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
+
+    # ⑤-0 콜드 오픈 낭독
+    cold = state.get("cold") or {}
+    if cold.get("text") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
+        _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 낭독")
+        try:
+            dest = pf(state, "cold.mp3")
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), cold["text"], dest, voice_id=voice, info={})
+            cold.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "cold.mp3", "audio/mpeg"))
+        except Exception as e:
+            cold["error"] = f"{type(e).__name__}: {e}"[:200]
+            print(f"[rodoku] 콜드 오픈 낭독 실패 → 생략: {e}", flush=True)
+        hz._save(save_fn, state)
 
     # ⑤-1 마무리 인사 (구독·댓글 안내) — 실패해도 본편은 만든다
     ou = state.setdefault("outro", {})
@@ -797,11 +857,24 @@ def _render(job, state, keys, save_fn):
                 hz.build_kenburns_loop(c["image"]["local"], lp)
         loops[c["no"]] = lp
     title = state["plan"].get("title_ja", "")
+    t = 0.0
+    cold = state.get("cold") or {}
+    if hz.usable(cold.get("local", "")):   # 콜드 오픈: 반전 장 화면 + 자막 + 낭독 → 그다음 제목
+        try:
+            tno = int(state["plan"].get("turn_chapter") or 0)
+        except (TypeError, ValueError):
+            tno = 0
+        tloop = loops.get(tno) or loops[chs[max(len(chs) - 2, 0)]["no"]]
+        csec = (cold.get("seconds") or hz.duration(cold["local"])) + 1.8
+        segs.append(_outro_clip(tloop, _caption_png(pf(state, "work", "cold.png"), cold["text"]), csec,
+                                pf(state, "work", "seg_cold.mp4")))
+        audio_parts += [("silence", 0.6), ("file", cold["local"]), ("silence", 1.2)]
+        t = csec
     op = _card_clip(loops[1], _card_png(pf(state, "work", "open.png"), title, "SceneStory 朗読ドラマ"),
                     OPEN_CARD_SEC, pf(state, "work", "seg_open.mp4"))
     segs.append(op)
     audio_parts.append(("silence", OPEN_CARD_SEC))
-    t = OPEN_CARD_SEC
+    t += OPEN_CARD_SEC
     kanji = "一二三四五六七八九十"
     for c in chs:
         job["msg"] = f"[8/10] 합성 · 제{c['no']}장 이어 붙이는 중"
