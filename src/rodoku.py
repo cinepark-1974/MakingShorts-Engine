@@ -354,6 +354,23 @@ def _card_png(out: str, big: str, small: str = "", W: int = 1920, H: int = 1080)
     return out
 
 
+OUTRO_JA = ("最後までお聴きくださり、ありがとうございました。"
+            "このお話で、思い出したことや心に残ったことがあれば、コメントでそっと聞かせてください。"
+            "SceneStoryでは、これからも新しい朗読ドラマをお届けします。"
+            "チャンネル登録をしておくと、次のお話が届きます。")
+OUTRO_CARD = ("ご視聴ありがとうございました", "チャンネル登録で、次のお話が届きます")
+
+
+def _outro_clip(loop: str, png: str, sec: float, out: str) -> str:
+    """마지막 장 루프를 sec 초 반복 + 마무리 카드 (본편과 같은 인코딩 규격)."""
+    fc = ("[0:v]setpts=PTS-STARTPTS[b];[1:v]format=rgba,fade=t=in:st=0:d=0.8:alpha=1[o];"
+          "[b][o]overlay=0:0,format=yuv420p[v]")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", loop, "-loop", "1", "-framerate",
+                    str(hz.FPS), "-t", f"{sec}", "-i", png, "-filter_complex", fc, "-map", "[v]", *hz.X264,
+                    "-crf", "20", "-an", "-t", f"{sec}", out], check=True, timeout=600)
+    return out
+
+
 def _card_clip(loop: str, png: str, sec: float, out: str) -> str:
     """루프 영상의 끝 부분(sec 초) + 카드 글자 → 같은 인코딩 규격의 짧은 클립.
     루프 끝에서 잘라 오므로, 뒤에 붙는 본문(루프 처음부터)과 화면이 끊김 없이 이어진다."""
@@ -413,7 +430,9 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（60〜70代
 {"title": "【朗読ドラマ】で始め、作品タイトルと検索語を自然に入れる（60字以内。例：【朗読ドラマ】閉店の日の豆腐屋｜最後の常連客｜人生の後半）。末尾の言葉は物語の題材に合わせる",
  "description": "3〜5行。あらすじの入口（結末は書かない）、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。",
  "tags": ["検索語・ジャンル語 12〜15個"],
- "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個]}
+ "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個],
+ "pinned_comment": "本編に固定するコメント。2〜3行。物語の小道具や場面に触れ、視聴者が自分の思い出を書きたくなる問いかけで終える（例：あなたにも、ずっと渡せずにいる物はありますか。）。押しつけがましい登録のお願いは書かない",
+ "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編「作品タイトル」はチャンネルの動画一覧からどうぞ』"}
 誇張・扇情的な表現、性的な言葉は使わない。"""
 
 UPLOAD_SETTINGS = [
@@ -422,7 +441,8 @@ UPLOAD_SETTINGS = [
     ("동영상 언어", "일본어"),
     ("변경되거나 합성된 콘텐츠", "AI 음성·AI 그림이 들어가므로 '예'"),
     ("예약", "본편 금요일 21:00 JST · 예고 쇼츠는 본편 하루 전"),
-    ("예고 쇼츠", "설명란·고정 댓글에 본편 링크, '관련 동영상'에 본편 연결"),
+    ("예고 쇼츠", "설명란·고정 댓글에 본편 제목, '관련 동영상'이 열리면 본편 연결"),
+    ("고정 댓글", "본편·쇼츠 모두 위 '고정 댓글'을 직접 달고 고정 (질문형 → 시청자 댓글 유도)"),
 ]
 
 
@@ -605,6 +625,19 @@ def _worker(job, state, keys, save_fn, made_titles):
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
 
+    # ⑤-1 마무리 인사 (구독·댓글 안내) — 실패해도 본편은 만든다
+    ou = state.setdefault("outro", {})
+    if not hz.ensure_local(keys, ou, pf(state, "outro.mp3")) and not ou.get("error"):
+        _stage(job, state, save_fn, "voice", 5, "마무리 인사")
+        try:
+            dest = pf(state, "outro.mp3")
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), OUTRO_JA, dest, voice_id=voice, info={})
+            ou.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "outro.mp3", "audio/mpeg"))
+        except Exception as e:
+            ou["error"] = f"{type(e).__name__}: {e}"[:200]
+            print(f"[rodoku] 마무리 인사 실패 → 생략: {e}", flush=True)
+        hz._save(save_fn, state)
+
     # ⑤-2 배경음악 — 편마다 이야기에 맞춰 새로 2곡 (반전 전 / 반전 후)
     _make_music(job, state, keys, save_fn)
 
@@ -786,6 +819,16 @@ def _render(job, state, keys, save_fn):
         audio_parts.append(("file", c["audio"]["local"]))
         audio_parts.append(("silence", CHAPTER_PAD_SEC))
         t += max(seg_len, TITLE_CARD_SEC + 0.5)
+    ou = state.get("outro") or {}
+    if hz.usable(ou.get("local", "")):
+        osec = (ou.get("seconds") or hz.duration(ou["local"])) + 2.5
+        card = _card_png(pf(state, "work", "outro.png"), OUTRO_CARD[0], OUTRO_CARD[1])
+        segs.append(_outro_clip(loops[chs[-1]["no"]], card, osec, pf(state, "work", "seg_outro.mp4")))
+        marks.append((t, "おわりに"))
+        audio_parts.append(("silence", 0.8))
+        audio_parts.append(("file", ou["local"]))
+        audio_parts.append(("silence", 1.7))
+        t += osec
     total = t
     lst = pf(state, "work", "list.txt")
     with open(lst, "w", encoding="utf-8") as f:
@@ -879,7 +922,7 @@ def _trailer(job, state, keys):
            stroke_width=3, stroke_fill=(20, 14, 12, 255))
     d.text((540, 230), pick.get("hook_line") or state["plan"].get("title_ja", ""), font=jp_font(JP_SANS_BOLD, 76),
            fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
-    d.text((540, 1780), "続きは本編で", font=jp_font(JP_SANS_BOLD, 48), fill=(227, 181, 164, 255), anchor="ma",
+    d.text((540, 1780), "続きは本編で ▶ チャンネルの動画一覧へ", font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=4, stroke_fill=(20, 14, 12, 255))
     im.save(top)
     caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
@@ -992,6 +1035,11 @@ def _pack(state, keys):
     if hts:
         body += "\n\n" + " ".join(hts)
     pack["full_description"] = body
+    pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
+    pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』はチャンネルの動画一覧からどうぞ。")
+    trl = state.get("trailer") or {}
+    pack["shorts_description"] = (f"{trl.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
+                                  f"（{hz.fmt_time(fin['seconds'], True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
     tags = [str(t).strip().lstrip("#") for t in pack.get("tags") or [] if str(t).strip()]
     while tags and len(",".join(tags)) > 480:
         tags.pop()

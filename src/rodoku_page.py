@@ -240,8 +240,17 @@ def render_project(st, manager, api_keys, show_banner):
             st.code(pack.get("full_description", ""), language=None)
             st.markdown("태그")
             st.code(", ".join(pack.get("tags", [])), language=None)
+            if pack.get("pinned_comment"):
+                st.markdown("본편 고정 댓글")
+                st.code(pack["pinned_comment"], language=None)
             if trl.get("shorts_title"):
                 st.markdown("예고 쇼츠 제목")
                 st.code(trl["shorts_title"], language=None)
+            if pack.get("shorts_description"):
+                st.markdown("예고 쇼츠 설명")
+                st.code(pack["shorts_description"], language=None)
+            if pack.get("shorts_comment"):
+                st.markdown("예고 쇼츠 고정 댓글")
+                st.code(pack["shorts_comment"], language=None)
             for k, v in R.UPLOAD_SETTINGS:
                 st.caption(f"{k} · {v}")

@@ -545,13 +545,15 @@ def make_thumbnail(keys: dict, state: dict, big: str, small: str, brand: str = "
     lines = lines[:2]
     lh = int(f_big.size * 1.22)
     f_small = _latin_font(600, 34)
+    if small and not small.isascii():      # 일본어가 섞이면 라틴 글꼴(Cormorant)로는 □ 로 깨진다
+        f_small = jp_font(JP_SERIF_BOLD, 32)
     f_brand = _latin_font(700, 36)
     block = (lh * len(lines)) + 70
     band_top = H - block - 70
     d.rectangle([0, band_top, W, H], fill=THUMB_BROWN + (165,))
     y = band_top + 30
     if small:
-        d.text((m, y), small.upper(), font=f_small, fill=THUMB_ROSE)
+        d.text((m, y), small.upper() if small.isascii() else small, font=f_small, fill=THUMB_ROSE)
         y += 52
     for i, ln in enumerate(lines):
         d.text((m, y + i * lh), ln, font=f_big, fill=THUMB_CREAM, stroke_width=2, stroke_fill=THUMB_BROWN + (255,))
