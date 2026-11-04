@@ -568,10 +568,22 @@ def _worker(job, state, keys, save_fn, made_titles):
                 body += (f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. "
                          "Her face is visible.")
             prompt = ART_PREFIX + " " + body + ART_SUFFIX
-            url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
             dest = pf(state, f"ch{c['no']:02d}.jpg")
-            hz._download(url, dest)
-            img.update(local=dest, r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.jpg", "image/jpeg"))
+            tries = []
+            for attempt in range(MAX_IMAGE_TRIES):   # 검수에서 떨어지면 다시 그린다 (최대 3장)
+                if attempt:
+                    _stage(job, state, save_fn, "images", 3, f"제{c['no']}장 그림 다시 그리는 중 ({attempt + 1}번째)")
+                url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
+                cand = pf(state, f"ch{c['no']:02d}_try{attempt + 1}.jpg")
+                hz._download(url, cand)
+                rv = inspect_image(ak, cand, c, plan)
+                tries.append((cand, rv))
+                if rv.get("ok"):
+                    break
+            best = min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))
+            shutil.copyfile(best[0], dest)
+            img.update(local=dest, review=best[1], tries=len(tries),
+                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.jpg", "image/jpeg"))
             hz._save(save_fn, state)
 
     # ④-2 움직임 — 장마다 6초 움직임 클립 (실패한 장은 Ken Burns 로 대신)
@@ -694,6 +706,36 @@ def build_anime_loop(raw: str, out: str) -> str:
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-filter_complex", vf, "-map", "[v]",
                     *hz.X264, "-crf", "20", "-an", "-movflags", "+faststart", out], check=True, timeout=900)
     return out
+
+
+MAX_IMAGE_TRIES = 3
+INSPECT_SYSTEM = """You are the quality checker for illustrations in a Japanese narrated drama on YouTube.
+Look at the image and check ONLY these hard defects:
+1. anatomy: extra or missing arms, legs, fingers or eyes; fused or melted hands; a twisted or broken face
+2. text: readable or garbled letters, numbers or signboard writing anywhere in the image
+3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
+4. elderly faces: an elderly person's face is clearly shown from the front (they must be from behind or in silhouette)
+Small stylistic differences are fine. Output JSON only: {"ok": true or false, "problems": ["short English description", ...]}"""
+
+
+def inspect_image(api_key: str, path: str, ch: dict, plan: dict) -> dict:
+    """Claude 가 그림을 보고 팔·손가락·눈 개수, 글자, 장면 불일치를 검사. 검사를 못 하면 통과로 본다."""
+    import base64
+    from src.prompts import SCRIPT_MODEL, _text_of, _extract_json
+    try:
+        with open(path, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
+        scene = ch.get("image_prompt", "")
+        resp = _claude(api_key).messages.create(
+            model=SCRIPT_MODEL, max_tokens=400, system=INSPECT_SYSTEM,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}},
+                {"type": "text", "text": f"Scene description: {scene}\nJSON only."}]}])
+        rv = _extract_json(_text_of(resp))
+        return {"ok": bool(rv.get("ok")), "problems": [str(p)[:120] for p in (rv.get("problems") or [])][:5]}
+    except Exception as e:
+        print(f"[rodoku] 그림 검수 실패 → 통과 처리: {e}", flush=True)
+        return {"ok": True, "problems": [], "skipped": True}
 
 
 def _render(job, state, keys, save_fn):

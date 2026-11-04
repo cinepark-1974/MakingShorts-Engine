@@ -163,6 +163,11 @@ def render_project(st, manager, api_keys, show_banner):
                     img = hz.ensure_local(api_keys, c.get("image") or {}, R.pf(state, f"ch{c['no']:02d}.jpg")) if c.get("image") else ""
                     if img:
                         st.image(img, use_container_width=True)
+                        rv = (c.get("image") or {}).get("review") or {}
+                        if rv.get("problems"):
+                            st.caption(f"그림 검수 ({c['image'].get('tries', 1)}장 중 가장 나은 것) · 남은 문제: " + " / ".join(rv["problems"]))
+                        elif rv:
+                            st.caption(f"그림 검수 통과 · {c['image'].get('tries', 1)}장째" + (" (검수 건너뜀)" if rv.get("skipped") else ""))
                     mo = c.get("motion") or {}
                     if mo.get("error"):
                         st.caption(f"움직임 실패 → Ken Burns 로 대신: {mo['error'][:150]}")
