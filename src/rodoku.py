@@ -212,6 +212,8 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - 毎回、20代の若い女性（young_woman）をひとり物語に入れる。視聴者が「若い頃の自分」か「自分の娘・孫」を重ねて見る人物。
   作品ごとに別人で、立場も最近の作品と重ねない（孫娘・娘・回想の若い主人公・近所の大学生・店のアルバイト・旅先の若い車掌など）。
   名前・髪型・服もその作品だけのものにする。主人公の人生を動かすきっかけになる役にし、飾りにしない。
+- image_prompt の光は場面に合わせてひとつに決めて書く。屋外なら「濃いコバルトブルーの空、金色に縁取られた入道雲、水や濡れた地面に映る空」、
+  室内なら「窓から差し込む光の筋、光の中に舞う細かな塵、床に落ちる窓枠の影」。室内の絵に空や湖を入れない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
@@ -420,10 +422,9 @@ UPLOAD_SETTINGS = [
 # ── 그림체: 단순하고 따뜻한 손그림 인물 + 빛나는 정밀 배경(하늘·구름·빛·반사) + 장마다 단 하나의 주홍색 (채널 표식) ──
 ART_PREFIX = (
     "Japanese hand-drawn animation film still. Simple, warm, rounded character design with clean thin outlines "
-    "and flat cel shading, set in a hyper-detailed luminous painted background: saturated deep cobalt-blue sky, "
-    "towering cumulus clouds with glowing golden rims, sunbeams through leaves, soft lens flare, tiny drifting "
-    "light particles, mirror-like reflections on still water or wet ground, lived-in nostalgic Showa-era Japan "
-    "details, wide cinematic 16:9 composition."
+    "and flat cel shading, set in a hyper-detailed luminous painted background with glowing light, golden "
+    "highlights, soft lens flare and tiny drifting light particles, lived-in nostalgic Showa-era Japan details, "
+    "wide cinematic 16:9 composition."
 )
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
