@@ -215,7 +215,9 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - young_woman は「昭和の記憶が残る町に立つ、いまの2020年代の若い女性」。古い町並みの中で彼女だけが今の時代の色を持つ対比を絵の見どころにする。
   look_en には次を必ず確定的に入れる（回想の若い主人公の役なら、その時代の髪型と服にする）:
   ① いまの日本の髪型をひとつ（例: wolf-cut bob with a hidden inner-color layer / hime-cut with blunt side locks /
-     asymmetric bob tucked behind one ear / half-up bun with loose strands / one thin side braid in a long bob / micro bangs with a short bob）。
+     asymmetric bob tucked behind one ear / half-up bun with loose strands / one thin side braid in a long bob / micro bangs with a short bob /
+     loose messy updo bun with long side-swept bangs, wispy face-framing strands and a small fresh flower pinned above one ear）。
+     髪型に合う顔立ちも一文で決める（例: 無造作なお団子＋流した前髪なら soft oval face with a gently tapered chin, calm almond-shaped eyes, straight soft brows）。
      最近の作品と同じ髪型にしない。
   ② 小さな今の持ち物か装身具をひとつ（例: vintage film camera, silver ear cuff, wireless earbuds, sketchbook, bicycle helmet on her arm）
   ③ 服と色（赤・朱色の服や小物は使わない。赤は red_accent だけ）
