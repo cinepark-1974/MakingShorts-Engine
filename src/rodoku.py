@@ -1125,17 +1125,31 @@ def _shorts_cover(state, keys, slot: int = 0):
 
 def _pack(state, keys):
     plan, fin = state["plan"], state["final"]
-    # 섬네일 (HASIRA 섬네일 함수 재사용 · 1장 그림)
-    proxy = {"project_id": state["project_id"], "project_dir": state["project_dir"],
-             "image": next((c["image"] for c in state["chapters"] if c.get("with_young") and (c.get("image") or {}).get("local")),
-                           state["chapters"][0]["image"]), "thumbnail": {}}
+    # 섬네일 3종 (YouTube '테스트 및 비교'용) — 그림과 문구를 서로 다르게
+    chs = state["chapters"]
     try:
-        hz.make_thumbnail(keys, proxy, plan.get("title_ja", ""), "SCENESTORY · 朗読ドラマ", brand="SceneStory")
-        th = proxy["thumbnail"]
-        state["thumbnail"] = {"local": th.get("local", ""), "r2_key": keep(keys, state, th.get("local", ""),
-                                                                           "thumbnail.jpg", "image/jpeg")}
-    except Exception as e:
-        state["thumbnail"] = {"error": str(e)[:200]}
+        tno = int(plan.get("turn_chapter") or 0)
+    except (TypeError, ValueError):
+        tno = 0
+    young = next((c for c in chs if c.get("with_young") and (c.get("image") or {}).get("local")), chs[0])
+    turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
+    hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
+    variants = [("A", young, plan.get("title_ja", ""), "젊은 여성 장면 + 제목"),
+                ("B", turn, plan.get("title_ja", ""), "반전 장면 + 제목"),
+                ("C", chs[0] if chs[0] is not young else turn, hook, "다른 장면 + 질문 문구")]
+    thumbs = []
+    for tag, c, big, label in variants:
+        proxy = {"project_id": state["project_id"], "project_dir": state["project_dir"], "image": c["image"], "thumbnail": {}}
+        try:
+            hz.make_thumbnail(keys, proxy, big, "SCENESTORY · 朗読ドラマ", brand="SceneStory")
+            dst = pf(state, f"thumbnail_{tag}.jpg")
+            shutil.copyfile(proxy["thumbnail"]["local"], dst)
+            thumbs.append({"tag": tag, "label": label, "local": dst,
+                           "r2_key": keep(keys, state, dst, f"thumbnail_{tag}.jpg", "image/jpeg")})
+        except Exception as e:
+            thumbs.append({"tag": tag, "label": label, "error": str(e)[:200]})
+    state["thumbnails"] = thumbs
+    state["thumbnail"] = next((t for t in thumbs if t.get("local")), {"error": "섬네일을 만들지 못했습니다"})
     pack = {"title": f"【朗読ドラマ】{plan.get('title_ja', '')}｜{plan.get('kind') or '人生の後半'}",
             "description": plan.get("logline_ja", ""),
             "tags": plan.get("seo_keywords") or [], "hashtags": ["#朗読", "#朗読ドラマ", "#人生の後半"]}

@@ -288,10 +288,21 @@ def render_project(st, manager, api_keys, show_banner):
         with st.container(border=True):
             st.markdown(f"**본편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB · {fin.get('made_at', '')}")
             _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4", out_name(state, "main", "mp4"))
-            th = state.get("thumbnail") or {}
-            if hz.usable(th.get("local", "")):
-                st.image(th["local"], caption="섬네일 1280×720", use_container_width=True)
-                _dl(st, api_keys, th, "⬇ 섬네일 내려받기", "rd_th", "image/jpeg", out_name(state, "thumbnail", "jpg"))
+            thumbs = state.get("thumbnails") or ([state["thumbnail"]] if (state.get("thumbnail") or {}).get("local") else [])
+            if thumbs:
+                st.caption("섬네일 3종 — YouTube 스튜디오(PC) → 동영상 세부정보 → 미리보기 이미지 → '테스트 및 비교'에 셋 다 올리면 "
+                           "YouTube 가 더 많이 눌리는 쪽을 골라 줍니다.")
+                cols = st.columns(len(thumbs))
+                for col, t in zip(cols, thumbs):
+                    with col:
+                        tl = hz.ensure_local(api_keys, t, t.get("local") or R.pf(state, f"thumbnail_{t.get('tag', 'A')}.jpg")) \
+                            if (t.get("local") or t.get("r2_key")) else ""
+                        if tl:
+                            st.image(tl, caption=f"{t.get('tag', '')} · {t.get('label', '')}", use_container_width=True)
+                            _dl(st, api_keys, t, f"⬇ {t.get('tag', '')}", f"rd_th{t.get('tag', '')}", "image/jpeg",
+                                out_name(state, f"thumbnail-{t.get('tag', 'A')}", "jpg"))
+                        elif t.get("error"):
+                            st.caption(f"{t.get('tag', '')} 실패: {t['error'][:100]}")
 
     shorts = [state.get("trailer") or {}] + list(state.get("trailers") or [])
     for k, it in enumerate(shorts):
