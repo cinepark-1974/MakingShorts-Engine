@@ -43,6 +43,47 @@ SEEDS_JA = [
 _BLOCK_JA = ["歌", "曲", "カラオケ", "mv", "ドラマ 無料", "アニメ", "漫画", "ゲーム", "占い", "アプリ",
              "マッチング", "婚活", "出会い", "風俗", "エロ", "av", "ニュース", "芸能", "炎上"]
 
+# 이야기의 '종류' — 편마다 최근 6편에 안 쓴 종류 하나를 엔진이 먼저 고르고, 그 종류의 검색어로 트렌드를 조회한다.
+# (예전에는 씨앗 검색어가 '첫사랑·재회·동창회' 쪽으로 쏠려 '40년 만의 편지' 이야기가 반복됐다)
+STORY_KINDS = [
+    ("夫婦の秘密", "長年連れ添った夫婦。どちらかが何十年も言わずにきた小さな秘密が、ある日の出来事で表に出る",
+     ["夫婦 秘密", "妻に言えない", "夫に言えない"]),
+    ("定年後の再出発", "定年や引退のあと、新しい仕事・習い事・役目を始めた人が、そこで思いがけない人と関わる",
+     ["定年後 生きがい", "定年後 夫婦", "シニア 習い事"]),
+    ("遺品整理", "亡くなった家族の部屋を片付けていて、知らなかった一面を示す物が出てくる",
+     ["遺品整理 思い出", "形見 泣ける"]),
+    ("嫁と姑", "嫁と姑、義理の親子。長い確執か遠慮が、ひとつの出来事で崩れる",
+     ["嫁姑 和解", "義母 本音"]),
+    ("孫との一日", "祖父母と孫が二人きりで過ごす一日。孫の一言が祖父母の人生の何かを動かす",
+     ["祖母と孫 泣ける", "孫 一日"]),
+    ("隣人", "団地・アパート・町内の隣人。毎日顔を合わせるのに知らなかった事情を、ある夜に知る",
+     ["団地 隣人", "ご近所付き合い 高齢"]),
+    ("店じまい", "商店街の小さな店を閉める最後の一週間。常連と店主のあいだで起きること",
+     ["閉店 最後の日", "商店街 昭和"]),
+    ("旅先の出会い", "一人旅・湯治場・夜行バス・フェリーで出会った見知らぬ人と過ごす短い時間",
+     ["一人旅 シニア", "湯治 旅"]),
+    ("熟年離婚・卒婚", "長い結婚生活の終わりを決めた夫婦の、最後の数日",
+     ["熟年離婚 その後", "卒婚"]),
+    ("介護の日々", "夫・妻・親を介護する日々の中で、相手の思いがけない言葉や行動に出会う",
+     ["老老介護", "介護 夫婦 泣ける"]),
+    ("昔の仲間", "還暦や定年で集まった昔の仲間（部活・職場・バンド）。ひとりが隠していた事情が明るみに出る",
+     ["還暦 仲間", "昔の仲間 定年"]),
+    ("味の記憶", "亡き人の料理、なくなった定食屋の味。その味を再現しようとする人の話",
+     ["母の味 レシピ", "定食屋 昭和"]),
+    ("新しい恋", "伴侶を亡くした人や独り身の人が、いま目の前の人に惹かれる。過去の恋ではなく今の恋",
+     ["シニア恋愛", "70代 恋", "未亡人 恋"]),
+    ("初恋・再会", "昔の恋人や初恋の人との再会",
+     ["初恋 再会", "同窓会 再会"]),
+    ("動物との暮らし", "老いた犬や猫、迷い込んだ動物が、ひとり暮らしの人の毎日を変える",
+     ["老犬 介護", "猫 ひとり暮らし 高齢"]),
+    ("小さな嘘", "小さな嘘や勘違いが転がって大事になる、くすっと笑えて最後に温かい話",
+     ["夫婦 勘違い 笑える", "小さな嘘"]),
+    ("故郷じまい", "実家じまい・墓じまいで久しぶりに帰った故郷で起きること",
+     ["実家じまい", "墓じまい 故郷"]),
+]
+KIND_NAMES = [k for k, _, _ in STORY_KINDS]
+GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "老後 生き方"]
+
 STAGES = [("trend", "트렌드 조회"), ("plan", "소재·설계"), ("write", "집필"), ("images", "그림"),
           ("motion", "움직임"), ("voice", "목소리"), ("music", "배경음악"), ("render", "합성"), ("trailer", "예고편"),
           ("pack", "섬네일·업로드 정보")]
@@ -92,12 +133,27 @@ def _n(t: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 # ① 트렌드
 # ─────────────────────────────────────────────────────────────────────────────
-def collect_trends(n_seeds: int = 8, salt: float = 0.0) -> dict:
+def pick_kind(recent_kinds: list, salt: float = 0.0) -> str:
+    """최근 6편에 안 쓴 종류 중 하나. 다 썼으면 가장 오래전에 쓴 것."""
+    import random
+    rnd = random.Random(salt or time.time())
+    recent = [k for k in recent_kinds if k in KIND_NAMES][:6]
+    fresh = [k for k in KIND_NAMES if k not in recent]
+    if fresh:
+        return rnd.choice(fresh)
+    return recent[-1]
+
+
+def collect_trends(n_seeds: int = 8, salt: float = 0.0, kind: str = "") -> dict:
     import random
     from concurrent.futures import ThreadPoolExecutor
     from src.seo_keywords import _autocomplete
     rnd = random.Random(salt or time.time())
-    seeds = rnd.sample(SEEDS_JA, min(n_seeds, len(SEEDS_JA)))
+    kseeds = next((sd for k, _, sd in STORY_KINDS if k == kind), [])
+    if kseeds:
+        seeds = kseeds + rnd.sample(GENERAL_SEEDS_JA, 2)
+    else:
+        seeds = rnd.sample(SEEDS_JA, min(n_seeds, len(SEEDS_JA)))
     with ThreadPoolExecutor(max_workers=8) as ex:
         res = list(ex.map(lambda s: _autocomplete(s, count=10, hl="ja", gl="JP"), seeds))
     seen, out = set(), []
@@ -107,7 +163,7 @@ def collect_trends(n_seeds: int = 8, salt: float = 0.0) -> dict:
             continue
         seen.add(k)
         out.append(q.strip())
-    return {"seeds": seeds, "queries": out[:40], "at": time.strftime("%Y-%m-%d %H:%M")}
+    return {"seeds": seeds, "queries": out[:40], "kind": kind, "at": time.strftime("%Y-%m-%d %H:%M")}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,9 +174,10 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 以下のJSONだけを出力してください（説明文・コードブロック記号は禁止）。
 
 {
+  "kind": "指定された題材の型（そのまま書く）",
   "picked_query": "選んだ検索語（リストの文言そのまま）",
   "why_ko": "그 검색어를 고른 이유 (한국어 한두 문장)",
-  "title_ja": "作品タイトル（12字以内、物・場所・時間が見える言葉。例：同窓会の帰り道）",
+  "title_ja": "作品タイトル（12字以内、物・場所・時間が見える言葉。例：閉店の日の豆腐屋、隣の部屋の朝顔、二人分の湯たんぽ）",
   "title_ko": "제목의 한국어 뜻",
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
@@ -144,8 +201,13 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 
 設計ルール
 - 主人公は60〜75歳。舞台は日本（昭和の記憶が残る町・駅・喫茶店・団地・温泉など）。実在の有名人・作品名は使わない。
-- 不倫・初恋・再会・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
-- 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：はがき、指輪の跡、喫茶店の伝票、古いラジオ）。
+- 題材は指定された「題材の型」に必ず従う。検索語はその型の中で視聴者が何を気にしているかを知る手がかりにする。
+- 『〜年ぶり』『〜年越し』『〜年後』のような長い年月の隔たりを売りにするのは「初恋・再会」の型のときだけ。
+  それ以外の型では物語の大半を「いま」の数日間で起こし、過去は回想として少しだけにする。
+- 手紙・はがき・ノート・日記・写真は、直近の作品で使っていなければ小道具にしてよい（使用禁止リストに入っていたら使わない）。
+- 「最近の作品」に挙がったタイトルの言葉、小道具、赤いもの、舞台は今回は使わない。
+- 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
+- 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
 - image_prompt は人物の顔を描かない（後ろ姿・手・シルエット・遠景の小さな人物）。文字・看板の文字は入れない。
 - チャンネルの目印：毎章の絵に red_accent の朱色のものを必ずひとつ入れ、それが画面で唯一の鮮やかな赤になる。
@@ -155,11 +217,22 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。"""
 
 
-def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list) -> dict:
-    user = (f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
+def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
+              recent: list = None) -> dict:
+    kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
+    rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
+                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')}" for r in (recent or [])[:8])
+    banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
+    import random
+    hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
+    user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
+            f"主人公（視点人物）の性別: {hero}（視聴者の多くは60〜70代の女性。その人が自分のこととして聴ける人物にする）\n\n"
+            f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
             f"\n\n章の数: ちょうど {n_chapters} 章\n"
-            f"すでに作った作品（重ならないように）: {', '.join(made_titles) or 'なし'}\nJSONのみ出力。")
+            f"最近の作品（タイトル・小道具・赤いもの・舞台を重ねない）:\n{rec or 'なし'}\n"
+            f"使用禁止の小道具・赤いもの: {', '.join(banned) or 'なし'}\n"
+            f"ほかに作った作品: {', '.join(made_titles[:20]) or 'なし'}\nJSONのみ出力。")
     plan = _json_call(api_key, PLAN_SYSTEM, user, max_tokens=6000)
     chs = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)][:n_chapters]
     if len(chs) < 3:
@@ -167,7 +240,31 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list) -
     for i, c in enumerate(chs):
         c["no"] = i + 1
     plan["chapters"] = chs
+    if kind:
+        plan["kind"] = kind
     return plan
+
+
+def recent_plans(keys: dict, skip_pid: str = "") -> list:
+    """R2 에 남은 최근 편들의 설계 요약 (최신순). 서버가 재시작돼도 R2 에서 읽으므로 기록이 끊기지 않는다."""
+    idx = cloud_index(keys)
+    out = []
+    for pid in sorted(idx, reverse=True):
+        if pid == skip_pid or len(out) >= 8:
+            continue
+        try:
+            pl = (cloud_state(keys, pid).get("plan") or {})
+        except Exception:
+            continue
+        if not pl.get("title_ja"):
+            continue
+        kind = pl.get("kind", "")
+        if not kind and re.search(r"年ぶり|年越し|年後|年分|再会|初恋|同窓会", pl.get("title_ja", "") + pl.get("logline_ja", "")):
+            kind = "初恋・再会"   # 종류 기록이 생기기 전 편들은 거의 이 종류였다
+        out.append({"title": pl.get("title_ja", ""), "kind": kind,
+                    "object": (pl.get("setting") or {}).get("object", ""), "red": pl.get("red_accent", ""),
+                    "place": (pl.get("setting") or {}).get("place", "")})
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,7 +360,7 @@ def _body_clip(loop: str, start: float, sec: float, out: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です。朗読ドラマ本文から、続きを聴きたくなる一節を選びます。
 本文の連続した文をそのまま抜き出し（改変しない）、空白を除いて120〜180字。結末のネタばらしはしない。
-JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内、#朗読 #シニア恋愛 を含む）"}"""
+JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内、#朗読 と物語の題材に合うハッシュタグ1個を含む。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ）"}"""
 
 
 def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
@@ -293,10 +390,10 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 # ⑧ 업로드 정보
 # ─────────────────────────────────────────────────────────────────────────────
 PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（60〜70代向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
-{"title": "【朗読ドラマ】で始め、作品タイトルと検索語を自然に入れる（60字以内。例：【朗読ドラマ】同窓会の帰り道｜四十五年ぶりの初恋｜シニア恋愛）",
+{"title": "【朗読ドラマ】で始め、作品タイトルと検索語を自然に入れる（60字以内。例：【朗読ドラマ】閉店の日の豆腐屋｜最後の常連客｜人生の後半）。末尾の言葉は物語の題材に合わせる",
  "description": "3〜5行。あらすじの入口（結末は書かない）、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。",
  "tags": ["検索語・ジャンル語 12〜15個"],
- "hashtags": ["#朗読", "#シニア恋愛" など3個]}
+ "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個]}
 誇張・扇情的な表現、性的な言葉は使わない。"""
 
 UPLOAD_SETTINGS = [
@@ -397,19 +494,26 @@ def _worker(job, state, keys, save_fn, made_titles):
     minutes = int(state.get("minutes", DEFAULT_MIN))
     n_ch = LENGTHS.get(minutes, LENGTHS[DEFAULT_MIN])["chapters"]
 
-    # ① 트렌드
+    # ① 이야기 종류 고르기 → 그 종류의 검색어로 트렌드
+    recent = state.get("_recent") if "_recent" in state else None
     if not (state.get("trend") or {}).get("queries"):
         _stage(job, state, save_fn, "trend", 0)
-        tr = collect_trends()
+        recent = recent_plans(keys, state.get("project_id", ""))
+        state["_recent"] = recent
+        kind = pick_kind([r.get("kind", "") for r in recent])
+        tr = collect_trends(kind=kind)
         if not tr["queries"]:
-            tr["queries"] = ["シニア恋愛 朗読", "初恋 再会", "熟年 恋愛", "同窓会 再会"]
+            tr["queries"] = next((sd for k, _, sd in STORY_KINDS if k == kind), ["シニア 朗読"])
             tr["fallback"] = True
         state["trend"] = tr
 
     # ② 설계
     if not (state.get("plan") or {}).get("chapters"):
         _stage(job, state, save_fn, "plan", 1, "검색어에서 소재를 고르는 중")
-        plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles)
+        if recent is None:
+            recent = recent_plans(keys, state.get("project_id", ""))
+        plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
+                         kind=(state.get("trend") or {}).get("kind", ""), recent=recent)
         state["plan"] = plan
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
@@ -726,8 +830,9 @@ def _pack(state, keys):
                                                                            "thumbnail.jpg", "image/jpeg")}
     except Exception as e:
         state["thumbnail"] = {"error": str(e)[:200]}
-    pack = {"title": f"【朗読ドラマ】{plan.get('title_ja', '')}｜シニア恋愛", "description": plan.get("logline_ja", ""),
-            "tags": plan.get("seo_keywords") or [], "hashtags": ["#朗読", "#シニア恋愛", "#朗読ドラマ"]}
+    pack = {"title": f"【朗読ドラマ】{plan.get('title_ja', '')}｜{plan.get('kind') or '人生の後半'}",
+            "description": plan.get("logline_ja", ""),
+            "tags": plan.get("seo_keywords") or [], "hashtags": ["#朗読", "#朗読ドラマ", "#人生の後半"]}
     try:
         user = (f"作品: {plan.get('title_ja')}\nあらすじ: {plan.get('logline_ja')}\n検索語: {plan.get('picked_query')}\n"
                 f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}")

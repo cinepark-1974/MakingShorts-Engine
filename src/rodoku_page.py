@@ -138,6 +138,8 @@ def render_project(st, manager, api_keys, show_banner):
     if plan:
         with st.container(border=True):
             st.markdown("**소재 · 설계**")
+            if plan.get("kind"):
+                st.markdown(f"이야기 종류 · **{plan['kind']}** (최근 6편과 겹치지 않게 엔진이 고름)")
             st.markdown(f"고른 검색어 · `{plan.get('picked_query', '')}` — {plan.get('why_ko', '')}")
             if tr.get("queries"):
                 st.caption("조회한 검색어 · " + " · ".join(tr["queries"][:20]) + (" (기본 검색어 사용)" if tr.get("fallback") else ""))
