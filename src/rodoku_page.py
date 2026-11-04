@@ -42,6 +42,7 @@ def render_new(st, manager, api_keys):
         st.session_state.current_project = state
         st.rerun()
     _recover(st, manager, api_keys)
+    _comp_new(st, manager, api_keys)
     with st.expander("지금 일본에서 찾는 검색어 미리 보기 (선택)"):
         if st.button("🔎 검색어 조회", key="rd_peek"):
             with st.spinner("일본 YouTube 자동완성 조회 중…"):
@@ -50,6 +51,91 @@ def render_new(st, manager, api_keys):
         if pk:
             st.caption("씨앗: " + ", ".join(pk["seeds"]))
             st.write(" · ".join(pk["queries"]) or "받아온 검색어가 없습니다.")
+
+
+def _comp_new(st, manager, api_keys):
+    """📚 모음편 (약 1시간) — 이미 만든 본편 3~4편을 이어 붙인다."""
+    from src import rodoku_comp as C
+    with st.expander("📚 모음편 만들기 (본편 3~4편 → 약 1시간) · 본편 시청 시간 늘리기"):
+        st.caption("이미 만든 편을 이어 붙여 한 편으로 냅니다. 새로 만드는 비용은 섬네일·업로드 정보뿐입니다. "
+                   "본편 파일이 지워졌으면 R2 의 본편 → R2 의 재료로 다시 합성 → 직접 올린 mp4 순서로 찾습니다.")
+        if st.button("편 목록 불러오기", key="rdc_load"):
+            with st.spinner("서버·R2 에서 완성된 편을 찾는 중…"):
+                st.session_state["_rdc_eps"] = C.episodes(manager, api_keys)
+        eps = st.session_state.get("_rdc_eps")
+        if eps is None:
+            return
+        if not eps:
+            st.info("완성된 朗読ドラマ 편을 찾지 못했습니다.")
+            return
+        ups = st.session_state.setdefault("_rdc_uploads", {})
+        picked = []
+        for ep in eps:
+            pid = ep["project_id"]
+            plan = ep.get("plan") or {}
+            src = C.source_of(api_keys, ep, ups)
+            c1, c2 = st.columns([3, 2])
+            on = c1.checkbox(f"{plan.get('title_ja', pid)} · {hz.fmt_time((ep.get('final') or {}).get('seconds', 0), True)}",
+                             key=f"rdc_pick_{pid}", value=False)
+            c2.caption(("✅ " if src != "none" else "⚠️ ") + C.SOURCE_LABEL[src])
+            if src == "none":
+                up = st.file_uploader(f"『{plan.get('title_ja', pid)}』 본편 mp4 올리기", type=["mp4"], key=f"rdc_up_{pid}")
+                if up is not None:
+                    d = os.path.join("projects", "_uploads")
+                    os.makedirs(d, exist_ok=True)
+                    path = os.path.join(d, f"{pid}.mp4")
+                    with open(path, "wb") as f:
+                        f.write(up.getbuffer())
+                    ups[pid] = path
+                    st.rerun()
+            if on:
+                picked.append(ep)
+        n_ok = sum(1 for ep in picked if C.source_of(api_keys, ep, ups) != "none")
+        tot = sum((ep.get("final") or {}).get("seconds", 0) for ep in picked)
+        st.caption(f"고른 편 {len(picked)}개 · 사용 가능 {n_ok}개 · 합계 약 {hz.fmt_time(tot, True)} (편마다 제목 카드 5초 추가)")
+        if st.button("📚 모음편 만들기", type="primary", disabled=n_ok < 2, key="rdc_start", use_container_width=True):
+            state = manager.create_new_project(chapter="朗読ドラマ", topic="모음편", channel="scenestory")
+            state.update(mode="rodoku_comp", title="모음편 (만드는 중)", stage="queued", uploads=dict(ups),
+                         comp={"episodes": [{"pid": ep["project_id"], "title": (ep.get("plan") or {}).get("title_ja", ""),
+                                             "state": ep} for ep in sorted(picked, key=lambda s: s["project_id"])]})
+            manager.save_state(state)
+            C.start(state, api_keys, manager.save_state)
+            st.session_state.current_project = state
+            st.rerun()
+
+
+def render_comp_project(st, manager, api_keys, show_banner):
+    from src import rodoku_comp as C
+    show_banner("scenestory")
+    state = st.session_state.current_project
+    pid = state["project_id"]
+    st.markdown(f"### 📚 {state.get('title', '모음편')}")
+    st.caption("수록: " + " / ".join(e["title"] for e in (state.get("comp") or {}).get("episodes", [])))
+    _job_panel(st, state, "top")
+    fin = state.get("final") or {}
+    if not fin.get("seconds") and not hz.is_running(pid):
+        if st.button("▶ 다시 만들기", type="primary", key="rdc_retry"):
+            C.start(state, api_keys, manager.save_state)
+            st.rerun()
+    if fin.get("seconds"):
+        with st.container(border=True):
+            st.markdown(f"**모음편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB")
+            for sk in fin.get("skipped") or []:
+                st.warning("건너뛴 편 · " + sk)
+            _dl(st, api_keys, fin, "⬇ 모음편 내려받기", "rdc_fin", "video/mp4", out_name(state, "compilation", "mp4"))
+            th = state.get("thumbnail") or {}
+            if hz.usable(th.get("local", "")):
+                st.image(th["local"], caption="섬네일 1280×720", use_container_width=True)
+                _dl(st, api_keys, th, "⬇ 섬네일 내려받기", "rdc_th", "image/jpeg", out_name(state, "thumbnail", "jpg"))
+    pack = state.get("upload_pack")
+    if pack:
+        with st.container(border=True):
+            st.markdown("**업로드 정보 (일본어)**")
+            for lab, key in (("제목", "title"), ("설명", "full_description"), ("고정 댓글", "pinned_comment")):
+                st.markdown(lab)
+                st.code(pack.get(key, ""), language=None)
+            st.markdown("태그")
+            st.code(", ".join(pack.get("tags", [])), language=None)
 
 
 def _recover(st, manager, api_keys):

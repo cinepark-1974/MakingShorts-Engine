@@ -829,6 +829,10 @@ def show_channel_banner(ch: str):
 
 
 # SceneStory 朗読ドラマ (자동 제작) 프로젝트는 전용 화면
+if CHANNEL == "scenestory" and (st.session_state.current_project or {}).get("mode") == "rodoku_comp":
+    from src import rodoku_page
+    rodoku_page.render_comp_project(st, manager, api_keys, show_channel_banner)
+    st.stop()
 if CHANNEL == "scenestory" and (st.session_state.current_project or {}).get("mode") == "rodoku":
     from src import rodoku_page
     rodoku_page.render_project(st, manager, api_keys, show_channel_banner)
