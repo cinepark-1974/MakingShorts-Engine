@@ -703,24 +703,35 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "render", 7, "화면 루프 만드는 중")
         _render(job, state, keys, save_fn)
 
-    # ⑦ 예고편
-    if not (state.get("trailer") or {}).get("local"):
-        _stage(job, state, save_fn, "trailer", 8, "예고 쇼츠 만드는 중")
-        try:
-            _trailer(job, state, keys)
-        except Exception as e:
-            state["trailer"] = {"error": f"{type(e).__name__}: {e}"[:300]}
-            print(f"[rodoku] 예고편 실패: {e}", flush=True)
-        hz._save(save_fn, state)
-    trl = state.get("trailer") or {}
-    if trl.get("local") and not hz.ensure_local(keys, trl.get("cover") or {}, pf(state, "trailer", "cover_1080x1920.jpg")):
-        _stage(job, state, save_fn, "trailer", 8, "예고 쇼츠 표지 그리는 중")
-        try:
-            _shorts_cover(state, keys)
-        except Exception as e:
-            trl["cover"] = {"error": f"{type(e).__name__}: {e}"[:300]}
-            print(f"[rodoku] 쇼츠 표지 실패: {e}", flush=True)
-        hz._save(save_fn, state)
+    # ⑦ 예고 쇼츠 3개 (장면을 바꿔서) + 각각 표지
+    for slot in range(N_SHORTS):
+        folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
+        get = (lambda: state.get("trailer") or {}) if slot == 0 else \
+              (lambda: ((state.get("trailers") or []) + [{}, {}, {}])[slot - 1] or {})
+        if not hz.usable(get().get("local", "")) and not get().get("r2_key"):
+            _stage(job, state, save_fn, "trailer", 8, f"예고 쇼츠 {slot + 1}/{N_SHORTS} 만드는 중")
+            try:
+                _trailer(job, state, keys, slot)
+            except Exception as e:
+                err = {"error": f"{type(e).__name__}: {e}"[:300]}
+                if slot == 0:
+                    state["trailer"] = err
+                else:
+                    lst = state.setdefault("trailers", [])
+                    while len(lst) < slot:
+                        lst.append({})
+                    lst[slot - 1] = err
+                print(f"[rodoku] 예고 쇼츠 {slot + 1} 실패: {e}", flush=True)
+            hz._save(save_fn, state)
+        trl = get()
+        if trl.get("local") and not hz.ensure_local(keys, trl.get("cover") or {}, pf(state, folder, "cover_1080x1920.jpg")):
+            _stage(job, state, save_fn, "trailer", 8, f"예고 쇼츠 {slot + 1} 표지 그리는 중")
+            try:
+                _shorts_cover(state, keys, slot)
+            except Exception as e:
+                trl["cover"] = {"error": f"{type(e).__name__}: {e}"[:300]}
+                print(f"[rodoku] 쇼츠 표지 {slot + 1} 실패: {e}", flush=True)
+            hz._save(save_fn, state)
 
     # ⑧ 섬네일·업로드 정보
     _stage(job, state, save_fn, "pack", 9)
@@ -957,23 +968,51 @@ def _render(job, state, keys, save_fn):
     hz._save(save_fn, state)
 
 
-def _trailer(job, state, keys):
+N_SHORTS = 3
+SHORT_ANGLES = [
+    "",   # 1번: 자유 — 続きを聴きたくなる一節
+    "今回は物語の始まりから選ぶ。人物と状況が一瞬で伝わり、この人に何が起きるのかと気になる一節。",
+    "今回は反転の直前から選ぶ。何かが明かされそうで明かされない、緊張がいちばん高い一節。",
+]
+
+
+def _trailer(job, state, keys, slot: int = 0):
+    """예고 쇼츠 slot 번째 (0: state['trailer'], 1·2: state['trailers'][slot-1]). 장면이 겹치지 않게 고른다."""
     from src.audio import generate_narration
     from src import captions as cap
     from src.assembler import render_scene_clip
     chs = state["chapters"]
-    full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in chs[:-1])     # 마지막 장(결말)은 빼고 고른다
+    folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
+    used = [t.get("chapter") for t in [state.get("trailer") or {}] + (state.get("trailers") or []) if t.get("chapter")]
+    pool = chs[:-1]                                                         # 마지막 장(결말)은 빼고 고른다
+    if slot == 1:
+        pool = chs[:2]
+    elif slot == 2:
+        try:
+            tno = int(state["plan"].get("turn_chapter") or 0)
+        except (TypeError, ValueError):
+            tno = 0
+        pool = [c for c in chs if c["no"] == max(tno - 1, 1)] or chs[-3:-1]
+    if slot:
+        pool = [c for c in pool if c["no"] not in used] or pool
+    full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in pool)
+    if SHORT_ANGLES[slot]:
+        full = SHORT_ANGLES[slot] + "\n\n" + full
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), TRAILER_SYSTEM, full, max_tokens=1500)
     excerpt = (pick.get("excerpt") or "").strip()
     if not excerpt:
         raise ValueError("예고 대목을 고르지 못했습니다.")
-    no = int(pick.get("chapter") or 1)
-    c = next((x for x in chs if x["no"] == no), chs[0])
+    try:
+        no = int(pick.get("chapter") or 0)
+    except (TypeError, ValueError):
+        no = 0
+    c = next((x for x in pool if x["no"] == no), next((x for x in pool if excerpt[:20] in x.get("text", "")), pool[0]))
+    no = c["no"]
     voice = keys.get("ELEVENLABS_VOICE_ID_JA") or JA_VOICE_ID
-    au = pf(state, "trailer", "voice.mp3")
+    au = pf(state, folder, "voice.mp3")
     generate_narration(keys.get("ELEVENLABS_API_KEY", ""), excerpt, au, voice_id=voice)
     sec = min(hz.duration(au) + 1.5, 58.0)
-    tmp = pf(state, "trailer", "x").rsplit("/", 1)[0]
+    tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
     vloop = ""
     if raw:
@@ -998,21 +1037,30 @@ def _trailer(job, state, keys):
     caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
     silent = os.path.join(tmp, "v.mp4")
     render_scene_clip(vloop, top, sec, silent, instant=True, captions=caps, punch_in=False)
-    out = pf(state, "trailer", "trailer.mp4")
+    out = pf(state, folder, "trailer.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", silent, "-i", au, "-map", "0:v:0", "-map", "1:a:0",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-t", f"{sec:.2f}",
                     "-movflags", "+faststart", out], check=True, timeout=600)
-    state["trailer"] = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
+    item = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
                         "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
-                        "r2_key": keep(keys, state, out, "trailer.mp4", "video/mp4")}
+                        "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
+    if slot == 0:
+        state["trailer"] = item
+    else:
+        lst = state.setdefault("trailers", [])
+        while len(lst) < slot:
+            lst.append({})
+        lst[slot - 1] = item
 
 
-def _shorts_cover(state, keys):
+def _shorts_cover(state, keys, slot: int = 0):
     """예고 쇼츠 표지 1080×1920 — 영상에서 뽑은 장면이 아니라 표지용 세로 그림을 새로 그려 글자를 얹는다.
     쇼츠 표지는 목록에서 가운데 3:2 정도만 보이므로 글자는 화면 가운데 띠 안에 둔다."""
     from PIL import Image, ImageDraw
     from src.scenestory import jp_font, JP_SERIF_BOLD, JP_SANS_BOLD, phrase_wrap
-    plan, trl = state["plan"], state["trailer"]
+    plan = state["plan"]
+    trl = state["trailer"] if slot == 0 else state["trailers"][slot - 1]
+    folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
     c = next((x for x in state["chapters"] if x["no"] == trl.get("chapter")), state["chapters"][0])
     yw = plan.get("young_woman") or {}
     body = (c.get("image_prompt") or "").strip().rstrip(".") + "."
@@ -1023,11 +1071,11 @@ def _shorts_cover(state, keys):
     prompt = (ART_PREFIX.replace("wide cinematic 16:9 composition", "tall vertical 9:16 poster composition") + " " + body +
               " The main subject sits in the lower half of the frame, the upper-middle area is calm open sky or plain wall." +
               ART_SUFFIX)
-    base = pf(state, "trailer", "cover_base.jpg")
+    base = pf(state, folder, "cover_base.jpg")
     try:
         tries = []
         for attempt in range(2):
-            cand = pf(state, "trailer", f"cover_try{attempt + 1}.jpg")
+            cand = pf(state, folder, f"cover_try{attempt + 1}.jpg")
             hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect="9:16"), cand)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
             tries.append((cand, rv))
@@ -1070,9 +1118,9 @@ def _shorts_cover(state, keys):
            stroke_width=3, stroke_fill=ink)
     d.text((W // 2, H - 150), "SceneStory", font=jp_font(JP_SERIF_BOLD, 40), fill=rose, anchor="ma",
            stroke_width=3, stroke_fill=ink)
-    out = pf(state, "trailer", "cover_1080x1920.jpg")
+    out = pf(state, folder, "cover_1080x1920.jpg")
     Image.alpha_composite(im, over).convert("RGB").save(out, "JPEG", quality=92)
-    trl["cover"] = {"local": out, "r2_key": keep(keys, state, out, "trailer_cover.jpg", "image/jpeg")}
+    trl["cover"] = {"local": out, "r2_key": keep(keys, state, out, f"{folder}_cover.jpg", "image/jpeg")}
 
 
 def _pack(state, keys):
@@ -1108,8 +1156,15 @@ def _pack(state, keys):
     pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』はチャンネルの動画一覧からどうぞ。")
     trl = state.get("trailer") or {}
-    pack["shorts_description"] = (f"{trl.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
-                                  f"（{hz.fmt_time(fin['seconds'], True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
+    for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
+        if not it.get("local") and not it.get("r2_key"):
+            continue
+        it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
+                             f"（{hz.fmt_time(fin['seconds'], True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
+        it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、上の「SceneStory」をタップ →"
+                         f"「動画」からお聴きいただけます。")
+        it["post_day"] = ["본편 공개 당일", "본편 다음 날", "본편 이틀 뒤"][min(k, 2)]
+    pack["shorts_description"] = trl.get("description", "")
     tags = [str(t).strip().lstrip("#") for t in pack.get("tags") or [] if str(t).strip()]
     while tags and len(",".join(tags)) > 480:
         tags.pop()

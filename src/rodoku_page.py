@@ -293,28 +293,36 @@ def render_project(st, manager, api_keys, show_banner):
                 st.image(th["local"], caption="섬네일 1280×720", use_container_width=True)
                 _dl(st, api_keys, th, "⬇ 섬네일 내려받기", "rd_th", "image/jpeg", out_name(state, "thumbnail", "jpg"))
 
-    trl = state.get("trailer") or {}
-    if trl.get("local") or trl.get("error"):
+    shorts = [state.get("trailer") or {}] + list(state.get("trailers") or [])
+    for k, it in enumerate(shorts):
+        if not (it.get("local") or it.get("r2_key") or it.get("error")):
+            continue
+        folder = "trailer" if k == 0 else f"trailer{k + 1}"
+        suf = "" if k == 0 else f"{k + 1}"
         with st.container(border=True):
-            st.markdown("**예고 쇼츠 (9:16)**")
-            if trl.get("error"):
-                st.warning(f"예고편을 만들지 못했습니다: {trl['error']}")
-            else:
-                if hz.usable(trl["local"]):
-                    st.video(trl["local"])
-                st.caption(f"{trl.get('seconds', 0)}초 · 第{trl.get('chapter', '')}章에서 · 쇼츠 제목: {trl.get('shorts_title', '')}")
-                _dl(st, api_keys, trl, "⬇ 예고 쇼츠 내려받기", "rd_tr", "video/mp4", out_name(state, "trailer", "mp4"))
-                cv = trl.get("cover") or {}
-                cvl = hz.ensure_local(api_keys, cv, R.pf(state, "trailer", "cover_1080x1920.jpg")) if (cv.get("local") or cv.get("r2_key")) else ""
-                if cvl:
-                    c1, c2 = st.columns([1, 2])
-                    c1.image(cvl, caption="쇼츠 표지 1080×1920")
-                    with c2:
-                        _dl(st, api_keys, cv, "⬇ 쇼츠 표지 내려받기", "rd_cv", "image/jpeg", out_name(state, "trailer-cover", "jpg"))
-                        st.caption("YouTube 스튜디오(PC) → 콘텐츠 → Shorts → 연필 아이콘 → 미리보기 이미지에서 올립니다. "
-                                   "목록에서는 가운데 부분만 보이도록 글자를 가운데에 두었습니다.")
-                elif cv.get("error"):
-                    st.caption(f"쇼츠 표지를 만들지 못했습니다: {cv['error'][:150]}")
+            st.markdown(f"**예고 쇼츠 {k + 1} (9:16)**" + (f" · 올릴 날: {it['post_day']}" if it.get("post_day") else ""))
+            if it.get("error"):
+                st.warning(f"예고 쇼츠 {k + 1} 을(를) 만들지 못했습니다: {it['error']}")
+                continue
+            loc = hz.ensure_local(api_keys, it, R.pf(state, folder, "trailer.mp4"))
+            if loc:
+                st.video(loc)
+            st.caption(f"{it.get('seconds', 0)}초 · 第{it.get('chapter', '')}章에서")
+            _dl(st, api_keys, it, f"⬇ 예고 쇼츠 {k + 1} 내려받기", f"rd_tr{k}", "video/mp4", out_name(state, f"trailer{suf}", "mp4"))
+            cv = it.get("cover") or {}
+            cvl = hz.ensure_local(api_keys, cv, R.pf(state, folder, "cover_1080x1920.jpg")) if (cv.get("local") or cv.get("r2_key")) else ""
+            if cvl:
+                c1, c2 = st.columns([1, 2])
+                c1.image(cvl, caption="쇼츠 표지 1080×1920")
+                with c2:
+                    _dl(st, api_keys, cv, "⬇ 쇼츠 표지 내려받기", f"rd_cv{k}", "image/jpeg", out_name(state, f"trailer{suf}-cover", "jpg"))
+                    st.caption("YouTube 스튜디오(PC) → 콘텐츠 → Shorts → 연필 아이콘 → 미리보기 이미지")
+            elif cv.get("error"):
+                st.caption(f"쇼츠 표지를 만들지 못했습니다: {cv['error'][:150]}")
+            for lab, key in (("쇼츠 제목", "shorts_title"), ("쇼츠 설명", "description"), ("쇼츠 고정 댓글", "comment")):
+                if it.get(key):
+                    st.markdown(lab)
+                    st.code(it[key], language=None)
 
     pack = state.get("upload_pack")
     if pack:
@@ -329,14 +337,5 @@ def render_project(st, manager, api_keys, show_banner):
             if pack.get("pinned_comment"):
                 st.markdown("본편 고정 댓글")
                 st.code(pack["pinned_comment"], language=None)
-            if trl.get("shorts_title"):
-                st.markdown("예고 쇼츠 제목")
-                st.code(trl["shorts_title"], language=None)
-            if pack.get("shorts_description"):
-                st.markdown("예고 쇼츠 설명")
-                st.code(pack["shorts_description"], language=None)
-            if pack.get("shorts_comment"):
-                st.markdown("예고 쇼츠 고정 댓글")
-                st.code(pack["shorts_comment"], language=None)
             for k, v in R.UPLOAD_SETTINGS:
                 st.caption(f"{k} · {v}")
