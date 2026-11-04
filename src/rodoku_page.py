@@ -147,6 +147,9 @@ def render_project(st, manager, api_keys, show_banner):
             st.markdown(f"무대 · {stg.get('place', '')} / {stg.get('time', '')} · 소품 · {stg.get('object', '')}")
             for ch in plan.get("characters") or []:
                 st.caption(f"{ch.get('name', '')} ({ch.get('age', '')}) · {ch.get('role', '')} · 비밀: {ch.get('secret', '')}")
+            yw = plan.get("young_woman") or {}
+            if yw.get("role"):
+                st.caption(f"젊은 여성 · {yw.get('name', '')} ({yw.get('age', '')}) · {yw.get('role', '')} · {yw.get('look_en', '')}")
             if plan.get("turn"):
                 st.caption(f"반전 · {plan['turn']}")
 

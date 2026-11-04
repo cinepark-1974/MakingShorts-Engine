@@ -183,11 +183,14 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
   "characters": [{"name": "名前（読み仮名）", "age": 67, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
+  "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
+                  "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
+     "with_young": true,
      "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない"}
   ],
   "seo_keywords": ["検索されやすい言葉5〜8個"],
@@ -206,6 +209,10 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   それ以外の型では物語の大半を「いま」の数日間で起こし、過去は回想として少しだけにする。
 - 手紙・はがき・ノート・日記・写真は、直近の作品で使っていなければ小道具にしてよい（使用禁止リストに入っていたら使わない）。
 - 「最近の作品」に挙がったタイトルの言葉、小道具、赤いもの、舞台は今回は使わない。
+- 毎回、20代の若い女性（young_woman）をひとり物語に入れる。視聴者が「若い頃の自分」か「自分の娘・孫」を重ねて見る人物。
+  作品ごとに別人で、立場も最近の作品と重ねない（孫娘・娘・回想の若い主人公・近所の大学生・店のアルバイト・旅先の若い車掌など）。
+  名前・髪型・服もその作品だけのものにする。主人公の人生を動かすきっかけになる役にし、飾りにしない。
+- with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
@@ -221,7 +228,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
               recent: list = None) -> dict:
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
-                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')}" for r in (recent or [])[:8])
+                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')}" for r in (recent or [])[:8])
     banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
     import random
     hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
@@ -263,7 +270,8 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
             kind = "初恋・再会"   # 종류 기록이 생기기 전 편들은 거의 이 종류였다
         out.append({"title": pl.get("title_ja", ""), "kind": kind,
                     "object": (pl.get("setting") or {}).get("object", ""), "red": pl.get("red_accent", ""),
-                    "place": (pl.get("setting") or {}).get("place", "")})
+                    "place": (pl.get("setting") or {}).get("place", ""),
+                    "young": (pl.get("young_woman") or {}).get("role", "")})
     return out
 
 
@@ -297,7 +305,7 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
 
 def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_chars: int) -> str:
     system = WRITE_SYSTEM_HEAD + _novel_rules()
-    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "turn", "ending_ja")}
+    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "young_woman", "turn", "ending_ja")}
     outline = [{"no": c["no"], "title_ja": c.get("title_ja"), "beat": c.get("beat_ko")} for c in plan["chapters"]]
     user = (f"[作品設計]\n{json.dumps(design, ensure_ascii=False)}\n\n[全章の流れ]\n{json.dumps(outline, ensure_ascii=False)}\n\n"
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
@@ -419,7 +427,7 @@ ART_PREFIX = (
 )
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
-    "People are seen from behind, in silhouette or small in the distance, no facial features. "
+    "Elderly people are seen from behind, in silhouette or small in the distance, with no facial features. "
     "No text, no letters, no numbers, no signboard writing."
 )
 
@@ -519,7 +527,8 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
                               "image_prompt": c.get("image_prompt", ""),
-                              "motion_prompt": c.get("motion_prompt", "")} for c in plan["chapters"]]
+                              "motion_prompt": c.get("motion_prompt", ""),
+                              "with_young": bool(c.get("with_young"))} for c in plan["chapters"]]
     plan, chs = state["plan"], state["chapters"]
 
     # ③ 집필
@@ -542,6 +551,10 @@ def _worker(job, state, keys, save_fn, made_titles):
             body = c["image_prompt"].strip().rstrip(".") + "."
             if "red" not in body.lower():   # 예전 설계엔 주홍색 지정이 없다 → 기본값을 넣는다
                 body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
+            yw = plan.get("young_woman") or {}
+            if c.get("with_young") and yw.get("look_en"):
+                body += (f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. "
+                         "Her face is visible: a gentle, simple, rounded hand-drawn animation face.")
             prompt = ART_PREFIX + " " + body + ART_SUFFIX
             url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
             dest = pf(state, f"ch{c['no']:02d}.jpg")
@@ -822,7 +835,8 @@ def _pack(state, keys):
     plan, fin = state["plan"], state["final"]
     # 섬네일 (HASIRA 섬네일 함수 재사용 · 1장 그림)
     proxy = {"project_id": state["project_id"], "project_dir": state["project_dir"],
-             "image": state["chapters"][0]["image"], "thumbnail": {}}
+             "image": next((c["image"] for c in state["chapters"] if c.get("with_young") and (c.get("image") or {}).get("local")),
+                           state["chapters"][0]["image"]), "thumbnail": {}}
     try:
         hz.make_thumbnail(keys, proxy, plan.get("title_ja", ""), "SCENESTORY · 朗読ドラマ", brand="SceneStory")
         th = proxy["thumbnail"]
