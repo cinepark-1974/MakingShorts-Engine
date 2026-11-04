@@ -1086,7 +1086,8 @@ def final_link(keys: dict, state: dict) -> str:
     if not info.get("r2_key") or not _r2_ok(keys):
         return ""
     from src import r2_store
-    return r2_store.download_link(keys, info["r2_key"], filename=os.path.basename(info["r2_key"]))
+    from src.naming import out_name
+    return r2_store.download_link(keys, info["r2_key"], filename=out_name(state, "main", "mp4", "hasira"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

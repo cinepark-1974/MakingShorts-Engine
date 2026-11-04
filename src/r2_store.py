@@ -85,7 +85,8 @@ def put_json(keys: dict, key: str, data) -> None:
 def download_link(keys: dict, key: str, seconds: int = LINK_MAX_SECONDS, filename: str = "") -> str:
     params = {"Bucket": keys["R2_BUCKET"].strip(), "Key": key}
     if filename:
-        params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+        from src.naming import content_disposition
+        params["ResponseContentDisposition"] = content_disposition(filename)
     return _client(keys).generate_presigned_url(
         "get_object", Params=params, ExpiresIn=min(int(seconds), LINK_MAX_SECONDS))
 

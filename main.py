@@ -2,6 +2,7 @@
 # Claude API 버전 (Anthropic claude-sonnet-4-6)
 
 import streamlit as st
+from src.naming import out_name
 import os
 import time
 import base64
@@ -2252,7 +2253,7 @@ if step4_done:
                 st.download_button(
                     label="⬇️ 최종 영상 다운로드",
                     data=fv,
-                    file_name=f"{state.get('project_id','final')}.mp4",
+                    file_name=out_name(state, "main", "mp4"),
                     mime="video/mp4",
                 )
     else:
@@ -2336,7 +2337,7 @@ if _pack:
             st.image(_thumb_path, use_container_width=True)
             with open(_thumb_path, "rb") as _fh:
                 st.download_button("⬇️ 섬네일 PNG 다운로드", data=_fh.read(),
-                                   file_name=f"thumbnail_{state.get('project_id', 'shorts')}.png",
+                                   file_name=out_name(state, "thumbnail", "png"),
                                    mime="image/png", key="thumb_dl")
         else:
             st.info("섬네일이 아직 없습니다. 오른쪽에서 문구와 배경을 확인하고 '섬네일 다시 그리기'를 누르세요.")

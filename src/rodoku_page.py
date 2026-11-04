@@ -6,6 +6,7 @@ import os
 from src import hasira as hz
 from src import rodoku as R
 from src.hasira_page import _job_panel
+from src.naming import out_name
 
 NEED_KEYS = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY", "REPLICATE_API_TOKEN"]
 
@@ -76,13 +77,13 @@ def _recover(st, manager, api_keys):
                 st.rerun()
 
 
-def _dl(st, keys, item, label, key, mime):
-    link = R.link(keys, item)
+def _dl(st, keys, item, label, key, mime, filename=""):
+    link = R.link(keys, item, filename)
     if link:
         st.link_button(label + " (R2 · 7일)", link, use_container_width=True)
     elif hz.usable(item.get("local", "")) and os.path.getsize(item["local"]) < 200_000_000:
         with open(item["local"], "rb") as f:
-            st.download_button(label, f.read(), file_name=os.path.basename(item["local"]), mime=mime, key=key,
+            st.download_button(label, f.read(), file_name=filename or os.path.basename(item["local"]), mime=mime, key=key,
                                use_container_width=True)
 
 
@@ -200,11 +201,11 @@ def render_project(st, manager, api_keys, show_banner):
     if fin.get("seconds"):
         with st.container(border=True):
             st.markdown(f"**본편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB · {fin.get('made_at', '')}")
-            _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4")
+            _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4", out_name(state, "main", "mp4"))
             th = state.get("thumbnail") or {}
             if hz.usable(th.get("local", "")):
                 st.image(th["local"], caption="섬네일 1280×720", use_container_width=True)
-                _dl(st, api_keys, th, "⬇ 섬네일 내려받기", "rd_th", "image/jpeg")
+                _dl(st, api_keys, th, "⬇ 섬네일 내려받기", "rd_th", "image/jpeg", out_name(state, "thumbnail", "jpg"))
 
     trl = state.get("trailer") or {}
     if trl.get("local") or trl.get("error"):
@@ -216,7 +217,7 @@ def render_project(st, manager, api_keys, show_banner):
                 if hz.usable(trl["local"]):
                     st.video(trl["local"])
                 st.caption(f"{trl.get('seconds', 0)}초 · 第{trl.get('chapter', '')}章에서 · 쇼츠 제목: {trl.get('shorts_title', '')}")
-                _dl(st, api_keys, trl, "⬇ 예고 쇼츠 내려받기", "rd_tr", "video/mp4")
+                _dl(st, api_keys, trl, "⬇ 예고 쇼츠 내려받기", "rd_tr", "video/mp4", out_name(state, "trailer", "mp4"))
 
     pack = state.get("upload_pack")
     if pack:

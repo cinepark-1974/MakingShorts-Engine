@@ -922,8 +922,8 @@ def _pack(state, keys):
     state["upload_pack"] = pack
 
 
-def link(keys: dict, item: dict) -> str:
+def link(keys: dict, item: dict, filename: str = "") -> str:
     if not item or not item.get("r2_key") or not hz._r2_ok(keys):
         return ""
     from src import r2_store
-    return r2_store.download_link(keys, item["r2_key"], filename=os.path.basename(item["r2_key"]))
+    return r2_store.download_link(keys, item["r2_key"], filename=filename or os.path.basename(item["r2_key"]))

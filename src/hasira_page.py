@@ -5,6 +5,7 @@ import os
 import time
 
 from src import hasira as h
+from src.naming import out_name
 
 
 def _keys_missing(api_keys: dict, names) -> list:
@@ -229,11 +230,11 @@ def _project(st, manager, api_keys):
             if _tl:
                 st.image(_tl, use_container_width=True)
                 with open(_tl, "rb") as f:
-                    st.download_button("⬇ 섬네일 내려받기 (1280×720 JPG)", f.read(), file_name="thumbnail.jpg",
+                    st.download_button("⬇ 섬네일 내려받기 (1280×720 JPG)", f.read(), file_name=out_name(state, "thumbnail", "jpg", "hasira"),
                                        mime="image/jpeg", key=f"hz_tdl_{pid}")
             if img.get("thumb_local") and os.path.exists(img["thumb_local"]):
                 with open(img["thumb_local"], "rb") as f:
-                    st.download_button("⬇ 글자 없는 바탕 그림 (Canva 작업용)", f.read(), file_name="thumbnail_base.jpg",
+                    st.download_button("⬇ 글자 없는 바탕 그림 (Canva 작업용)", f.read(), file_name=out_name(state, "thumbnail-base", "jpg", "hasira"),
                                        mime="image/jpeg", key=f"hz_thumb_{pid}")
 
     # ── ③ 움직임 ──
@@ -458,7 +459,7 @@ def _project(st, manager, api_keys):
                 st.link_button("⬇ 완성 영상 내려받기 (R2 · 7일간 유효)", link, use_container_width=True)
             elif h.usable(fin.get("local", "")) and fin.get("bytes", 0) < 200_000_000:
                 with open(fin["local"], "rb") as f:
-                    st.download_button("⬇ 완성 영상 내려받기", f.read(), file_name=os.path.basename(fin["local"]),
+                    st.download_button("⬇ 완성 영상 내려받기", f.read(), file_name=out_name(state, "main", "mp4", "hasira"),
                                        mime="video/mp4", key=f"hz_dl_{pid}")
 
     # ── ⑥ 업로드 정보 ──
