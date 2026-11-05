@@ -235,6 +235,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
   "narrator_intro": "第一章の前に語り手（young_woman）が一人称で語る前置き。1〜2文、空白を除いて25〜60字",
+  "cover_chapter": 2,
   "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の場所の近くの、晴れた青空と白い入道雲の下（海辺の道・川の土手・緑の並木道・丘の上の駅・田んぼの畦道など）。young_woman がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見える。一つの状態・一つの動作で確定的に書く",
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
@@ -286,6 +287,8 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
     物から入る型「母の鏡台の引き出しに、片方だけの手袋が入っていました。」
     問いかけ型「人は、四十年も同じ嘘をつき続けられるものでしょうか。」
   「最近の作品」の前置きと同じ書き出し・同じ型にしない。「これは〜の話です」で始めない。結末は明かさない。
+- cover_chapter: サムネイルにする章の番号。その章は必ず屋外の昼、晴れた青空と白い入道雲・緑の木々・海辺や川辺の場面にし、
+  young_woman が映る（with_young: true）。その章の image_prompt にも青空を書く。室内や夜の章を cover_chapter にしない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
@@ -722,7 +725,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
                               "image_prompt": c.get("image_prompt", ""),
                               "motion_prompt": c.get("motion_prompt", ""),
-                              "with_young": bool(c.get("with_young"))} for c in plan["chapters"]]
+                              "with_young": bool(c.get("with_young")) or c["no"] == _cover_no(plan)} for c in plan["chapters"]]
     plan, chs = state["plan"], state["chapters"]
 
     # ③ 집필
@@ -745,6 +748,8 @@ def _worker(job, state, keys, save_fn, made_titles):
             body = c["image_prompt"].strip().rstrip(".") + "."
             if "red" not in body.lower():   # 예전 설계엔 주홍색 지정이 없다 → 기본값을 넣는다
                 body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
+            if c["no"] == _cover_no(plan) and "sky" not in body.lower():
+                body += " " + COVER_SKY
             yw = plan.get("young_woman") or {}
             if c.get("with_young") and yw.get("look_en"):
                 body += (f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. "
@@ -1203,6 +1208,13 @@ COVER_SKY = ("Bright daytime outdoors under a clear saturated cobalt-blue sky wi
              "lush green trees, sunlight sparkling, fresh and hopeful mood.")
 
 
+def _cover_no(plan: dict) -> int:
+    try:
+        return int(plan.get("cover_chapter") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def cover_scene(plan: dict) -> str:
     """표지(본편 섬네일·쇼츠 표지)용 야외 장면 — 실내 장면은 클릭이 적다(작가 판단). 설계에 없으면 기본 장면을 만든다."""
     yw = plan.get("young_woman") or {}
@@ -1303,10 +1315,14 @@ def _pack(state, keys):
     young = next((c for c in chs if c.get("with_young") and (c.get("image") or {}).get("local")), chs[0])
     turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
     hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
-    cov = pf(state, "cover_16x9.jpg")
-    if not hz.usable(cov):
-        _cover_image(state, keys, "16:9", cov)
-    a_src = {"image": {"local": cov}} if hz.usable(cov) else young
+    cch = next((c for c in chs if c["no"] == _cover_no(plan) and (c.get("image") or {}).get("local")), None)
+    if cch:                                   # 본편에서 이미 그린 파란 하늘 장을 그대로 섬네일로
+        a_src = cch
+    else:                                     # 예전 설계(표지 장 지정 없음)만 표지 그림을 따로 그린다
+        cov = pf(state, "cover_16x9.jpg")
+        if not hz.usable(cov):
+            _cover_image(state, keys, "16:9", cov)
+        a_src = {"image": {"local": cov}} if hz.usable(cov) else young
     variants = [("A", a_src, plan.get("title_ja", ""), "기본 — 파란 하늘 표지 · 한 장만 올릴 때는 이것"),
                 ("B", turn, plan.get("title_ja", ""), "반전 장면 + 제목"),
                 ("C", chs[0] if chs[0] is not young else turn, hook, "다른 장면 + 질문 문구")]
