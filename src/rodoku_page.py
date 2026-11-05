@@ -25,6 +25,8 @@ def render_new(st, manager, api_keys):
         st.caption("걸리는 시간 약 15~25분 (집필·낭독·그림·합성). 화면을 닫아도 서버에서 계속 진행됩니다. "
                    "비용: Claude 집필 + ElevenLabs 일본어 낭독(약 4천~5천 자) + Replicate 그림 5~6장 + "
                    "이 편 전용 배경음악 2곡(반전 전·후 각 3분, 음악 약 6분).")
+    n_shorts = st.radio("예고 쇼츠 개수", [1, 3], index=[1, 3].index(R.DEFAULT_SHORTS), horizontal=True, key="rd_nshorts",
+                        format_func=lambda n: {1: "1개 (매일 본편+쇼츠 운영 · 기본)", 3: "3개 (시작·중간·반전 직전)"}[n])
     motion_on = st.toggle("🎞 움직이는 그림 (장마다 MiniMax 6초 클립 → 초당 7.5장 손그림 애니메이션 느낌으로 반복)",
                           value=True, key="rd_motion",
                           help="끄면 그림을 천천히 확대·축소(Ken Burns)만 합니다. 켜면 Replicate 영상 비용이 장 수만큼 추가되고 "
@@ -35,7 +37,7 @@ def render_new(st, manager, api_keys):
     if st.button("🤖 자동 제작 시작", type="primary", use_container_width=True, disabled=bool(miss), key="rd_start"):
         state = manager.create_new_project(chapter="朗読ドラマ", topic="朗読ドラマ 자동", channel="scenestory")
         state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued",
-                     motion_on=bool(motion_on))
+                     motion_on=bool(motion_on), n_shorts=int(n_shorts))
         manager.save_state(state)
         made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"]
         R.start_auto(state, api_keys, manager.save_state, made)
@@ -289,20 +291,24 @@ def render_project(st, manager, api_keys, show_banner):
             st.markdown(f"**본편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB · {fin.get('made_at', '')}")
             _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4", out_name(state, "main", "mp4"))
             thumbs = state.get("thumbnails") or ([state["thumbnail"]] if (state.get("thumbnail") or {}).get("local") else [])
+
+            def _thumb(t, wide=True):
+                tl = hz.ensure_local(api_keys, t, t.get("local") or R.pf(state, f"thumbnail_{t.get('tag', 'A')}.jpg")) \
+                    if (t.get("local") or t.get("r2_key")) else ""
+                if tl:
+                    st.image(tl, caption=f"{t.get('tag', '')} · {t.get('label', '')}", use_container_width=wide)
+                    _dl(st, api_keys, t, f"⬇ 섬네일 {t.get('tag', '')}", f"rd_th{t.get('tag', '')}", "image/jpeg",
+                        out_name(state, "thumbnail" if t.get("tag", "A") == "A" else f"thumbnail-{t.get('tag')}", "jpg"))
+                elif t.get("error"):
+                    st.caption(f"{t.get('tag', '')} 실패: {t['error'][:100]}")
             if thumbs:
-                st.caption("섬네일 3종 — 보통은 A 한 장을 올립니다. PC 의 YouTube 스튜디오에서 채널 '고급 기능'이 켜져 있으면 "
-                           "'테스트 및 비교'에 셋 다 올릴 수 있고, 아니면 조회가 낮을 때 B·C 로 바꿔 끼워 비교합니다.")
-                cols = st.columns(len(thumbs))
-                for col, t in zip(cols, thumbs):
-                    with col:
-                        tl = hz.ensure_local(api_keys, t, t.get("local") or R.pf(state, f"thumbnail_{t.get('tag', 'A')}.jpg")) \
-                            if (t.get("local") or t.get("r2_key")) else ""
-                        if tl:
-                            st.image(tl, caption=f"{t.get('tag', '')} · {t.get('label', '')}", use_container_width=True)
-                            _dl(st, api_keys, t, f"⬇ {t.get('tag', '')}", f"rd_th{t.get('tag', '')}", "image/jpeg",
-                                out_name(state, f"thumbnail-{t.get('tag', 'A')}", "jpg"))
-                        elif t.get("error"):
-                            st.caption(f"{t.get('tag', '')} 실패: {t['error'][:100]}")
+                _thumb(thumbs[0])
+                if len(thumbs) > 1:
+                    with st.expander("예비 섬네일 B·C (조회가 낮을 때 바꿔 끼우기 · 채널 고급 기능이 켜지면 '테스트 및 비교'에 함께)"):
+                        cols = st.columns(len(thumbs) - 1)
+                        for col, t in zip(cols, thumbs[1:]):
+                            with col:
+                                _thumb(t)
 
     shorts = [state.get("trailer") or {}] + list(state.get("trailers") or [])
     for k, it in enumerate(shorts):

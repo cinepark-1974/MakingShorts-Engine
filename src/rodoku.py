@@ -548,7 +548,7 @@ UPLOAD_SETTINGS = [
     ("아동용 여부", "아니요, 아동용이 아닙니다"),
     ("동영상 언어", "일본어"),
     ("변경되거나 합성된 콘텐츠", "AI 음성·AI 그림이 들어가므로 '예'"),
-    ("예약", "본편 금요일 21:00 JST · 예고 쇼츠는 본편 하루 전"),
+    ("올리는 순서", "매일 본편 1편 + 예고 쇼츠 1개 (본편 먼저 → 쇼츠는 같은 날, 쇼츠 고정 댓글로 본편 안내)"),
     ("예고 쇼츠", "설명란·고정 댓글에 본편 제목, '관련 동영상'이 열리면 본편 연결"),
     ("고정 댓글", "본편·쇼츠 모두 위 '고정 댓글'을 직접 달고 고정 (질문형 → 시청자 댓글 유도)"),
 ]
@@ -840,12 +840,13 @@ def _worker(job, state, keys, save_fn, made_titles):
         _render(job, state, keys, save_fn)
 
     # ⑦ 예고 쇼츠 3개 (장면을 바꿔서) + 각각 표지
-    for slot in range(N_SHORTS):
+    n_shorts = max(1, min(int(state.get("n_shorts", DEFAULT_SHORTS)), N_SHORTS))
+    for slot in range(n_shorts):
         folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
         get = (lambda: state.get("trailer") or {}) if slot == 0 else \
               (lambda: ((state.get("trailers") or []) + [{}, {}, {}])[slot - 1] or {})
         if not hz.usable(get().get("local", "")) and not get().get("r2_key"):
-            _stage(job, state, save_fn, "trailer", 8, f"예고 쇼츠 {slot + 1}/{N_SHORTS} 만드는 중")
+            _stage(job, state, save_fn, "trailer", 8, f"예고 쇼츠 {slot + 1}/{n_shorts} 만드는 중")
             try:
                 _trailer(job, state, keys, slot)
             except Exception as e:
@@ -1111,7 +1112,8 @@ def _render(job, state, keys, save_fn):
     hz._save(save_fn, state)
 
 
-N_SHORTS = 3
+N_SHORTS = 3          # 최대
+DEFAULT_SHORTS = 1    # 지금 운영: 매일 본편 1 + 쇼츠 1
 SHORT_ANGLES = [
     "",   # 1번: 자유 — 続きを聴きたくなる一節
     "今回は物語の始まりから選ぶ。人物と状況が一瞬で伝わり、この人に何が起きるのかと気になる一節。",
