@@ -235,6 +235,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
   "narrator_intro": "第一章の前に語り手（young_woman）が一人称で語る前置き。1〜2文、空白を除いて25〜60字",
+  "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の場所の近くの、晴れた青空と白い入道雲の下（海辺の道・川の土手・緑の並木道・丘の上の駅・田んぼの畦道など）。young_woman がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見える。一つの状態・一つの動作で確定的に書く",
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
@@ -1198,6 +1199,49 @@ def _trailer(job, state, keys, slot: int = 0):
         lst[slot - 1] = item
 
 
+COVER_SKY = ("Bright daytime outdoors under a clear saturated cobalt-blue sky with towering white cumulus clouds, "
+             "lush green trees, sunlight sparkling, fresh and hopeful mood.")
+
+
+def cover_scene(plan: dict) -> str:
+    """표지(본편 섬네일·쇼츠 표지)용 야외 장면 — 실내 장면은 클릭이 적다(작가 판단). 설계에 없으면 기본 장면을 만든다."""
+    yw = plan.get("young_woman") or {}
+    red = (plan.get("red_accent") or "a thin red thread").strip().rstrip(".")
+    sc = (plan.get("cover_scene") or "").strip().rstrip(".")
+    if not sc:
+        sc = f"A young Japanese woman in her twenties walks along a quiet seaside road holding {red}"
+    if yw.get("look_en") and yw["look_en"][:30] not in sc:
+        sc += f". The young woman: {yw['look_en'].strip().rstrip('.')}. Her face is visible"
+    if "red" not in sc.lower():
+        sc += f". {red} in vivid vermilion red"
+    return sc + ". " + COVER_SKY
+
+
+def _cover_image(state, keys, aspect: str, dest: str) -> str:
+    """표지용 야외 그림을 새로 그린다 (검수 통과 못 하면 한 번 더). 실패하면 ''."""
+    plan = state["plan"]
+    body = cover_scene(plan)
+    head = ART_PREFIX if aspect == "16:9" else ART_PREFIX.replace("wide cinematic 16:9 composition",
+                                                                  "tall vertical 9:16 poster composition")
+    tail = (" The young woman stands in the lower half of the frame, the upper-middle area is open blue sky." if aspect == "9:16"
+            else " The young woman stands on the right third of the frame, open blue sky on the upper left.")
+    prompt = head + " " + body + tail + ART_SUFFIX
+    tries = []
+    try:
+        for attempt in range(2):
+            cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
+            hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect=aspect), cand)
+            rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
+            tries.append((cand, rv))
+            if rv.get("ok"):
+                break
+        shutil.copyfile(min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))[0], dest)
+        return dest
+    except Exception as e:
+        print(f"[rodoku] 표지 그림({aspect}) 실패: {e}", flush=True)
+        return ""
+
+
 def _shorts_cover(state, keys, slot: int = 0):
     """예고 쇼츠 표지 1080×1920 — 영상에서 뽑은 장면이 아니라 표지용 세로 그림을 새로 그려 글자를 얹는다.
     쇼츠 표지는 목록에서 가운데 3:2 정도만 보이므로 글자는 화면 가운데 띠 안에 둔다."""
@@ -1207,28 +1251,8 @@ def _shorts_cover(state, keys, slot: int = 0):
     trl = state["trailer"] if slot == 0 else state["trailers"][slot - 1]
     folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
     c = next((x for x in state["chapters"] if x["no"] == trl.get("chapter")), state["chapters"][0])
-    yw = plan.get("young_woman") or {}
-    body = (c.get("image_prompt") or "").strip().rstrip(".") + "."
-    if c.get("with_young") and yw.get("look_en"):
-        body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
-    if "red" not in body.lower():
-        body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
-    prompt = (ART_PREFIX.replace("wide cinematic 16:9 composition", "tall vertical 9:16 poster composition") + " " + body +
-              " The main subject sits in the lower half of the frame, the upper-middle area is calm open sky or plain wall." +
-              ART_SUFFIX)
     base = pf(state, folder, "cover_base.jpg")
-    try:
-        tries = []
-        for attempt in range(2):
-            cand = pf(state, folder, f"cover_try{attempt + 1}.jpg")
-            hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect="9:16"), cand)
-            rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
-            tries.append((cand, rv))
-            if rv.get("ok"):
-                break
-        shutil.copyfile(min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))[0], base)
-    except Exception as e:   # 세로 그림을 못 그리면 그 장 그림을 세로로 잘라 쓴다
-        print(f"[rodoku] 표지 그림 실패 → 장 그림 자르기: {e}", flush=True)
+    if not _cover_image(state, keys, "9:16", base):   # 야외 그림을 못 그리면 그 장 그림을 세로로 잘라 쓴다
         shutil.copyfile(c["image"]["local"], base)
     W, H = 1080, 1920
     im = Image.open(base).convert("RGB")
@@ -1279,7 +1303,11 @@ def _pack(state, keys):
     young = next((c for c in chs if c.get("with_young") and (c.get("image") or {}).get("local")), chs[0])
     turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
     hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
-    variants = [("A", young, plan.get("title_ja", ""), "기본 — 한 장만 올릴 때는 이것"),
+    cov = pf(state, "cover_16x9.jpg")
+    if not hz.usable(cov):
+        _cover_image(state, keys, "16:9", cov)
+    a_src = {"image": {"local": cov}} if hz.usable(cov) else young
+    variants = [("A", a_src, plan.get("title_ja", ""), "기본 — 파란 하늘 표지 · 한 장만 올릴 때는 이것"),
                 ("B", turn, plan.get("title_ja", ""), "반전 장면 + 제목"),
                 ("C", chs[0] if chs[0] is not young else turn, hook, "다른 장면 + 질문 문구")]
     thumbs = []
