@@ -123,7 +123,15 @@ INTRO_FORMS = [
     "沈黙: 誰も何も言わなかった時間で始める",
     "名前: ある名前の由来や呼び方で始める",
 ]
-GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "老後 生き方"]
+GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "平成 思い出", "バブル時代 思い出", "老後 生き方"]
+
+# 시청자(55~64세 27%, 65세 이상 62%)의 젊은 날 = 1975~1999년 (쇼와 50년대 ~ 헤이세이 10년 무렵)
+ERA_PAST = [
+    ("昭和50年代（1975〜1984）", "喫茶店、カセットテープ、ラジカセ、公衆電話、文通、国鉄の駅、団地の新築"),
+    ("バブル期（1986〜1991）", "ディスコ、肩パッドのスーツ、社員旅行、テレホンカード、深夜のタクシー、寿退社"),
+    ("平成初め（1989〜1994）", "トレンディドラマの夜、ポケベル、ワープロ、レンタルビデオ店、カラオケボックス"),
+    ("平成10年頃（1995〜1999）", "PHS、CDショップ、使い捨てカメラ、プリクラ、ルーズソックスの娘、就職氷河期"),
+]
 
 STAGES = [("trend", "트렌드 조회"), ("plan", "소재·설계"), ("write", "집필"), ("images", "그림"),
           ("motion", "움직임"), ("voice", "목소리"), ("music", "배경음악"), ("render", "합성"), ("trailer", "예고편"),
@@ -245,7 +253,10 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 }
 
 設計ルール
-- 主人公は60〜75歳。舞台は日本（昭和の記憶が残る町・駅・喫茶店・団地・温泉など）。実在の有名人・作品名は使わない。
+- 主人公は60〜75歳。「いま」（2020年代）の数日間が物語の軸。舞台は日本の町・駅・喫茶店・団地・温泉など。
+- 過去（回想）は主人公が20〜40代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
+  昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
+- 実在の有名人・曲名・ドラマ名・商品名は使わない（時代の空気は「トレンディドラマの夜」「ポケベルの数字」のように一般名詞で出す）。
 - 題材は指定された「題材の型」に必ず従う。検索語はその型の中で視聴者が何を気にしているかを知る手がかりにする。
 - 『〜年ぶり』『〜年越し』『〜年後』のような長い年月の隔たりを売りにするのは「初恋・再会」の型のときだけ。
   それ以外の型では物語の大半を「いま」の数日間で起こし、過去は回想として少しだけにする。
@@ -254,7 +265,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - 毎回、20代の若い女性（young_woman）をひとり物語に入れる。視聴者が「若い頃の自分」か「自分の娘・孫」を重ねて見る人物。
   作品ごとに別人で、立場も最近の作品と重ねない（孫娘・娘・回想の若い主人公・近所の大学生・店のアルバイト・旅先の若い車掌など）。
   名前・髪型・服もその作品だけのものにする。主人公の人生を動かすきっかけになる役にし、飾りにしない。
-- young_woman は「昭和の記憶が残る町に立つ、いまの2020年代の若い女性」。古い町並みの中で彼女だけが今の時代の色を持つ対比を絵の見どころにする。
+- young_woman は「昭和・平成の面影が残る町に立つ、いまの2020年代の若い女性」。古い町並みの中で彼女だけが今の時代の色を持つ対比を絵の見どころにする。
   look_en には次を必ず確定的に入れる（回想の若い主人公の役なら、その時代の髪型と服にする）:
   ① いまの日本の髪型をひとつ（例: wolf-cut bob with a hidden inner-color layer / hime-cut with blunt side locks /
      asymmetric bob tucked behind one ear / half-up bun with loose strands / one thin side braid in a long bob / micro bangs with a short bob /
@@ -263,6 +274,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
      最近の作品と同じ髪型にしない。
   ② 小さな今の持ち物か装身具をひとつ（例: vintage film camera, silver ear cuff, wireless earbuds, sketchbook, bicycle helmet on her arm）
   ③ 服と色（赤・朱色の服や小物は使わない。赤は red_accent だけ）
+- image_prompt には場面の年代を必ず英語で書く（例: "Present day 2026," / "Flashback, Tokyo 1989,"）。過去の場面はその時代の服・髪型・物で描く。
 - image_prompt の光は場面に合わせてひとつに決めて書く。屋外なら「濃いコバルトブルーの空、金色に縁取られた入道雲、水や濡れた地面に映る空」、
   室内なら「窓から差し込む光の筋、光の中に舞う細かな塵、床に落ちる窓枠の影」。室内の絵に空や湖を入れない。
 - narrator_intro: 朗読の声は30代前半の女性。昔の物語を若い声が語る理由を、毎回 young_woman の立場から一言で作る。
@@ -293,9 +305,11 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
     used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
+    era, era_things = random.choice(ERA_PAST)
     hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
+            f"回想の時代（必須）: {era} — 例: {era_things}\n"
             f"主人公（視点人物）の性別: {hero}（視聴者の多くは60〜70代の女性。その人が自分のこととして聴ける人物にする）\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
@@ -313,6 +327,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     if kind:
         plan["kind"] = kind
     plan["intro_form"] = intro_form
+    plan["era"] = era
     return plan
 
 
@@ -547,7 +562,7 @@ ART_PREFIX = (
     "proportions, delicate fine linework, detailed eyes with soft catchlights, natural small nose and lips, soft "
     "gradient cel shading on skin, individually rendered hair strands with glossy light sheen. Hyper-detailed "
     "luminous painted background with glowing light, golden highlights, soft lens flare and tiny drifting light "
-    "particles, lived-in nostalgic Showa-era Japan details, wide cinematic 16:9 composition."
+    "particles, lived-in everyday Japanese details true to the era named in the scene, wide cinematic 16:9 composition."
 )
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
