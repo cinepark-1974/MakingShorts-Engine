@@ -1052,12 +1052,15 @@ def _motion_one(state, keys, c, k, sc):
 
 
 # ── 배역 목소리 ──
-CAST_ROLES = {"hero": "주인공 (52~68세 여성)", "partner": "상대 남성 (남편·옛 연인 등)", "young": "젊은 여성 (20대)"}
+CAST_ROLES = {"hero": "주인공 (52~68세 여성)", "partner": "상대 남성 · 현재 (남편·옛 연인 등)",
+              "partner_young": "상대 남성 · 회상 (젊은 시절)", "young": "젊은 여성 (20대)"}
 CAST_SAMPLE = {"hero": "あの人、まだ覚えていてくれたのね。", "partner": "久しぶりだな。元気にしてたか。",
+               "partner_young": "君のことが大好きだ。",
                "young": "おばあちゃん、これ、誰の手紙？"}
 # 기본 배역 (2026-11-05 ElevenLabs 오디션으로 Claude 가 고름 · 화면에서 바꿔 저장하면 그 값이 우선)
 DEFAULT_VOICES = {"hero": "jWxWvPtq4PJFwe66Y9xi",      # Ado — 성숙·차분, 낭독자(Satomi)와 음색이 겹치지 않음
                   "partner": "C6EwdDpfpjUWhKn1xeaG",   # Makoto 誠 — 60대 남성, 깊고 침착
+                  "partner_young": "ScPQKLRUjviCkw0qP47u",  # Takayuki Ito — 젊고 깊은 중저음 (회상 장면)
                   "young": "pdJqk51tDVoes2IzwOyU"}     # Kiyomi — 30대, 차분하고 따뜻한 대화체
 VOICES_KEY = "scenestory/_voices.json"
 _VOICES_LOCAL = os.path.join("projects", "_rodoku_voices.json")
@@ -1092,7 +1095,12 @@ def save_voices(keys: dict, d: dict) -> None:
 
 
 SPEAKER_SYSTEM = """あなたは朗読ドラマの演出家です。本文の「」の台詞それぞれについて、誰が話しているかを決めます。
-役は次の4つだけ: hero（主人公の女性）, partner（相手役の男性）, young（20代の若い女性）, narrator（それ以外の人物・手紙や看板の文言・心の声）。
+役は次の5つだけ:
+- hero（主人公の女性）
+- partner（相手役の男性が「現在」の場面で話す台詞）
+- partner_young（同じ相手役の男性が「回想・過去」の場面＝若い頃に話す台詞。年号や「あの頃」「若い頃」などで回想とわかる場面）
+- young（20代の若い女性）
+- narrator（それ以外の人物・手紙や看板の文言・心の声）
 JSONだけを出力: {"speakers": ["hero", "narrator", ...]}  （台詞の数と同じ長さ、登場順）"""
 
 
@@ -1117,6 +1125,13 @@ def _segments(text: str, speakers: list) -> list:
         else:
             merged.append((role, t))
     return merged
+
+
+def _voice_for(role: str, cast: dict, narrator: str) -> str:
+    """배역 → 목소리. 회상 상대역이 비어 있으면 현재 상대역, 그것도 없으면 낭독자."""
+    if role == "partner_young":
+        return cast.get("partner_young") or cast.get("partner") or narrator
+    return cast.get(role) or narrator
 
 
 def cast_narration(keys: dict, ak: str, state: dict, c: dict, head: str, dest: str, narrator: str, cast: dict) -> str:
@@ -1147,7 +1162,7 @@ def cast_narration(keys: dict, ak: str, state: dict, c: dict, head: str, dest: s
         role, t = segs[i]
         if hz.usable(files[i]):
             return
-        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), t, files[i], voice_id=cast.get(role) or narrator, info={})
+        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), t, files[i], voice_id=_voice_for(role, cast, narrator), info={})
     with ThreadPoolExecutor(max_workers=3) as ex:
         list(ex.map(one, range(len(segs))))
     # 목소리마다 규격(채널·표본율)이 다를 수 있어 모두 같은 WAV 로 맞춘 뒤 잇는다
