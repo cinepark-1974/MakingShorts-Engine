@@ -475,6 +475,25 @@ def _caption_png(out: str, text: str, W: int = 1920, H: int = 1080) -> str:
 OUTRO_CARD = ("ご視聴ありがとうございました", "チャンネル登録で、次のお話が届きます")
 
 
+ENDSCREEN_SEC = 20.0
+
+
+def _endcard_png(out: str, W: int = 1920, H: int = 1080) -> str:
+    """마무리 카드 — 글자는 위쪽에만, 가운데·아래는 YouTube 종료 화면 요소(다음 영상 · 구독)가 놓일 자리로 비워 둔다."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SERIF_BOLD
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, H], fill=(16, 12, 10, 110))
+    d.text((W // 2, 120), OUTRO_CARD[0], font=jp_font(JP_SERIF_BOLD, 72), fill=(255, 244, 234, 255), anchor="ma",
+           stroke_width=3, stroke_fill=(20, 14, 12, 255))
+    d.text((W // 2, 230), OUTRO_CARD[1], font=jp_font(JP_SERIF_BOLD, 40), fill=(227, 181, 164, 255), anchor="ma")
+    d.text((W // 2, H - 110), "次のお話も、どうぞ", font=jp_font(JP_SERIF_BOLD, 44), fill=(255, 244, 234, 255), anchor="ma",
+           stroke_width=3, stroke_fill=(20, 14, 12, 255))
+    img.save(out, "PNG")
+    return out
+
+
 def _outro_clip(loop: str, png: str, sec: float, out: str) -> str:
     """마지막 장 루프를 sec 초 반복 + 마무리 카드 (본편과 같은 인코딩 규격)."""
     fc = ("[0:v]setpts=PTS-STARTPTS[b];[1:v]format=rgba,fade=t=in:st=0:d=0.8:alpha=1[o];"
@@ -556,6 +575,7 @@ UPLOAD_SETTINGS = [
     ("변경되거나 합성된 콘텐츠", "AI 음성·AI 그림이 들어가므로 '예'"),
     ("올리는 순서", "매일 본편 1편 + 예고 쇼츠 1개 (본편 먼저 → 쇼츠는 같은 날, 쇼츠 고정 댓글로 본편 안내)"),
     ("예고 쇼츠", "설명란·고정 댓글에 본편 제목, '관련 동영상'이 열리면 본편 연결"),
+    ("종료 화면", "YouTube 스튜디오(PC) → 동영상 → 종료 화면: 마지막 20초가 비어 있으니 '동영상(최신 업로드)'과 '구독' 두 개를 화면 가운데에 놓기"),
     ("고정 댓글", "본편·쇼츠 모두 위 '고정 댓글'을 직접 달고 고정 (질문형 → 시청자 댓글 유도)"),
 ]
 
@@ -1080,13 +1100,14 @@ def _render(job, state, keys, save_fn):
         t += max(seg_len, TITLE_CARD_SEC + 0.5)
     ou = state.get("outro") or {}
     if hz.usable(ou.get("local", "")):
-        osec = (ou.get("seconds") or hz.duration(ou["local"])) + 2.5
-        card = _card_png(pf(state, "work", "outro.png"), OUTRO_CARD[0], OUTRO_CARD[1])
+        oa = ou.get("seconds") or hz.duration(ou["local"])
+        osec = max(oa + 2.5, ENDSCREEN_SEC)     # YouTube 종료 화면(마지막 5~20초)을 놓을 자리 — 다음 편으로 이어 보게
+        card = _endcard_png(pf(state, "work", "outro.png"))
         segs.append(_outro_clip(loops[chs[-1]["no"]], card, osec, pf(state, "work", "seg_outro.mp4")))
         marks.append((t, "おわりに"))
         audio_parts.append(("silence", 0.8))
         audio_parts.append(("file", ou["local"]))
-        audio_parts.append(("silence", 1.7))
+        audio_parts.append(("silence", osec - 0.8 - oa))
         t += osec
     total = t
     lst = pf(state, "work", "list.txt")
@@ -1409,6 +1430,42 @@ def make_srt(state, keys) -> dict:
     return {"local": out, "cues": len(rows), "r2_key": keep(keys, state, out, "subtitles_ja.srt", "application/x-subrip")}
 
 
+def _short_texts(state, it: dict, k: int) -> None:
+    plan, fin = state["plan"], state.get("final") or {}
+    it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
+                         f"（{hz.fmt_time(fin.get('seconds', 0), True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
+    it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、上の「SceneStory」をタップ →"
+                     f"「動画」からお聴きいただけます。")
+    it["post_day"] = ["본편 공개 당일", "다른 날 (본편이 없는 날의 쇼츠로)", "다른 날 (본편이 없는 날의 쇼츠로)"][min(k, 2)]
+
+
+def start_extra_short(state: dict, keys: dict, save_fn) -> bool:
+    """완성된 편에서 다른 장면으로 쇼츠 하나 더 (새 본편 없이 쇼츠만 올리는 날용)."""
+    def save_both(s):
+        save_fn(s)
+        save_cloud(keys, s)
+    return hz._start(state["project_id"], "rodoku_short", "쇼츠 하나 더", _extra_short_worker, (state, keys, save_both))
+
+
+def _extra_short_worker(job, state, keys, save_fn):
+    have = [state.get("trailer") or {}] + list(state.get("trailers") or [])
+    slot = next((i for i in range(N_SHORTS) if i >= len(have) or not (have[i].get("local") or have[i].get("r2_key"))), None)
+    if slot is None:
+        raise RuntimeError(f"이 편의 쇼츠는 이미 {N_SHORTS}개입니다.")
+    job["msg"] = f"쇼츠 {slot + 1} 만드는 중 (다른 장면에서)"
+    _trailer(job, state, keys, slot)
+    it = state["trailer"] if slot == 0 else state["trailers"][slot - 1]
+    hz._save(save_fn, state)
+    job["msg"] = f"쇼츠 {slot + 1} 표지 그리는 중"
+    try:
+        _shorts_cover(state, keys, slot)
+    except Exception as e:
+        it["cover"] = {"error": f"{type(e).__name__}: {e}"[:300]}
+    _short_texts(state, it, slot)
+    hz._save(save_fn, state)
+    job["msg"], job["pct"] = f"완료 — 쇼츠 {slot + 1}", 1.0
+
+
 def _pack(state, keys):
     plan, fin = state["plan"], state["final"]
     # 섬네일 3종 (YouTube '테스트 및 비교'용) — 그림과 문구를 서로 다르게
@@ -1465,13 +1522,8 @@ def _pack(state, keys):
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』はチャンネルの動画一覧からどうぞ。")
     trl = state.get("trailer") or {}
     for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
-        if not it.get("local") and not it.get("r2_key"):
-            continue
-        it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
-                             f"（{hz.fmt_time(fin['seconds'], True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
-        it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、上の「SceneStory」をタップ →"
-                         f"「動画」からお聴きいただけます。")
-        it["post_day"] = ["본편 공개 당일", "본편 다음 날", "본편 이틀 뒤"][min(k, 2)]
+        if it.get("local") or it.get("r2_key"):
+            _short_texts(state, it, k)
     pack["shorts_description"] = trl.get("description", "")
     tags = [str(t).strip().lstrip("#") for t in pack.get("tags") or [] if str(t).strip()]
     while tags and len(",".join(tags)) > 480:

@@ -355,6 +355,13 @@ def render_project(st, manager, api_keys, show_banner):
                     st.markdown(lab)
                     st.code(it[key], language=None)
 
+    n_have = sum(1 for it in shorts if it.get("local") or it.get("r2_key"))
+    if (state.get("final") or {}).get("seconds") and not running and n_have < R.N_SHORTS:
+        if st.button(f"🎬 이 편으로 쇼츠 하나 더 (다른 장면 · 지금 {n_have}개)", use_container_width=True, key="rd_more_short"):
+            R.start_extra_short(state, api_keys, manager.save_state)
+            st.rerun()
+        st.caption("새 본편 없이 쇼츠만 올리는 날에 씁니다. 쇼츠 고정 댓글이 이 편 본편으로 안내합니다.")
+
     pack = state.get("upload_pack")
     if pack:
         with st.container(border=True):
