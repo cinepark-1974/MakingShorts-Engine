@@ -185,6 +185,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "characters": [{"name": "名前（読み仮名）", "age": 67, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
+  "narrator_intro": "第一章の前に語り手（young_woman）が一人称で語る前置き。1〜2文、空白を除いて25〜60字",
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
@@ -223,6 +224,13 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   ③ 服と色（赤・朱色の服や小物は使わない。赤は red_accent だけ）
 - image_prompt の光は場面に合わせてひとつに決めて書く。屋外なら「濃いコバルトブルーの空、金色に縁取られた入道雲、水や濡れた地面に映る空」、
   室内なら「窓から差し込む光の筋、光の中に舞う細かな塵、床に落ちる窓枠の影」。室内の絵に空や湖を入れない。
+- narrator_intro: 朗読の声は30代前半の女性。昔の物語を若い声が語る理由を、毎回 young_woman の立場から一言で作る。
+  例（型だけ参考。言い回しは毎回変える）:
+    告白型「祖母が亡くなる前の晩、一度だけ話してくれたことがあります。」
+    場面型「あの豆腐屋のシャッターが、最後に下りた日のことを覚えています。」
+    物から入る型「母の鏡台の引き出しに、片方だけの手袋が入っていました。」
+    問いかけ型「人は、四十年も同じ嘘をつき続けられるものでしょうか。」
+  「最近の作品」の前置きと同じ書き出し・同じ型にしない。「これは〜の話です」で始めない。結末は明かさない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
@@ -239,7 +247,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
               recent: list = None) -> dict:
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
-                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')} / 若い女性の外見:{r.get('young_look', '')}" for r in (recent or [])[:8])
+                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')} / 若い女性の外見:{r.get('young_look', '')} / 前置き:{r.get('intro', '')}" for r in (recent or [])[:8])
     banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
     import random
     hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
@@ -283,7 +291,8 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "object": (pl.get("setting") or {}).get("object", ""), "red": pl.get("red_accent", ""),
                     "place": (pl.get("setting") or {}).get("place", ""),
                     "young": (pl.get("young_woman") or {}).get("role", ""),
-                    "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90]})
+                    "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
+                    "intro": pl.get("narrator_intro", "")[:60]})
     return out
 
 
@@ -317,7 +326,7 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
 
 def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_chars: int) -> str:
     system = WRITE_SYSTEM_HEAD + _novel_rules()
-    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "young_woman", "turn", "ending_ja")}
+    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "young_woman", "narrator_intro", "turn", "ending_ja")}
     outline = [{"no": c["no"], "title_ja": c.get("title_ja"), "beat": c.get("beat_ko")} for c in plan["chapters"]]
     user = (f"[作品設計]\n{json.dumps(design, ensure_ascii=False)}\n\n[全章の流れ]\n{json.dumps(outline, ensure_ascii=False)}\n\n"
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
@@ -669,6 +678,19 @@ def _worker(job, state, keys, save_fn, made_titles):
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
 
+    # ⑤-00 화자의 앞말 (30대 목소리가 옛이야기를 하는 이유 — 편마다 다르게)
+    intro = state.setdefault("intro", {"text": (plan.get("narrator_intro") or "").strip()})
+    if intro.get("text") and not hz.ensure_local(keys, intro, pf(state, "intro.mp3")) and not intro.get("error"):
+        _stage(job, state, save_fn, "voice", 5, "화자의 앞말 낭독")
+        try:
+            dest = pf(state, "intro.mp3")
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), intro["text"], dest, voice_id=voice, info={})
+            intro.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "intro.mp3", "audio/mpeg"))
+        except Exception as e:
+            intro["error"] = f"{type(e).__name__}: {e}"[:200]
+            print(f"[rodoku] 앞말 낭독 실패 → 생략: {e}", flush=True)
+        hz._save(save_fn, state)
+
     # ⑤-0 콜드 오픈 낭독
     cold = state.get("cold") or {}
     if cold.get("text") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
@@ -886,6 +908,13 @@ def _render(job, state, keys, save_fn):
     segs.append(op)
     audio_parts.append(("silence", OPEN_CARD_SEC))
     t += OPEN_CARD_SEC
+    intro = state.get("intro") or {}
+    if hz.usable(intro.get("local", "")):   # 화자의 앞말: 1장 화면 + 자막 + 낭독 → 第一章
+        isec = (intro.get("seconds") or hz.duration(intro["local"])) + 1.6
+        segs.append(_outro_clip(loops[chs[0]["no"]], _caption_png(pf(state, "work", "intro.png"), intro["text"]), isec,
+                                pf(state, "work", "seg_intro.mp4")))
+        audio_parts += [("silence", 0.4), ("file", intro["local"]), ("silence", 1.2)]
+        t += isec
     kanji = "一二三四五六七八九十"
     for c in chs:
         job["msg"] = f"[8/10] 합성 · 제{c['no']}장 이어 붙이는 중"
