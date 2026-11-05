@@ -244,6 +244,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
      "with_young": true,
+     "ambience_en": "English. この章の場面の環境音を一文で（例: gentle rain on a tin roof with a distant railway crossing bell / summer cicadas and a wind chime on a veranda / quiet waves on a pebble beach）。人の声・音楽は入れない",
      "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない",
      "more_scenes": [
        {"image_prompt": "English. 同じ章の後半の別の一場面（寄りの小道具・手元、別の場所、時間の経過など）。image_prompt と同じ書き方", "motion_prompt": "English", "with_young": false},
@@ -755,7 +756,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
                               "image_prompt": c.get("image_prompt", ""),
-                              "motion_prompt": c.get("motion_prompt", ""),
+                              "motion_prompt": c.get("motion_prompt", ""), "ambience_en": c.get("ambience_en", ""),
                               "with_young": bool(c.get("with_young")) or c["no"] == _cover_no(plan),
                               "extra": [{"image_prompt": m.get("image_prompt", ""), "motion_prompt": m.get("motion_prompt", ""),
                                          "with_young": bool(m.get("with_young"))}
@@ -873,6 +874,9 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ⑤-2 배경음악 — 편마다 이야기에 맞춰 새로 2곡 (반전 전 / 반전 후)
     _make_music(job, state, keys, save_fn)
+    # ⑤-3 환경음 — 장마다 빗소리·건널목·매미 등
+    if state.get("ambience_on", True):
+        _make_ambience(job, state, keys, save_fn)
 
     # ⑥ 합성
     if not hz.usable((state.get("final") or {}).get("local", "")) and not (state.get("final") or {}).get("r2_key"):
@@ -1213,11 +1217,81 @@ def _speech_timeline(state, audio_parts) -> list:
     return out
 
 
+AMB_VOLUME = 0.18      # 환경음 (낭독을 가리지 않게 낮게)
+
+
+def _make_ambience(job, state, keys, save_fn):
+    """장마다 환경음 30초 (끊김 없이 반복되는 소리). 실패한 장은 환경음 없이."""
+    from elevenlabs import ElevenLabs
+    for c in state["chapters"]:
+        it = c.setdefault("ambience", {})
+        txt = (c.get("ambience_en") or "").strip()
+        dest = pf(state, "amb", f"ch{c['no']:02d}.mp3")
+        if not txt or hz.ensure_local(keys, it, dest) or it.get("error"):
+            continue
+        _stage(job, state, save_fn, "music", 6, f"제{c['no']}장 환경음")
+        prompt = txt.rstrip(".") + ". Ambient background sound only, no voices, no music."
+        try:
+            cl = ElevenLabs(api_key=keys.get("ELEVENLABS_API_KEY", ""))
+            try:
+                gen = cl.text_to_sound_effects.convert(text=prompt, duration_seconds=30, loop=True, prompt_influence=0.5)
+            except TypeError:           # 예전 SDK 는 loop 를 모른다
+                gen = cl.text_to_sound_effects.convert(text=prompt, duration_seconds=30, prompt_influence=0.5)
+            with open(dest, "wb") as f:
+                for ch in gen:
+                    if ch:
+                        f.write(ch)
+            if not hz.usable(dest):
+                raise RuntimeError("빈 소리")
+            it.update(local=dest, prompt=prompt, r2_key=keep(keys, state, dest, f"amb_ch{c['no']:02d}.mp3", "audio/mpeg"))
+        except Exception as e:
+            it["error"] = f"{type(e).__name__}: {e}"[:200]
+            print(f"[rodoku] 제{c['no']}장 환경음 실패 → 생략: {e}", flush=True)
+        hz._save(save_fn, state)
+
+
+def _ambience_bed(state, spans, total) -> str:
+    """장 구간마다 그 장의 환경음을 반복해 깔고, 나머지(첫머리·마무리)는 무음인 한 줄짜리 소리."""
+    pieces, cur = [], 0.0
+    d = os.path.dirname(pf(state, "work", "amb", "x"))
+    for i, (a, b, c) in enumerate(spans):
+        src = (c.get("ambience") or {}).get("local", "")
+        if not hz.usable(src):
+            continue
+        if a > cur + 0.01:
+            pieces.append(("sil", a - cur))
+        pieces.append((src, b - a))
+        cur = b
+    if not any(p[0] != "sil" for p in pieces):
+        return ""
+    if total > cur + 0.01:
+        pieces.append(("sil", total - cur))
+    files = []
+    for i, (src, dur) in enumerate(pieces):
+        out = os.path.join(d, f"p{i:02d}.wav")
+        if src == "sil":
+            cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=44100:cl=stereo", out]
+        else:
+            cmd = ["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", src, "-t", f"{dur:.3f}", "-af",
+                   f"aresample=44100,aformat=channel_layouts=stereo,afade=t=in:d=2,afade=t=out:st={max(dur - 2, 0):.2f}:d=2",
+                   "-c:a", "pcm_s16le", out]
+        subprocess.run(cmd, check=True, timeout=300)
+        files.append(out)
+    lst = os.path.join(d, "list.txt")
+    with open(lst, "w", encoding="utf-8") as f:
+        for fp in files:
+            f.write(f"file '{os.path.abspath(fp)}'\n")
+    bed = os.path.join(d, "bed.m4a")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c:a", "aac", "-b:a", "128k", bed],
+                   check=True, timeout=600)
+    return bed
+
+
 def _render(job, state, keys, save_fn):
     chs = state["chapters"]
     segs, audio_parts, marks = [], [], []
     # 오프닝 카드 (1장 그림 · 작품 제목)
-    loops, scene_loops = {}, {}
+    loops, scene_loops, amb_spans = {}, {}, []
     for c in chs:
         scene_loops[c["no"]] = []
         for k, sc in enumerate([c] + list(c.get("extra") or [])):
@@ -1283,6 +1357,7 @@ def _render(job, state, keys, save_fn):
                 d = (part - TITLE_CARD_SEC) if k == 0 else (body - (part - TITLE_CARD_SEC) - part * (len(sl) - 2) if k == len(sl) - 1 else part)
                 segs.append(_body_clip(lp, 0, max(d, 0.5), pf(state, "work", f"seg{c['no']:02d}b{k + 1}.mp4")))
         marks.append((t, f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章 {c['title_ja']}"))
+        amb_spans.append((t, t + max(seg_len, TITLE_CARD_SEC + 0.5), c))
         audio_parts.append(("file", c["audio"]["local"]))
         audio_parts.append(("silence", CHAPTER_PAD_SEC))
         t += max(seg_len, TITLE_CARD_SEC + 0.5)
@@ -1336,8 +1411,14 @@ def _render(job, state, keys, save_fn):
     elif ga or gb:
         args += ["-stream_loop", "-1", "-i", ga or gb]
         fc += f";[{k}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total + 1:.2f},{fade}[bg]"
-    if ga or gb:
-        fc += ";[narr][bg]amix=inputs=2:duration=first:normalize=0[mx]"
+    n_in = k + (2 if ga and gb else 1 if (ga or gb) else 0)
+    amb = _ambience_bed(state, amb_spans, total)
+    if amb:
+        args += ["-i", amb]
+        fc += f";[{n_in}:a]aresample=44100,aformat=channel_layouts=stereo,volume={AMB_VOLUME}[amb]"
+    mix = ["[narr]"] + (["[bg]"] if (ga or gb) else []) + (["[amb]"] if amb else [])
+    if len(mix) > 1:
+        fc += f";{''.join(mix)}amix=inputs={len(mix)}:duration=first:normalize=0[mx]"
         out_label = "[mx]"
     else:
         out_label = "[narr]"

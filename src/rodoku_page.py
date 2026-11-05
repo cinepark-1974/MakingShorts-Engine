@@ -29,6 +29,7 @@ def render_new(st, manager, api_keys):
                         format_func=lambda n: {1: "1개 (매일 본편+쇼츠 운영 · 기본)", 3: "3개 (시작·중간·반전 직전)"}[n])
     n_scenes = st.radio("장마다 그림 수", [3, 1], index=[3, 1].index(R.DEFAULT_SCENES), horizontal=True, key="rd_nscenes",
                         format_func=lambda n: {3: "3장 (약 1분마다 장면이 바뀜 · 기본)", 1: "1장 (예전 방식 · 빠르고 싸게)"}[n])
+    ambience_on = st.toggle("🌧 장면 소리 (빗소리·건널목·매미·파도 등을 낭독 밑에 작게)", value=True, key="rd_amb")
     motion_on = st.toggle("🎞 움직이는 그림 (장마다 MiniMax 6초 클립 → 초당 7.5장 손그림 애니메이션 느낌으로 반복)",
                           value=True, key="rd_motion",
                           help="끄면 그림을 천천히 확대·축소(Ken Burns)만 합니다. 켜면 Replicate 영상 비용이 장 수만큼 추가되고 "
@@ -39,7 +40,8 @@ def render_new(st, manager, api_keys):
     if st.button("🤖 자동 제작 시작", type="primary", use_container_width=True, disabled=bool(miss), key="rd_start"):
         state = manager.create_new_project(chapter="朗読ドラマ", topic="朗読ドラマ 자동", channel="scenestory")
         state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued",
-                     motion_on=bool(motion_on), n_shorts=int(n_shorts), n_scenes=int(n_scenes))
+                     motion_on=bool(motion_on), n_shorts=int(n_shorts), n_scenes=int(n_scenes),
+                     ambience_on=bool(ambience_on))
         manager.save_state(state)
         made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"]
         R.start_auto(state, api_keys, manager.save_state, made)
