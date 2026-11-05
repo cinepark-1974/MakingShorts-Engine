@@ -82,6 +82,47 @@ STORY_KINDS = [
      ["実家じまい", "墓じまい 故郷"]),
 ]
 KIND_NAMES = [k for k, _, _ in STORY_KINDS]
+
+# 화자의 앞말 '형식' 36가지 — 엔진이 최근 10편에 안 쓴 형식을 무작위로 고르고, 문장은 Claude 가 그 편 이야기로 새로 쓴다.
+# (완성 문장 1000개를 미리 만들어 두면 이야기와 상관없는 말이 붙고, 형식은 결국 반복된다)
+INTRO_FORMS = [
+    "告白: 誰かが一度だけ打ち明けてくれた話として始める",
+    "場面: 語り手が覚えている、ある日の一場面の描写で始める",
+    "物: 引き出し・箱・ポケットから出てきた一つの物で始める",
+    "問い: 聴く人に向けた静かな問いかけで始める",
+    "音: ある音（踏切、ラジオ、風鈴、雨どい）の記憶で始める",
+    "匂い: ある匂い（煮物、石けん、古い本）の記憶で始める",
+    "味: ある料理やお菓子の味の記憶で始める",
+    "季節: 季節の変わり目の一日で始める",
+    "天気: その日の天気と空の色で始める",
+    "時刻: 具体的な時刻（午前四時、終電の後）で始める",
+    "日付: 何年何月何日という日付で始める",
+    "言葉: 誰かが言った一言の引用で始める",
+    "嘘: 語り手が長いあいだ信じていた小さな嘘で始める",
+    "後悔: 語り手が言えなかった一言で始める",
+    "約束: 守られなかった、あるいは守られた約束で始める",
+    "手紙以外の記録: 家計簿・回覧板・レシート・メモ書きで始める",
+    "写真ではなく絵: 誰かが描いた絵やらくがきで始める",
+    "場所の今: その場所が今どうなっているかで始める",
+    "癖: 登場人物の小さな癖で始める",
+    "手: 誰かの手の様子で始める",
+    "背中: 誰かの後ろ姿の記憶で始める",
+    "電話: 一本の電話（留守電、間違い電話）で始める",
+    "道: いつも通った道や坂で始める",
+    "乗り物: バス・電車・自転車の思い出で始める",
+    "動物: 一匹の犬や猫や鳥で始める",
+    "植物: 庭木・鉢植え・道端の花で始める",
+    "数字: ある数（三十年、七回、二人分）で始める",
+    "比べる: 昔と今の小さな違いで始める",
+    "秘密の場所: 誰にも教えなかった場所で始める",
+    "夢: 語り手が見た夢で始める",
+    "気づき: 大人になって初めて分かったことで始める",
+    "噂: 町で聞いた噂で始める",
+    "最後: 何かの最後の日（閉店、引っ越し、卒業）で始める",
+    "最初: 何かを初めてした日で始める",
+    "沈黙: 誰も何も言わなかった時間で始める",
+    "名前: ある名前の由来や呼び方で始める",
+]
 GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "老後 生き方"]
 
 STAGES = [("trend", "트렌드 조회"), ("plan", "소재·설계"), ("write", "집필"), ("images", "그림"),
@@ -225,7 +266,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 - image_prompt の光は場面に合わせてひとつに決めて書く。屋外なら「濃いコバルトブルーの空、金色に縁取られた入道雲、水や濡れた地面に映る空」、
   室内なら「窓から差し込む光の筋、光の中に舞う細かな塵、床に落ちる窓枠の影」。室内の絵に空や湖を入れない。
 - narrator_intro: 朗読の声は30代前半の女性。昔の物語を若い声が語る理由を、毎回 young_woman の立場から一言で作る。
-  例（型だけ参考。言い回しは毎回変える）:
+  型はユーザー文で指定される。例（言い回しは毎回変える）:
     告白型「祖母が亡くなる前の晩、一度だけ話してくれたことがあります。」
     場面型「あの豆腐屋のシャッターが、最後に下りた日のことを覚えています。」
     物から入る型「母の鏡台の引き出しに、片方だけの手袋が入っていました。」
@@ -245,13 +286,16 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
               recent: list = None) -> dict:
+    import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
                     f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')} / 若い女性の外見:{r.get('young_look', '')} / 前置き:{r.get('intro', '')}" for r in (recent or [])[:8])
     banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
-    import random
+    used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
+    intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
     hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
+            f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"主人公（視点人物）の性別: {hero}（視聴者の多くは60〜70代の女性。その人が自分のこととして聴ける人物にする）\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
@@ -268,6 +312,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan["chapters"] = chs
     if kind:
         plan["kind"] = kind
+    plan["intro_form"] = intro_form
     return plan
 
 
@@ -292,7 +337,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "place": (pl.get("setting") or {}).get("place", ""),
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
-                    "intro": pl.get("narrator_intro", "")[:60]})
+                    "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
 
 
