@@ -391,6 +391,11 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
 - 三人称・過去形。地の文はやさしい語彙、一文は短め（40字前後まで）。難しい漢字語は避ける。
 - 会話は「」。誰が話したか耳で分かるように、会話の前後に話し手の動作を一つ置く。
 - 数字は漢数字（六十七歳、四十五年）。英語・記号・括弧は使わない。
+- 耳で一度で分かる数字の書き方:
+  ・年は和暦が基本（昭和六十年、平成元年、平成七年）。西暦を使うなら位取りで書く（千九百八十九年）。「一九八九年」のような一字ずつの書き方はしない。
+  ・時刻は「午後三時」「夜の九時すぎ」。日付は「三月十日」。
+  ・読み方が二つある言葉はひらがなで書く（はたち、ついたち、ひとり、ふたり、ひとつ、ふたつ、きょう、あした、おととし）。
+  ・電話番号・番地・金額の細かい数字は出さない（「駅前の古いアパートの二階」「千円札が三枚」程度にする）。
 - 感情を説明しない。手・物・音・匂いで見せる。
 - 章の最後の一文は、次の章を聴きたくなる一文で終える（最終章は物語の最後の一行）。
 
@@ -860,14 +865,14 @@ def _worker(job, state, keys, save_fn, made_titles):
         if not hz.ensure_local(keys, au, pf(state, f"ch{c['no']:02d}.mp3")):
             _stage(job, state, save_fn, "voice", 5, f"제{c['no']}장 낭독")
             dest = pf(state, f"ch{c['no']:02d}.mp3")
-            head = f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章、{c['title_ja']}。\n\n"
+            head = f"第{_kanji_num(c['no'])}章、{c['title_ja']}。\n\n"
             info = {}
             if cast:   # 배역 목소리: 지문은 낭독자, 「」 대사는 인물 목소리
                 _stage(job, state, save_fn, "voice", 5, f"제{c['no']}장 낭독 (배역 목소리)")
                 cast_narration(keys, ak, state, c, head, dest, voice, cast)
                 info["model"] = "cast"
             else:
-                generate_narration(keys.get("ELEVENLABS_API_KEY", ""), head + c["text"], dest, voice_id=voice, info=info)
+                generate_narration(keys.get("ELEVENLABS_API_KEY", ""), speakable(head + c["text"]), dest, voice_id=voice, info=info)
             au.update(local=dest, seconds=round(hz.duration(dest), 2), model=info.get("model", ""),
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
@@ -878,7 +883,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "voice", 5, "화자의 앞말 낭독")
         try:
             dest = pf(state, "intro.mp3")
-            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), intro["text"], dest, voice_id=voice, info={})
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), speakable(intro["text"]), dest, voice_id=voice, info={})
             intro.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "intro.mp3", "audio/mpeg"))
         except Exception as e:
             intro["error"] = f"{type(e).__name__}: {e}"[:200]
@@ -891,7 +896,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 낭독")
         try:
             dest = pf(state, "cold.mp3")
-            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), cold["text"], dest, voice_id=voice, info={})
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), speakable(cold["text"]), dest, voice_id=voice, info={})
             cold.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "cold.mp3", "audio/mpeg"))
         except Exception as e:
             cold["error"] = f"{type(e).__name__}: {e}"[:200]
@@ -1051,6 +1056,43 @@ def _motion_one(state, keys, c, k, sc):
         print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 실패 → Ken Burns: {e}", flush=True)
 
 
+# ── 낭독용 숫자 정리 (TTS 가 이상하게 읽지 않게) ──
+_KD = "〇一二三四五六七八九"
+
+
+def _kanji_num(n: int) -> str:
+    """정수 → 위치 한자 (1989 → 千九百八十九, 20000 → 二万)."""
+    if n == 0:
+        return "零"
+    def under(m):
+        out = ""
+        for v, u in ((1000, "千"), (100, "百"), (10, "十")):
+            d, m = divmod(m, v)
+            if d:
+                out += ("" if d == 1 else _KD[d]) + u
+        return out + (_KD[m] if m else "")
+    out = ""
+    for v, u in ((10 ** 8, "億"), (10 ** 4, "万")):
+        d, n = divmod(n, v)
+        if d:
+            out += under(d) + u
+    return out + (under(n) if n else "")
+
+
+def speakable(t: str) -> str:
+    """낭독 직전 숫자 정리: 아라비아 숫자 → 한자, 「一九八九年」 같은 한 자씩 연도 → 「千九百八十九年」."""
+    if not t:
+        return t
+    def num(m):
+        d = m.group(0).replace(",", "")
+        if (d.startswith("0") and len(d) > 1) or len(d) > 12:     # 0 으로 시작하는 번호는 한 자씩
+            return "".join(_KD[int(ch)] for ch in d)
+        return _kanji_num(int(d))
+    t = re.sub(r"\d{1,3}(?:,\d{3})+|\d+", num, t)
+    t = re.sub(r"([〇一二三四五六七八九]{3,4})(?=年)", lambda m: _kanji_num(int("".join(str(_KD.index(ch)) for ch in m.group(1)))), t)
+    return t
+
+
 # ── 배역 목소리 ──
 CAST_ROLES = {"hero": "주인공 (52~68세 여성)", "partner": "상대 남성 · 현재 (남편·옛 연인 등)",
               "partner_young": "상대 남성 · 회상 (젊은 시절)", "young": "젊은 여성 (20대)"}
@@ -1162,7 +1204,7 @@ def cast_narration(keys: dict, ak: str, state: dict, c: dict, head: str, dest: s
         role, t = segs[i]
         if hz.usable(files[i]):
             return
-        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), t, files[i], voice_id=_voice_for(role, cast, narrator), info={})
+        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), speakable(t), files[i], voice_id=_voice_for(role, cast, narrator), info={})
     with ThreadPoolExecutor(max_workers=3) as ex:
         list(ex.map(one, range(len(segs))))
     # 목소리마다 규격(채널·표본율)이 다를 수 있어 모두 같은 WAV 로 맞춘 뒤 잇는다
