@@ -618,8 +618,59 @@ def _rss_mb() -> int:
     return 0
 
 
+# ── 서버 재시작 뒤 자동으로 이어 만들기 ──
+AUTO_RESUME_MAX = 3            # 같은 편을 자동으로 다시 시작하는 최대 횟수 (매번 같은 오류로 비용만 쓰는 것 방지)
+AUTO_RESUME_HOURS = 12         # 마지막 저장 후 이 시간이 지난 편은 건드리지 않는다
+_AUTO_DONE = {"checked": False}
+
+
+def auto_resume(manager, keys: dict) -> list:
+    """앱이 (재)시작된 뒤 처음 열릴 때 한 번: 멈춘 채 남은 朗読ドラマ 편을 찾아 이어서 만든다.
+    서버 목록에 없으면 R2 의 상태로 되살린다. 작가가 직접 멈춘 편·완성된 편·오래된 편은 건너뛴다."""
+    if _AUTO_DONE["checked"]:
+        return []
+    _AUTO_DONE["checked"] = True
+    started = []
+    try:
+        local = {}
+        for p in manager.list_projects():
+            if p.get("channel") == "scenestory":
+                try:
+                    st_ = manager.load_state(p["dir"])
+                    local[st_["project_id"]] = st_
+                except Exception:
+                    pass
+        cands = dict(local)
+        for pid, row in cloud_index(keys).items():
+            if pid not in cands and row.get("stage") not in ("done", ""):
+                try:
+                    cands[pid] = cloud_state(keys, pid)
+                except Exception:
+                    pass
+        now = time.time()
+        for pid, st_ in sorted(cands.items()):
+            if st_.get("mode") != "rodoku" or st_.get("stage") in ("done", None, "") or st_.get("user_stopped"):
+                continue
+            if hz.is_running(pid) or int(st_.get("auto_resumed", 0)) >= AUTO_RESUME_MAX:
+                continue
+            ts = st_.get("saved_at") or 0
+            if ts and now - ts > AUTO_RESUME_HOURS * 3600:
+                continue
+            st_["auto_resumed"] = int(st_.get("auto_resumed", 0)) + 1
+            manager.save_state(st_)
+            made = [s.get("title", "") for k, s in local.items() if k != pid]
+            if start_auto(st_, keys, manager.save_state, made):
+                started.append(pid)
+                print(f"[rodoku] 서버 재시작 뒤 자동으로 이어 만들기: {pid} ({st_.get('stage')}, {st_['auto_resumed']}번째)", flush=True)
+    except Exception as e:
+        print(f"[rodoku] 자동 이어 만들기 확인 실패: {e}", flush=True)
+    return started
+
+
 def start_auto(state: dict, keys: dict, save_fn, made_titles: list) -> bool:
+    state.pop("user_stopped", None)            # 다시 시작하면 '멈춤' 표시는 지운다
     def save_both(s):
+        s["saved_at"] = time.time()
         save_fn(s)
         save_cloud(keys, s)
     return hz._start(state["project_id"], "rodoku", "낭독 드라마 자동 제작", _worker,
@@ -634,6 +685,8 @@ def _stage(job, state, save_fn, key, i, msg=""):
     print(f"[rodoku] {state.get('project_id', '')} {job['msg']} · 메모리 {_rss_mb()}MB", flush=True)
     hz._save(save_fn, state)
     if job.get("stop"):
+        state["user_stopped"] = True            # 작가가 멈춘 편은 자동으로 다시 시작하지 않는다
+        hz._save(save_fn, state)
         raise RuntimeError("중지했습니다. '이어서 만들기'를 누르면 여기서부터 계속합니다.")
 
 

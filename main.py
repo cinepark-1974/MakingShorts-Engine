@@ -807,6 +807,15 @@ st.session_state["_last_channel"] = CHANNEL
 # API 키 체크
 # ─────────────────────────────────────────────────────────────────────────────
 api_keys = load_api_keys()
+
+# 서버가 재시작돼 멈춘 SceneStory 朗読ドラマ 편이 있으면, 앱이 다시 열릴 때 자동으로 이어 만든다 (버튼 없이)
+try:
+    from src import rodoku as _rd
+    _resumed = _rd.auto_resume(get_manager(), api_keys)
+    if _resumed:
+        st.toast(f"멈춰 있던 朗読ドラマ {len(_resumed)}편을 자동으로 이어서 만들고 있습니다.")
+except Exception as _e:
+    print(f"[main] 자동 이어 만들기 실패: {_e}", flush=True)
 # FAL_KEY는 선택 사항 — REPLICATE_API_TOKEN 으로 대체 가능
 REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]
 missing = [k for k in REQUIRED_KEYS if not api_keys.get(k)]
