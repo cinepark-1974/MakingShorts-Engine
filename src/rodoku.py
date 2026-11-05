@@ -64,20 +64,28 @@ STORY_KINDS = [
      ["一人旅 シニア", "湯治 旅"]),
     ("熟年離婚・卒婚", "長い結婚生活の終わりを決めた夫婦の、最後の数日",
      ["熟年離婚 その後", "卒婚"]),
-    ("介護の日々", "夫・妻・親を介護する日々の中で、相手の思いがけない言葉や行動に出会う",
-     ["老老介護", "介護 夫婦 泣ける"]),
+    ("介護の日々", "遠くに住む親や夫・妻を介護する日々の中で、相手の思いがけない言葉や行動に出会う",
+     ["親の介護 50代", "遠距離介護", "介護 夫婦 泣ける"]),
     ("昔の仲間", "還暦や定年で集まった昔の仲間（部活・職場・バンド）。ひとりが隠していた事情が明るみに出る",
      ["還暦 仲間", "昔の仲間 定年"]),
     ("味の記憶", "亡き人の料理、なくなった定食屋の味。その味を再現しようとする人の話",
      ["母の味 レシピ", "定食屋 昭和"]),
     ("新しい恋", "伴侶を亡くした人や独り身の人が、いま目の前の人に惹かれる。過去の恋ではなく今の恋",
-     ["シニア恋愛", "70代 恋", "未亡人 恋"]),
+     ["50代 恋愛", "シニア恋愛", "未亡人 恋"]),
     ("初恋・再会", "昔の恋人や初恋の人との再会",
      ["初恋 再会", "同窓会 再会"]),
     ("動物との暮らし", "老いた犬や猫、迷い込んだ動物が、ひとり暮らしの人の毎日を変える",
      ["老犬 介護", "猫 ひとり暮らし 高齢"]),
     ("小さな嘘", "小さな嘘や勘違いが転がって大事になる、くすっと笑えて最後に温かい話",
      ["夫婦 勘違い 笑える", "小さな嘘"]),
+    ("夫の不可解な行動", "最近、夫の様子がおかしい（早朝に出かける・知らない匂い・減っていくお金・知らない女性からの電話）。疑いが深まった末に、温かい真実がわかる",
+     ["夫 怪しい 行動", "夫 隠し事", "定年前 夫"]),
+    ("子の巣立ち", "子どもが家を出て、急に静かになった家。残された夫婦か母が、空いた部屋で思いがけない物や気持ちに出会う",
+     ["子供 巣立ち 寂しい", "空の巣症候群", "子離れ"]),
+    ("母と娘", "年老いた母と、五十代になった娘。言えずにきた本音が、ある出来事でこぼれる",
+     ["母と娘 確執", "実家の母 本音"]),
+    ("パートの職場", "子育てを終えて久しぶりに働き始めた職場（スーパー・食堂・クリーニング店など）で、思いがけない人や秘密に出会う",
+     ["50代 パート", "50代 再就職"]),
     ("故郷じまい", "実家じまい・墓じまいで久しぶりに帰った故郷で起きること",
      ["実家じまい", "墓じまい 故郷"]),
 ]
@@ -219,7 +227,7 @@ def collect_trends(n_seeds: int = 8, salt: float = 0.0, kind: str = "") -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # ② 소재·설계
 # ─────────────────────────────────────────────────────────────────────────────
-PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory 朗読ドラマ」の脚本家です（25年のキャリアを持つ映画・ドラマ作家の感覚で書く）。
+PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「SceneStory 朗読ドラマ」の脚本家です（25年のキャリアを持つ映画・ドラマ作家の感覚で書く）。
 実際の検索語リストを受け取り、その中から今週いちばん視聴者の心に刺さる題材をひとつ選び、オリジナル短編の設計図を作ります。
 以下のJSONだけを出力してください（説明文・コードブロック記号は禁止）。
 
@@ -232,23 +240,25 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "characters": [{"name": "名前（読み仮名）", "age": 67, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle for a stylish Japanese woman in her fifties (e.g. chic chin-length bob with a few soft gray strands / low loose ponytail with side-swept bangs / short layered cut), a gentle face with faint smile lines at the corners of the eyes, outfit and its colors (no red), one small everyday item"},
+  "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
   "narrator_intro": "第一章の前に語り手（young_woman）が一人称で語る前置き。1〜2文、空白を除いて25〜60字",
   "cover_chapter": 2,
-  "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の場所の近くの、晴れた青空と白い入道雲の下（海辺の道・川の土手・緑の並木道・丘の上の駅・田んぼの畦道など）。young_woman がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見える。一つの状態・一つの動作で確定的に書く",
+  "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の場所の近くの、晴れた青空と白い入道雲の下（海辺の道・川の土手・緑の並木道・丘の上の駅・田んぼの畦道など）。主人公（heroine、50代）がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見え、物語の謎を胸に抱えた表情（遠くを見つめる・小さく息をのむ）。一つの状態・一つの動作で確定的に書く",
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
-     "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
-     "with_young": true,
+     "image_prompt": "English. One still scene for this chapter: place, season, light, one object, the heroine (face visible, one clear expression) or one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
+     "with_hero": true,
+     "with_young": false,
      "ambience_en": "English. この章の場面の環境音を一文で（例: gentle rain on a tin roof with a distant railway crossing bell / summer cicadas and a wind chime on a veranda / quiet waves on a pebble beach）。人の声・音楽は入れない",
      "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない。手・指・腕は動かさない（髪・服・草・光・水・雲などだけ）",
      "more_scenes": [
-       {"image_prompt": "English. 同じ章の後半の別の一場面（机や棚に置かれた小道具の寄り、別の場所、時間の経過など。手のアップは描かない）。image_prompt と同じ書き方", "motion_prompt": "English", "with_young": false},
-       {"image_prompt": "English. 章の終わりの一場面", "motion_prompt": "English", "with_young": false}
+       {"image_prompt": "English. 同じ章の後半の別の一場面（机や棚に置かれた小道具の寄り、別の場所、時間の経過など。手のアップは描かない）。image_prompt と同じ書き方", "motion_prompt": "English", "with_hero": false, "with_young": false},
+       {"image_prompt": "English. 章の終わりの一場面", "motion_prompt": "English", "with_hero": true, "with_young": false}
      ]}
   ],
   "seo_keywords": ["検索されやすい言葉5〜8個"],
@@ -261,9 +271,12 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 }
 
 設計ルール
-- 主人公は52〜68歳の女性（1958〜1974年生まれ）（視聴者と同じ世代。「おばあさん」ではなく、まだ働いたり旅をしたりする現役の世代）。
+- 主人公は50〜60歳の女性（1966〜1976年生まれ）（視聴者の中心と同じ世代。子どもの巣立ち・親の介護・夫の定年前後・パート勤めなど、いまの暮らしの真ん中にいる人）。
   夫・昔の恋人・兄弟などの男性は相手役として出してよいが、視点人物にはしない。「いま」（2020年代）の数日間が物語の軸。舞台は日本の町・駅・喫茶店・団地・温泉など。
-- 過去（回想）は主人公が20〜40代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
+- 物語の始め方（必須）: 第1章は「いま、主人公の身のまわりで起きている小さな謎」から始める（例：夫が毎朝四時に出かける／知らない番号から毎晩電話がある／
+  亡き母の口座から毎月同じ額が引き出されている／空き家のはずの実家に灯りがつく）。聴き手が「なぜ？」と思う謎を第1章の最初の数行で出し、
+  章を追うごとに疑いを深め、反転の章で温かい真実か静かな痛みの真実を明かす。回想はその謎の答えに近づくためにだけ挟む。
+- 過去（回想）は主人公が20〜30代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
   昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
 - 実在の有名人・曲名・ドラマ名・商品名は使わない（時代の空気は「トレンディドラマの夜」「ポケベルの数字」のように一般名詞で出す）。
@@ -272,7 +285,7 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   それ以外の型では物語の大半を「いま」の数日間で起こし、過去は回想として少しだけにする。
 - 手紙・はがき・ノート・日記・写真は、直近の作品で使っていなければ小道具にしてよい（使用禁止リストに入っていたら使わない）。
 - 「最近の作品」に挙がったタイトルの言葉、小道具、赤いもの、舞台は今回は使わない。
-- 毎回、20代の若い女性（young_woman）をひとり物語に入れる。視聴者が「若い頃の自分」か「自分の娘・孫」を重ねて見る人物。
+- 毎回、20代の若い女性（young_woman）をひとり物語に入れる（脇役。主人公の娘・回想の若い主人公・職場の若い同僚など）。視聴者が「若い頃の自分」か「自分の娘」を重ねて見る人物。
   作品ごとに別人で、立場も最近の作品と重ねない（孫娘・娘・回想の若い主人公・近所の大学生・店のアルバイト・旅先の若い車掌など）。
   名前・髪型・服もその作品だけのものにする。主人公の人生を動かすきっかけになる役にし、飾りにしない。
 - young_woman は「昭和・平成の面影が残る町に立つ、いまの2020年代の若い女性」。古い町並みの中で彼女だけが今の時代の色を持つ対比を絵の見どころにする。
@@ -295,14 +308,15 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
     問いかけ型「人は、四十年も同じ嘘をつき続けられるものでしょうか。」
   「最近の作品」の前置きと同じ書き出し・同じ型にしない。「これは〜の話です」で始めない。結末は明かさない。
 - cover_chapter: サムネイルにする章の番号。その章は必ず屋外の昼、晴れた青空と白い入道雲・緑の木々・海辺や川辺の場面にし、
-  young_woman が映る（with_young: true）。その章の image_prompt にも青空を書く。室内や夜の章を cover_chapter にしない。
+  主人公が顔の見える姿で映る（with_hero: true）。その章の image_prompt にも青空を書く。室内や夜の章を cover_chapter にしない。
 - more_scenes: 各章の絵は image_prompt（章の始まり）＋ more_scenes 2つ（章の中ほど・章の終わり）の3枚。朗読の流れに沿って
-  場面が変わるように、引きの絵 → 寄りの絵（手元・小道具の大写し）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
-- with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
+  場面が変わるように、引きの絵 → 寄りの絵（主人公の表情、または置かれた小道具の大写し。手のアップは描かない）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
+- with_young はその章の絵に young_woman が映るなら true（全章のうち1〜2章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
-- image_prompt は人物の顔を描かない（後ろ姿・手・シルエット・遠景の小さな人物）。文字・看板の文字は入れない。
+- 主人公（heroine）は絵の中心。with_hero: true の絵では heroine.look_en の姿で、顔と表情が見えてよい（各章のうち少なくとも1枚）。
+  70歳以上の人物（主人公の親など）は顔を描かない（後ろ姿・シルエット・遠景の小さな人物）。文字・看板の文字は入れない。
 - チャンネルの目印：毎章の絵に red_accent の朱色のものを必ずひとつ入れ、それが画面で唯一の鮮やかな赤になる。
   反転の章ではその赤の意味が変わる置き方にする（例：結ばれていた赤い糸がほどけている、閉じていた赤い傘が開いている）。
 - turn_chapter は反転が起きる章の番号。music は歌のない劇伴（instrumental, no vocals）。朗読の邪魔をしない静かな編成にする
@@ -315,7 +329,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
-                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')} / 若い女性の外見:{r.get('young_look', '')} / 前置き:{r.get('intro', '')}" for r in (recent or [])[:8])
+                    f"赤:{r.get('red', '')} / 舞台:{r.get('place', '')} / 若い女性の立場:{r.get('young', '')} / 若い女性の外見:{r.get('young_look', '')} / 主人公の外見:{r.get('hero_look', '')} / 前置き:{r.get('intro', '')}" for r in (recent or [])[:8])
     banned = sorted({w for r in (recent or [])[:6] for w in (r.get("object", ""), r.get("red", "")) if w})
     used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
@@ -324,7 +338,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
-            f"主人公（視点人物）の性別: {hero}（視聴者の多くは60〜70代の女性。その人が自分のこととして聴ける人物にする）\n\n"
+            f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
             f"\n\n章の数: ちょうど {n_chapters} 章\n"
@@ -366,6 +380,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "place": (pl.get("setting") or {}).get("place", ""),
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
+                    "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
                     "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
 
@@ -587,6 +602,59 @@ def _card_clip(loop: str, png: str, sec: float, out: str) -> str:
     return out
 
 
+SUBS_ON = True   # 본문 자막을 화면에 입힌다 (2026-11: 경쟁 채널 분석 — 소리 끄고 보는 시청자·고령 시청자)
+
+
+def _chapter_subs(keys: dict, c: dict, head: str) -> list:
+    """장 낭독 → 자막 줄 [(글자, 시작, 끝)] (장 시작 기준 초). 한 번 맞추면 c['subs'] 에 저장해 다시 쓰지 않는다."""
+    stamp = (c.get("audio") or {}).get("seconds")
+    if c.get("subs") is not None and c.get("subs_for") == stamp:
+        return c["subs"]
+    cues = _cues(_align(keys, c["audio"]["local"], speakable(head + c.get("text", ""))))
+    if cues and cues[0][0].startswith("第"):     # 「第一章、…。」 은 제목 카드가 보여 주므로 자막에서 뺀다
+        cues = cues[1:]
+    c["subs"] = [[t, round(a, 3), round(b, 3)] for t, a, b in cues]
+    c["subs_for"] = stamp
+    return c["subs"]
+
+
+def _burn_subs(state, keys, job, video: str, spans: list, total: float, save_fn=None) -> str:
+    """완성 화면(video)에 본문 자막을 한 번에 입힌다. spans = [(장 시작 시각, 장)]. 실패하면 원래 화면을 돌려준다."""
+    from src.assembler import _caption_track
+    from src.scenestory import jp_font, JP_SERIF_BOLD, phrase_wrap
+    from PIL import Image, ImageDraw
+    try:
+        rows = []
+        for t0, c in spans:
+            head = f"第{_kanji_num(c['no'])}章、{c['title_ja']}。\n\n"
+            for txt, a, b in _chapter_subs(keys, c, head):
+                rows.append([t0 + a, t0 + max(b, a + 0.8), txt])
+        if save_fn:
+            hz._save(save_fn, state)   # 맞춘 자막 타이밍 저장 (다시 합성할 때 API 를 또 부르지 않게)
+        if not rows:
+            return video
+        rows.sort(key=lambda r: r[0])
+        for i in range(len(rows) - 1):          # 다음 자막과 겹치지 않게
+            rows[i][1] = min(rows[i][1] + 0.3, rows[i + 1][0] - 0.05)
+        d = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+        f = jp_font(JP_SERIF_BOLD, 60)
+        caps = []
+        for i, (a, b, txt) in enumerate(rows):
+            lines = phrase_wrap(d, txt, f, 1920 - 360)[:2]
+            caps.append((a, b, _caption_png(pf(state, "work", "subs", f"s{i:04d}.png"), "", lines=lines)))
+        lst = _caption_track(caps, total, pf(state, "work", "subs", "track.mp4"))
+        out = pf(state, "work", "video_subs.mp4")
+        hz._run_ffmpeg(["-i", video, "-f", "concat", "-safe", "0", "-i", lst, "-filter_complex",
+                        "[1:v]format=rgba[c];[0:v][c]overlay=0:0:eof_action=pass,format=yuv420p[v]", "-map", "[v]",
+                        *hz.X264, "-crf", "20", "-an", "-t", f"{total:.2f}", out], total, job, "[8/10] 합성 · 자막 입히기")
+        state["subs_burned"] = len(caps)
+        return out
+    except Exception as e:
+        state["subs_error"] = f"{type(e).__name__}: {e}"[:300]
+        print(f"[rodoku] 자막 입히기 실패 → 자막 없이: {e}", flush=True)
+        return video
+
+
 def _body_clip(loop: str, start: float, sec: float, out: str) -> str:
     """루프를 처음부터 sec 초만큼 스트림 복사로 반복 (다시 인코딩하지 않음). start 는 하위 호환용 — 쓰지 않는다
     (-ss 와 반복을 함께 쓰면 타임스탬프가 겹친다)."""
@@ -629,13 +697,16 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # ⑧ 업로드 정보
 # ─────────────────────────────────────────────────────────────────────────────
-PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（60〜70代向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
-{"title": "【朗読ドラマ】で始め、作品タイトルと検索語を自然に入れる（60字以内。例：【朗読ドラマ】閉店の日の豆腐屋｜最後の常連客｜人生の後半）。末尾の言葉は物語の題材に合わせる",
- "description": "3〜5行。あらすじの入口（結末は書かない）、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。",
+PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代の女性向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
+{"title": "【朗読】で始める。いま起きている謎を一文、疑いを深める一文、最後は「…」で終える（全体55字以内）。時刻・金額・年数は算用数字（4時、2万円、26年）。
+           例：【朗読】定年前の夫が、毎朝4時に家を出る。台所に、知らない店のレシートが…／【朗読】亡き母の口座から、毎月3万円が引き出されている。振込先は、知らない女性の名前で…
+           作品タイトルは入れなくてよい。結末・真実は書かない",
+ "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
+                 最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
  "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個],
  "pinned_comment": "本編に固定するコメント。2〜3行。物語の小道具や場面に触れ、視聴者が自分の思い出を書きたくなる問いかけで終える（例：あなたにも、ずっと渡せずにいる物はありますか。）。押しつけがましい登録のお願いは書かない",
- "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編「作品タイトル」はチャンネルの動画一覧からどうぞ』"}
+ "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編はチャンネルの動画一覧からどうぞ』"}
 誇張・扇情的な表現、性的な言葉は使わない。"""
 
 UPLOAD_SETTINGS = [
@@ -663,7 +734,7 @@ ART_PREFIX = (
 )
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
-    "Elderly people are seen from behind, in silhouette or small in the distance, with no facial features. "
+    "The woman in her fifties may show her face; people aged seventy or older are seen from behind, in silhouette or small in the distance, with no facial features. "
     "Hands are relaxed and simple — resting in the lap, at the sides, in pockets or out of frame; no raised hands, no gestures. "
     "No text, no letters, no numbers, no signboard writing."
 )
@@ -821,9 +892,10 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
                               "image_prompt": c.get("image_prompt", ""),
                               "motion_prompt": c.get("motion_prompt", ""), "ambience_en": c.get("ambience_en", ""),
-                              "with_young": bool(c.get("with_young")) or c["no"] == _cover_no(plan),
+                              "with_young": bool(c.get("with_young")) or (c["no"] == _cover_no(plan) and not plan.get("heroine")),
+                              "with_hero": bool(c.get("with_hero")) or (c["no"] == _cover_no(plan) and bool(plan.get("heroine"))),
                               "extra": [{"image_prompt": m.get("image_prompt", ""), "motion_prompt": m.get("motion_prompt", ""),
-                                         "with_young": bool(m.get("with_young"))}
+                                         "with_young": bool(m.get("with_young")), "with_hero": bool(m.get("with_hero"))}
                                         for m in (c.get("more_scenes") or []) if isinstance(m, dict) and m.get("image_prompt")
                                         ][:max(int(state.get("n_scenes", DEFAULT_SCENES)) - 1, 0)]}
                              for c in plan["chapters"]]
@@ -1047,6 +1119,10 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
         body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
     if k == 0 and c["no"] == _cover_no(plan) and "sky" not in body.lower():
         body += " " + COVER_SKY
+    hr = plan.get("heroine") or {}
+    if sc.get("with_hero") and hr.get("look_en"):
+        body += (f" The heroine, a Japanese woman in her fifties: {hr['look_en'].strip().rstrip('.')}. "
+                 "Her face is visible with one clear quiet expression.")
     yw = plan.get("young_woman") or {}
     if sc.get("with_young") and yw.get("look_en"):
         body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
@@ -1341,7 +1417,7 @@ Look at the image and check ONLY these hard defects:
 1. anatomy: extra or missing arms, legs, fingers or eyes; fused or melted hands; a twisted or broken face
 2. text: readable or garbled letters, numbers or signboard writing anywhere in the image
 3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
-4. elderly faces: an elderly person's face is clearly shown from the front (they must be from behind or in silhouette)
+4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine.
 Small stylistic differences are fine. Output JSON only: {"ok": true or false, "problems": ["short English description", ...]}"""
 
 
@@ -1509,6 +1585,7 @@ def _render(job, state, keys, save_fn):
         audio_parts += [("silence", 0.4), ("file", intro["local"]), ("silence", 1.2)]
         t += isec
     kanji = "一二三四五六七八九十"
+    sub_spans = []
     for c in chs:
         job["msg"] = f"[8/10] 합성 · 제{c['no']}장 이어 붙이는 중"
         a = c["audio"]["seconds"] or hz.duration(c["audio"]["local"])
@@ -1526,6 +1603,7 @@ def _render(job, state, keys, save_fn):
                 d = (part - TITLE_CARD_SEC) if k == 0 else (body - (part - TITLE_CARD_SEC) - part * (len(sl) - 2) if k == len(sl) - 1 else part)
                 segs.append(_body_clip(lp, 0, max(d, 0.5), pf(state, "work", f"seg{c['no']:02d}b{k + 1}.mp4")))
         marks.append((t, f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章 {c['title_ja']}"))
+        sub_spans.append((t, c))
         amb_spans.append((t, t + max(seg_len, TITLE_CARD_SEC + 0.5), c))
         audio_parts.append(("file", c["audio"]["local"]))
         audio_parts.append(("silence", CHAPTER_PAD_SEC))
@@ -1550,6 +1628,8 @@ def _render(job, state, keys, save_fn):
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", lst,
                     "-c", "copy", video],
                    check=True, timeout=900)
+    if SUBS_ON and state.get("subs_on", True):
+        video = _burn_subs(state, keys, job, video, sub_spans, total, save_fn)
     # 낭독 트랙
     args, labels = [], []
     k = 0
@@ -1707,12 +1787,19 @@ def _cover_no(plan: dict) -> int:
 def cover_scene(plan: dict) -> str:
     """표지(본편 섬네일·쇼츠 표지)용 야외 장면 — 실내 장면은 클릭이 적다(작가 판단). 설계에 없으면 기본 장면을 만든다."""
     yw = plan.get("young_woman") or {}
+    hr = plan.get("heroine") or {}
     red = (plan.get("red_accent") or "a thin red thread").strip().rstrip(".")
     sc = (plan.get("cover_scene") or "").strip().rstrip(".")
-    if not sc:
-        sc = f"A young Japanese woman in her twenties walks along a quiet seaside road holding {red}"
-    if yw.get("look_en") and yw["look_en"][:30] not in sc:
-        sc += f". The young woman: {yw['look_en'].strip().rstrip('.')}. Her face is visible"
+    if hr.get("look_en"):   # 50대 주인공이 표지의 얼굴 (2026-11 작가 결정: 50대로 시청층 확대)
+        if not sc:
+            sc = f"A Japanese woman in her fifties stands on a quiet seaside road holding {red}"
+        if hr["look_en"][:30] not in sc:
+            sc += f". The woman in her fifties: {hr['look_en'].strip().rstrip('.')}. Her face is visible with one quiet expression"
+    else:                   # 예전 설계 (주인공 외형이 없던 편)
+        if not sc:
+            sc = f"A young Japanese woman in her twenties walks along a quiet seaside road holding {red}"
+        if yw.get("look_en") and yw["look_en"][:30] not in sc:
+            sc += f". The young woman: {yw['look_en'].strip().rstrip('.')}. Her face is visible"
     if "red" not in sc.lower():
         sc += f". {red} in vivid vermilion red"
     return sc + ". " + COVER_SKY
@@ -1724,8 +1811,8 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     body = cover_scene(plan)
     head = ART_PREFIX if aspect == "16:9" else ART_PREFIX.replace("wide cinematic 16:9 composition",
                                                                   "tall vertical 9:16 poster composition")
-    tail = (" The young woman stands in the lower half of the frame, the upper-middle area is open blue sky." if aspect == "9:16"
-            else " The young woman stands on the right third of the frame, open blue sky on the upper left.")
+    tail = (" The woman stands in the lower half of the frame, the upper-middle area is open blue sky." if aspect == "9:16"
+            else " The woman stands on the right third of the frame, open blue sky on the upper left.")
     prompt = head + " " + body + tail + ART_SUFFIX
     tries = []
     try:
@@ -1913,7 +2000,7 @@ def _pack(state, keys):
         tno = int(plan.get("turn_chapter") or 0)
     except (TypeError, ValueError):
         tno = 0
-    young = next((c for c in chs if c.get("with_young") and (c.get("image") or {}).get("local")), chs[0])
+    young = next((c for c in chs if (c.get("with_hero") or c.get("with_young")) and (c.get("image") or {}).get("local")), chs[0])
     turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
     hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
     cch = next((c for c in chs if c["no"] == _cover_no(plan) and (c.get("image") or {}).get("local")), None)
@@ -1944,8 +2031,11 @@ def _pack(state, keys):
             "description": plan.get("logline_ja", ""),
             "tags": plan.get("seo_keywords") or [], "hashtags": ["#朗読", "#朗読ドラマ", "#人生の後半"]}
     try:
+        first = (chs[0].get("text") or "")[:260] if chs else ""
         user = (f"作品: {plan.get('title_ja')}\nあらすじ: {plan.get('logline_ja')}\n検索語: {plan.get('picked_query')}\n"
-                f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}")
+                f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}\n"
+                f"第1章の冒頭（謎の入口）:\n{first}\n"
+                f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}")
         pack.update({k: v for k, v in _json_call(keys.get("ANTHROPIC_API_KEY", ""), PACK_SYSTEM, user, 1500).items() if v})
     except Exception as e:
         print(f"[rodoku] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
