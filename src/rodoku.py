@@ -245,9 +245,9 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
      "with_young": true,
      "ambience_en": "English. この章の場面の環境音を一文で（例: gentle rain on a tin roof with a distant railway crossing bell / summer cicadas and a wind chime on a veranda / quiet waves on a pebble beach）。人の声・音楽は入れない",
-     "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない",
+     "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない。手・指・腕は動かさない（髪・服・草・光・水・雲などだけ）",
      "more_scenes": [
-       {"image_prompt": "English. 同じ章の後半の別の一場面（寄りの小道具・手元、別の場所、時間の経過など）。image_prompt と同じ書き方", "motion_prompt": "English", "with_young": false},
+       {"image_prompt": "English. 同じ章の後半の別の一場面（机や棚に置かれた小道具の寄り、別の場所、時間の経過など。手のアップは描かない）。image_prompt と同じ書き方", "motion_prompt": "English", "with_young": false},
        {"image_prompt": "English. 章の終わりの一場面", "motion_prompt": "English", "with_young": false}
      ]}
   ],
@@ -488,20 +488,57 @@ def pick_cold_open(api_key: str, state: dict) -> str:
     return ""
 
 
-def _caption_png(out: str, text: str, W: int = 1920, H: int = 1080) -> str:
-    """콜드 오픈 자막 — 아래쪽 1/3 에 낭독 문장."""
+def _caption_pages(text: str, W: int = 1920) -> list:
+    """자막 문장 → 2줄씩 나눈 페이지 목록 (한 문장이 2줄을 넘어도 잘리지 않게)."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SERIF_BOLD, phrase_wrap
+    d = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    lines = phrase_wrap(d, text, jp_font(JP_SERIF_BOLD, 60), W - 360)
+    return [lines[i:i + 2] for i in range(0, len(lines), 2)] or [[]]
+
+
+def _caption_png(out: str, text: str, W: int = 1920, H: int = 1080, lines: list = None) -> str:
+    """콜드 오픈·앞말 자막 — 아래쪽에 낭독 문장 (lines 를 주면 그 줄만)."""
     from PIL import Image, ImageDraw
     from src.scenestory import jp_font, JP_SERIF_BOLD, phrase_wrap
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     f = jp_font(JP_SERIF_BOLD, 60)
-    lines = phrase_wrap(d, text, f, W - 360)[:2]
+    if lines is None:
+        lines = phrase_wrap(d, text, f, W - 360)[:2]
     y0 = H - 120 - len(lines) * 84
     d.rectangle([0, y0 - 40, W, H], fill=(16, 12, 10, 120))
     for i, ln in enumerate(lines):
         d.text((W // 2, y0 + i * 84), ln, font=f, fill=(255, 244, 234, 255), anchor="ma",
                stroke_width=3, stroke_fill=(20, 14, 12, 255))
     img.save(out, "PNG")
+    return out
+
+
+def _caption_clip(loop: str, text: str, sec: float, lead: float, speech: float, out: str) -> str:
+    """장면 루프 + 낭독 자막. 문장이 길면 2줄씩 여러 장으로 나눠, 낭독 길이에 맞춰 차례로 바꿔 보여 준다."""
+    pages = _caption_pages(text)
+    if len(pages) <= 1:
+        return _outro_clip(loop, _caption_png(out.replace(".mp4", ".png"), text), sec, out)
+    sizes = [max(1, sum(len(l) for l in pg)) for pg in pages]
+    total = float(sum(sizes))
+    pngs, cuts, t = [], [], lead
+    for k, pg in enumerate(pages):
+        pngs.append(_caption_png(out.replace(".mp4", f"_{k}.png"), "", lines=pg))
+        t1 = sec if k == len(pages) - 1 else t + speech * sizes[k] / total
+        cuts.append((0.0 if k == 0 else t, t1))
+        t = t1
+    ins = ["-stream_loop", "-1", "-i", loop]
+    for fp in pngs:
+        ins += ["-loop", "1", "-framerate", str(hz.FPS), "-t", f"{sec}", "-i", fp]
+    fc, last = "[0:v]setpts=PTS-STARTPTS[b0];", "b0"
+    for k, (a, b) in enumerate(cuts):
+        fade = ",fade=t=in:st=0:d=0.8:alpha=1" if k == 0 else ""
+        fc += f"[{k + 1}:v]format=rgba{fade}[o{k}];[{last}][o{k}]overlay=0:0:enable='between(t,{a:.2f},{b:.2f})'[b{k + 1}];"
+        last = f"b{k + 1}"
+    fc += f"[{last}]format=yuv420p[v]"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *ins, "-filter_complex", fc, "-map", "[v]", *hz.X264,
+                    "-crf", "20", "-an", "-t", f"{sec}", out], check=True, timeout=600)
     return out
 
 
@@ -627,6 +664,7 @@ ART_PREFIX = (
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
     "Elderly people are seen from behind, in silhouette or small in the distance, with no facial features. "
+    "Hands are relaxed and simple — resting in the lap, at the sides, in pockets or out of frame; no raised hands, no gestures. "
     "No text, no letters, no numbers, no signboard writing."
 )
 
@@ -1035,6 +1073,30 @@ def _draw_scene(state, keys, ak, plan, c, k, sc, name):
                                       r2_key=keep(keys, state, dest, name, "image/jpeg"))
 
 
+def _motion_defect(keys, clip: str, scene: str, plan: dict) -> list:
+    """움직임 영상의 중간·끝 장면 두 장을 이어 붙여 Claude 에게 손·팔·얼굴이 일그러졌는지 본다. 문제 목록(없으면 [])."""
+    try:
+        dur = hz.duration(clip) or 6.0
+        sheet = clip.replace(".mp4", "_check.jpg")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{dur * 0.5:.2f}", "-i", clip, "-ss", f"{dur * 0.92:.2f}",
+                        "-i", clip, "-filter_complex", "[0:v]scale=-2:540,trim=end_frame=1[a];[1:v]scale=-2:540,trim=end_frame=1[b];"
+                        "[a][b]hstack=inputs=2[v]", "-map", "[v]", "-frames:v", "1", "-q:v", "3", sheet],
+                       check=True, timeout=120)
+        rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), sheet,
+                           {"image_prompt": f"(two frames of one animated clip, side by side) {scene}"}, plan)
+        try:
+            os.remove(sheet)
+        except OSError:
+            pass
+        if rv.get("ok"):
+            return []
+        probs = [p for p in rv.get("problems") or [] if re.search(r"hand|finger|arm|leg|eye|face|anatom|limb|fused|melt", p, re.I)]
+        return probs
+    except Exception as e:
+        print(f"[rodoku] 움직임 검수 실패 → 통과 처리: {e}", flush=True)
+        return []
+
+
 def _motion_one(state, keys, c, k, sc):
     from src.video_replicate import generate_single_clip_url
     mo = sc.setdefault("motion", {})
@@ -1045,11 +1107,19 @@ def _motion_one(state, keys, c, k, sc):
     mo.pop("error", None)
     prompt = ((sc.get("motion_prompt") or MOTION_FALLBACK).strip().rstrip(".") +
               ". Static locked-off camera, no camera movement, no zoom, no pan, no cuts. The people stay in "
-              "place, only the small repeating elements move. Keep the hand-drawn animation look. No text.")
+              "place, only the small repeating elements move. Hands, fingers and arms stay completely still and "
+              "unchanged — do not animate hands. Keep the hand-drawn animation look. No text.")
     dest = pf(state, name)
     try:
         url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img, prompt_optimizer=False)
         hz._download(url, dest)
+        bad = _motion_defect(keys, dest, sc.get("image_prompt") or c.get("image_prompt", ""), state.get("plan") or {})
+        if bad:   # 움직이다 손·얼굴이 일그러진 영상은 버리고, 검수를 통과한 정지 그림(Ken Burns)으로
+            os.remove(dest)
+            mo["rejected"] = True   # 다시 이어 만들 때 또 만들지 않는다 (비용)
+            mo["error"] = f"움직임 검수 탈락 → 정지 그림 사용: {'; '.join(bad)}"[:300]
+            print(f"[rodoku] 제{c['no']}장 장면{k + 1} {mo['error']}", flush=True)
+            return
         mo.update(local=dest, prompt=prompt, r2_key=keep(keys, state, dest, name, "video/mp4"))
     except Exception as e:
         mo["error"] = f"{type(e).__name__}: {e}"[:300]
@@ -1239,7 +1309,8 @@ def _make_motion(job, state, keys, save_fn):
             if not (sc.get("image") or {}).get("local") and not (sc.get("image") or {}).get("r2_key"):
                 continue
             name = f"ch{c['no']:02d}_motion.mp4" if k == 0 else f"ch{c['no']:02d}_s{k + 1}_motion.mp4"
-            if not hz.ensure_local(keys, sc.setdefault("motion", {}), pf(state, name)):
+            mo = sc.setdefault("motion", {})
+            if not mo.get("rejected") and not hz.ensure_local(keys, mo, pf(state, name)):
                 todo.append((c, k, sc))
     if not todo:
         return
@@ -1423,8 +1494,7 @@ def _render(job, state, keys, save_fn):
             tno = 0
         tloop = loops.get(tno) or loops[chs[max(len(chs) - 2, 0)]["no"]]
         csec = (cold.get("seconds") or hz.duration(cold["local"])) + 1.8
-        segs.append(_outro_clip(tloop, _caption_png(pf(state, "work", "cold.png"), cold["text"]), csec,
-                                pf(state, "work", "seg_cold.mp4")))
+        segs.append(_caption_clip(tloop, cold["text"], csec, 0.6, csec - 1.8, pf(state, "work", "seg_cold.mp4")))
         audio_parts += [("silence", 0.6), ("file", cold["local"]), ("silence", 1.2)]
         t = csec
     op = _card_clip(loops[1], _card_png(pf(state, "work", "open.png"), title, "SceneStory 朗読ドラマ"),
@@ -1435,8 +1505,7 @@ def _render(job, state, keys, save_fn):
     intro = state.get("intro") or {}
     if hz.usable(intro.get("local", "")):   # 화자의 앞말: 1장 화면 + 자막 + 낭독 → 第一章
         isec = (intro.get("seconds") or hz.duration(intro["local"])) + 1.6
-        segs.append(_outro_clip(loops[chs[0]["no"]], _caption_png(pf(state, "work", "intro.png"), intro["text"]), isec,
-                                pf(state, "work", "seg_intro.mp4")))
+        segs.append(_caption_clip(loops[chs[0]["no"]], intro["text"], isec, 0.4, isec - 1.6, pf(state, "work", "seg_intro.mp4")))
         audio_parts += [("silence", 0.4), ("file", intro["local"]), ("silence", 1.2)]
         t += isec
     kanji = "一二三四五六七八九十"
