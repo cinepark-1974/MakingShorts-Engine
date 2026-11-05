@@ -1058,7 +1058,7 @@ CAST_SAMPLE = {"hero": "あの人、まだ覚えていてくれたのね。", "p
 # 기본 배역 (2026-11-05 ElevenLabs 오디션으로 Claude 가 고름 · 화면에서 바꿔 저장하면 그 값이 우선)
 DEFAULT_VOICES = {"hero": "jWxWvPtq4PJFwe66Y9xi",      # Ado — 성숙·차분, 낭독자(Satomi)와 음색이 겹치지 않음
                   "partner": "C6EwdDpfpjUWhKn1xeaG",   # Makoto 誠 — 60대 남성, 깊고 침착
-                  "young": "K4K6BTclwhxowAzvqVs9"}     # TOKO — 향수·편지 낭독 톤
+                  "young": "pdJqk51tDVoes2IzwOyU"}     # Kiyomi — 30대, 차분하고 따뜻한 대화체
 VOICES_KEY = "scenestory/_voices.json"
 _VOICES_LOCAL = os.path.join("projects", "_rodoku_voices.json")
 
