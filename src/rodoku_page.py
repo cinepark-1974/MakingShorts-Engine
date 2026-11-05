@@ -64,7 +64,7 @@ def _cast_settings(st, api_keys):
     """🎙 배역 목소리 — 「」 대사를 인물 목소리로. 비워 두면 낭독자 한 명이 전부 읽는다."""
     with st.expander("🎙 배역 목소리 (대사를 인물 목소리로 · 선택)"):
         st.caption("ElevenLabs → Voices → Voice Library 에서 언어를 Japanese 로 거른 뒤 마음에 드는 목소리의 Voice ID 를 복사해 넣으세요. "
-                   "'들어 보기'로 확인하고 '저장'하면 다음 편부터 적용됩니다. 비워 둔 배역은 지금 낭독자가 읽습니다.")
+                   "기본으로 주인공 Ado · 상대역 Makoto · 젊은 여성 TOKO 가 들어 있습니다. 바꾸려면 Voice ID 를 넣고 '저장'하면 다음 편부터 적용됩니다.")
         if "_rd_voices" not in st.session_state:
             st.session_state["_rd_voices"] = R.load_voices(api_keys)
         cur = st.session_state["_rd_voices"]

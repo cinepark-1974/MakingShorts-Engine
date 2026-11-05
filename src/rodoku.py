@@ -1055,6 +1055,10 @@ def _motion_one(state, keys, c, k, sc):
 CAST_ROLES = {"hero": "주인공 (52~68세 여성)", "partner": "상대 남성 (남편·옛 연인 등)", "young": "젊은 여성 (20대)"}
 CAST_SAMPLE = {"hero": "あの人、まだ覚えていてくれたのね。", "partner": "久しぶりだな。元気にしてたか。",
                "young": "おばあちゃん、これ、誰の手紙？"}
+# 기본 배역 (2026-11-05 ElevenLabs 오디션으로 Claude 가 고름 · 화면에서 바꿔 저장하면 그 값이 우선)
+DEFAULT_VOICES = {"hero": "jWxWvPtq4PJFwe66Y9xi",      # Ado — 성숙·차분, 낭독자(Satomi)와 음색이 겹치지 않음
+                  "partner": "C6EwdDpfpjUWhKn1xeaG",   # Makoto 誠 — 60대 남성, 깊고 침착
+                  "young": "K4K6BTclwhxowAzvqVs9"}     # TOKO — 향수·편지 낭독 톤
 VOICES_KEY = "scenestory/_voices.json"
 _VOICES_LOCAL = os.path.join("projects", "_rodoku_voices.json")
 
@@ -1072,7 +1076,7 @@ def load_voices(keys: dict) -> dict:
             d.update(r2_store.get_json(keys, VOICES_KEY) or {})
         except Exception:
             pass
-    return {k: str(d.get(k, "")).strip() for k in CAST_ROLES}
+    return {k: str(d.get(k, "")).strip() or DEFAULT_VOICES.get(k, "") for k in CAST_ROLES}
 
 
 def save_voices(keys: dict, d: dict) -> None:
