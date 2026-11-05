@@ -285,6 +285,10 @@ def render_project(st, manager, api_keys, show_banner):
     if chs:
         with st.container(border=True):
             st.markdown(f"**원고** · {state.get('manuscript_chars', 0)}자")
+            ed = state.get("edit") or {}
+            if ed.get("overall") or ed.get("fix"):
+                st.caption("편집자 검토 · " + ed.get("overall", "") + "".join(
+                    f" / 第{f.get('no')}章 다시 씀: {f.get('note', '')[:80]}" for f in ed.get("fix", []) if f.get("done")))
             for c in chs:
                 lab = f"第{c['no']}章 「{c.get('title_ja', '')}」 · {c.get('beat_ko', '')}"
                 with st.expander(lab + (f" · {c.get('chars', 0)}자" if c.get("text") else " · 아직")):

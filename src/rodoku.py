@@ -398,7 +398,27 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
 """
 
 
-def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_chars: int) -> str:
+EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者です。60〜70代の女性が夜に耳で聴く短編の原稿を読み、弱い章を見つけます。
+見る点: ①第1章の冒頭3文で出来事が始まるか（説明や天気から入っていないか） ②各章で出来事が一つ起き、次の章を聴きたくなる終わり方か
+③反転が前の章で漏れていないか ④台詞が説明的になっていないか ⑤最後の一行に余韻があるか ⑥同じ言い回し・同じ動作の繰り返し。
+直すべき章だけを最大2つ選び、具体的な直し方を書く（「もっと良く」ではなく「冒頭を〇〇の場面から始める」のように）。
+JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "fix": [{"no": 章番号, "note": "具体的な直し方"}]}"""
+
+
+def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
+    """원고 전체를 편집자 눈으로 읽고 약한 장 최대 2개에 고칠 점을 받는다."""
+    full = "\n\n".join(f"第{c['no']}章「{c.get('title_ja', '')}」\n{c.get('text', '')}" for c in chs)
+    try:
+        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n反転: {plan.get('turn')}\n\n{full}", 1500)
+        fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:2]
+        return {"overall": rv.get("overall", ""), "fix": fix}
+    except Exception as e:
+        print(f"[rodoku] 편집 검토 실패 → 건너뜀: {e}", flush=True)
+        return {"overall": "", "fix": [], "error": str(e)[:200]}
+
+
+def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_chars: int, note: str = "",
+                  draft: str = "") -> str:
     system = WRITE_SYSTEM_HEAD + _novel_rules()
     design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "young_woman", "narrator_intro", "turn", "ending_ja")}
     outline = [{"no": c["no"], "title_ja": c.get("title_ja"), "beat": c.get("beat_ko")} for c in plan["chapters"]]
@@ -406,6 +426,7 @@ def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_cha
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
             f"[分量] 空白を除いて {int(target_chars * 0.9)}〜{int(target_chars * 1.1)} 字\n\n"
             + (f"[直前の章の終わり]\n{prev_text[-600:]}\n\n" if prev_text else "")
+            + (f"[編集者の指摘 — この点を直して書き直す]\n{note}\n\n[前回の原稿]\n{draft}\n\n" if note else "")
             + "本文だけを書いてください。")
     text = _text_call(api_key, system, user, max_tokens=4000)
     n = _n(text)
@@ -775,6 +796,24 @@ def _worker(job, state, keys, save_fn, made_titles):
             c["text"] = write_chapter(ak, plan, c, prev, per)
             c["chars"] = _n(c["text"])
         prev = c["text"]
+    # ③-2 편집자 검토 → 약한 장 최대 2개 다시 쓰기
+    if "edit" not in state:
+        _stage(job, state, save_fn, "write", 2, "편집자 검토 중 (원고 전체)")
+        ed = edit_pass(ak, plan, chs)
+        for f in ed.get("fix", []):
+            c = next((x for x in chs if x["no"] == int(f.get("no") or 0)), None)
+            if not c:
+                continue
+            _stage(job, state, save_fn, "write", 2, f"제{c['no']}장 다시 쓰는 중 (편집자 지적 반영)")
+            prev_c = next((x for x in chs if x["no"] == c["no"] - 1), None)
+            try:
+                c["text"] = write_chapter(ak, plan, c, (prev_c or {}).get("text", ""), per, note=f["note"], draft=c["text"])
+                c["chars"] = _n(c["text"])
+                f["done"] = True
+            except Exception as e:
+                f["error"] = str(e)[:200]
+        state["edit"] = ed
+        hz._save(save_fn, state)
     state["manuscript_chars"] = sum(c.get("chars", 0) for c in chs)
 
     # ④ 그림 — 장마다 장면 1~3장 (3장씩 동시에 그림)
