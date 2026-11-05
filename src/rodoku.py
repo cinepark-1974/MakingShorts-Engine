@@ -1277,7 +1277,7 @@ def _pack(state, keys):
     young = next((c for c in chs if c.get("with_young") and (c.get("image") or {}).get("local")), chs[0])
     turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
     hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
-    variants = [("A", young, plan.get("title_ja", ""), "젊은 여성 장면 + 제목"),
+    variants = [("A", young, plan.get("title_ja", ""), "기본 — 한 장만 올릴 때는 이것"),
                 ("B", turn, plan.get("title_ja", ""), "반전 장면 + 제목"),
                 ("C", chs[0] if chs[0] is not young else turn, hook, "다른 장면 + 질문 문구")]
     thumbs = []

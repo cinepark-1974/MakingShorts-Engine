@@ -290,8 +290,8 @@ def render_project(st, manager, api_keys, show_banner):
             _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4", out_name(state, "main", "mp4"))
             thumbs = state.get("thumbnails") or ([state["thumbnail"]] if (state.get("thumbnail") or {}).get("local") else [])
             if thumbs:
-                st.caption("섬네일 3종 — YouTube 스튜디오(PC) → 동영상 세부정보 → 미리보기 이미지 → '테스트 및 비교'에 셋 다 올리면 "
-                           "YouTube 가 더 많이 눌리는 쪽을 골라 줍니다.")
+                st.caption("섬네일 3종 — 보통은 A 한 장을 올립니다. PC 의 YouTube 스튜디오에서 채널 '고급 기능'이 켜져 있으면 "
+                           "'테스트 및 비교'에 셋 다 올릴 수 있고, 아니면 조회가 낮을 때 B·C 로 바꿔 끼워 비교합니다.")
                 cols = st.columns(len(thumbs))
                 for col, t in zip(cols, thumbs):
                     with col:
