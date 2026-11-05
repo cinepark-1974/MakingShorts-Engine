@@ -202,7 +202,13 @@ def render_project(st, manager, api_keys, show_banner):
                 R.start_auto(state, api_keys, manager.save_state, made)
                 st.rerun()
         with b2:
-            st.caption("오류로 멈췄거나 서버가 재시작됐다면 이어서 만들기를 누르세요. 끝난 단계는 다시 하지 않습니다.")
+            if st.button("🗑 이 편 그만두기 (자동으로 다시 만들지 않음)", use_container_width=True, key="rd_abandon"):
+                state["stage"], state["user_stopped"], state["status"] = "abandoned", True, "그만둠"
+                manager.save_state(state)
+                R.save_cloud(api_keys, state)
+                st.session_state.current_project = None
+                st.rerun()
+            st.caption("이야기가 마음에 안 들면 그만두고 새 편을 만드세요. 오류로 멈춘 편은 '이어서 만들기'.")
     chs0 = state.get("chapters") or []
     if not running and any((c.get("image") or {}).get("local") or (c.get("image") or {}).get("r2_key") for c in chs0):
         with st.expander("🎨 그림만 새 그림체로 다시 그리기"):

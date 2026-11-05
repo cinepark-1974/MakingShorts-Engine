@@ -255,7 +255,8 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
 }
 
 設計ルール
-- 主人公は60〜75歳。「いま」（2020年代）の数日間が物語の軸。舞台は日本の町・駅・喫茶店・団地・温泉など。
+- 主人公は58〜68歳の女性（視聴者と同じ世代。「おばあさん」ではなく、まだ働いたり旅をしたりする現役の世代）。
+  夫・昔の恋人・兄弟などの男性は相手役として出してよいが、視点人物にはしない。「いま」（2020年代）の数日間が物語の軸。舞台は日本の町・駅・喫茶店・団地・温泉など。
 - 過去（回想）は主人公が20〜40代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
   昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
@@ -311,7 +312,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
     era, era_things = random.choice(ERA_PAST)
-    hero = "女性" if random.random() < 0.7 else "男性"   # 시청자 64% 가 여성 (YouTube 분석, 2026-11)
+    hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
@@ -652,8 +653,11 @@ def auto_resume(manager, keys: dict) -> list:
                 except Exception:
                     pass
         now = time.time()
+        newest = max((k for k, v in cands.items() if v.get("mode") == "rodoku"), default="")
         for pid, st_ in sorted(cands.items()):
-            if st_.get("mode") != "rodoku" or st_.get("stage") in ("done", None, "") or st_.get("user_stopped"):
+            if pid != newest:            # 작가가 새 편으로 넘어갔으면 예전 미완성 편은 자동으로 되살리지 않는다
+                continue
+            if st_.get("mode") != "rodoku" or st_.get("stage") in ("done", "abandoned", None, "") or st_.get("user_stopped"):
                 continue
             if hz.is_running(pid) or int(st_.get("auto_resumed", 0)) >= AUTO_RESUME_MAX:
                 continue
