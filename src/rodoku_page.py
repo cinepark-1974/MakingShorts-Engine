@@ -46,6 +46,7 @@ def render_new(st, manager, api_keys):
         st.session_state.current_project = state
         st.rerun()
     _recover(st, manager, api_keys)
+    _cast_settings(st, api_keys)
     _comp_new(st, manager, api_keys)
     with st.expander("지금 일본에서 찾는 검색어 미리 보기 (선택)"):
         if st.button("🔎 검색어 조회", key="rd_peek"):
@@ -55,6 +56,32 @@ def render_new(st, manager, api_keys):
         if pk:
             st.caption("씨앗: " + ", ".join(pk["seeds"]))
             st.write(" · ".join(pk["queries"]) or "받아온 검색어가 없습니다.")
+
+
+def _cast_settings(st, api_keys):
+    """🎙 배역 목소리 — 「」 대사를 인물 목소리로. 비워 두면 낭독자 한 명이 전부 읽는다."""
+    with st.expander("🎙 배역 목소리 (대사를 인물 목소리로 · 선택)"):
+        st.caption("ElevenLabs → Voices → Voice Library 에서 언어를 Japanese 로 거른 뒤 마음에 드는 목소리의 Voice ID 를 복사해 넣으세요. "
+                   "'들어 보기'로 확인하고 '저장'하면 다음 편부터 적용됩니다. 비워 둔 배역은 지금 낭독자가 읽습니다.")
+        if "_rd_voices" not in st.session_state:
+            st.session_state["_rd_voices"] = R.load_voices(api_keys)
+        cur = st.session_state["_rd_voices"]
+        for role, label in R.CAST_ROLES.items():
+            c1, c2 = st.columns([3, 1])
+            cur[role] = c1.text_input(label, value=cur.get(role, ""), key=f"rdv_{role}", placeholder="Voice ID")
+            if c2.button("▶ 들어 보기", key=f"rdv_test_{role}", disabled=not cur[role], use_container_width=True):
+                from src import voice_test
+                with st.spinner("목소리 만드는 중…"):
+                    rep = voice_test.test_voice(api_keys.get("ELEVENLABS_API_KEY", ""), cur[role], R.CAST_SAMPLE[role])
+                if rep.get("ok"):
+                    st.session_state[f"_rdv_audio_{role}"] = rep["audio"]
+                else:
+                    st.error(f"실패: {rep.get('error', '')[:200]}")
+            if st.session_state.get(f"_rdv_audio_{role}"):
+                st.audio(st.session_state[f"_rdv_audio_{role}"], format="audio/mp3")
+        if st.button("💾 배역 목소리 저장", key="rdv_save"):
+            R.save_voices(api_keys, cur)
+            st.success("저장했습니다. 다음 편부터 대사를 이 목소리로 읽습니다.")
 
 
 def _comp_new(st, manager, api_keys):

@@ -813,6 +813,7 @@ def _worker(job, state, keys, save_fn, made_titles):
     # ⑤ 목소리
     from src.audio import generate_narration
     voice = keys.get("ELEVENLABS_VOICE_ID_JA") or JA_VOICE_ID
+    cast = state.setdefault("cast_voices", {k: v for k, v in load_voices(keys).items() if v})
     kanji = "一二三四五六七八九十"
     for c in chs:
         au = c.setdefault("audio", {})
@@ -821,7 +822,12 @@ def _worker(job, state, keys, save_fn, made_titles):
             dest = pf(state, f"ch{c['no']:02d}.mp3")
             head = f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章、{c['title_ja']}。\n\n"
             info = {}
-            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), head + c["text"], dest, voice_id=voice, info=info)
+            if cast:   # 배역 목소리: 지문은 낭독자, 「」 대사는 인물 목소리
+                _stage(job, state, save_fn, "voice", 5, f"제{c['no']}장 낭독 (배역 목소리)")
+                cast_narration(keys, ak, state, c, head, dest, voice, cast)
+                info["model"] = "cast"
+            else:
+                generate_narration(keys.get("ELEVENLABS_API_KEY", ""), head + c["text"], dest, voice_id=voice, info=info)
             au.update(local=dest, seconds=round(hz.duration(dest), 2), model=info.get("model", ""),
                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.mp3", "audio/mpeg"))
             hz._save(save_fn, state)
@@ -1000,6 +1006,123 @@ def _motion_one(state, keys, c, k, sc):
     except Exception as e:
         mo["error"] = f"{type(e).__name__}: {e}"[:300]
         print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 실패 → Ken Burns: {e}", flush=True)
+
+
+# ── 배역 목소리 ──
+CAST_ROLES = {"hero": "주인공 (52~68세 여성)", "partner": "상대 남성 (남편·옛 연인 등)", "young": "젊은 여성 (20대)"}
+CAST_SAMPLE = {"hero": "あの人、まだ覚えていてくれたのね。", "partner": "久しぶりだな。元気にしてたか。",
+               "young": "おばあちゃん、これ、誰の手紙？"}
+VOICES_KEY = "scenestory/_voices.json"
+_VOICES_LOCAL = os.path.join("projects", "_rodoku_voices.json")
+
+
+def load_voices(keys: dict) -> dict:
+    d = {}
+    try:
+        if os.path.exists(_VOICES_LOCAL):
+            d = json.load(open(_VOICES_LOCAL, encoding="utf-8"))
+    except Exception:
+        d = {}
+    if hz._r2_ok(keys):
+        try:
+            from src import r2_store
+            d.update(r2_store.get_json(keys, VOICES_KEY) or {})
+        except Exception:
+            pass
+    return {k: str(d.get(k, "")).strip() for k in CAST_ROLES}
+
+
+def save_voices(keys: dict, d: dict) -> None:
+    d = {k: str(d.get(k, "")).strip() for k in CAST_ROLES}
+    os.makedirs(os.path.dirname(_VOICES_LOCAL), exist_ok=True)
+    json.dump(d, open(_VOICES_LOCAL, "w", encoding="utf-8"), ensure_ascii=False)
+    if hz._r2_ok(keys):
+        try:
+            from src import r2_store
+            r2_store.put_json(keys, VOICES_KEY, d)
+        except Exception as e:
+            print(f"[rodoku] 배역 목소리 저장 실패: {e}", flush=True)
+
+
+SPEAKER_SYSTEM = """あなたは朗読ドラマの演出家です。本文の「」の台詞それぞれについて、誰が話しているかを決めます。
+役は次の4つだけ: hero（主人公の女性）, partner（相手役の男性）, young（20代の若い女性）, narrator（それ以外の人物・手紙や看板の文言・心の声）。
+JSONだけを出力: {"speakers": ["hero", "narrator", ...]}  （台詞の数と同じ長さ、登場順）"""
+
+
+def _segments(text: str, speakers: list) -> list:
+    """本文 → [(役, 文)]。「」の中だけ役の声、それ以外は narrator。"""
+    out, pos, i = [], 0, 0
+    for m in re.finditer(r"「([^「」]+)」", text):
+        if m.start() > pos:
+            out.append(("narrator", text[pos:m.start()]))
+        role = speakers[i] if i < len(speakers) else "narrator"
+        out.append((role if role in CAST_ROLES else "narrator", m.group(1)))
+        pos, i = m.end(), i + 1
+    if pos < len(text):
+        out.append(("narrator", text[pos:]))
+    merged = []
+    for role, t in out:
+        t = t.strip()
+        if not re.sub(r"[\s。、]", "", t):
+            continue
+        if merged and merged[-1][0] == role:
+            merged[-1] = (role, merged[-1][1] + t)
+        else:
+            merged.append((role, t))
+    return merged
+
+
+def cast_narration(keys: dict, ak: str, state: dict, c: dict, head: str, dest: str, narrator: str, cast: dict) -> str:
+    """지문은 낭독자 목소리, 대사는 배역 목소리로 따로 읽어 하나로 잇는다. 배역 지정이 실패하면 전부 낭독자."""
+    from concurrent.futures import ThreadPoolExecutor
+    from src.audio import generate_narration
+    text = c.get("text", "")
+    n_q = len(re.findall(r"「[^「」]+」", text))
+    if "speakers" not in c:
+        try:
+            names = [f"{ch.get('name', '')}（{ch.get('role', '')}）" for ch in (state["plan"].get("characters") or [])]
+            yw = state["plan"].get("young_woman") or {}
+            user = (f"登場人物: {', '.join(names)} / 若い女性: {yw.get('name', '')}（{yw.get('role', '')}）\n"
+                    f"台詞の数: {n_q}\n\n[本文]\n{text}")
+            c["speakers"] = (_json_call(ak, SPEAKER_SYSTEM, user, 1500).get("speakers") or [])[:n_q] if n_q else []
+        except Exception as e:
+            print(f"[rodoku] 제{c['no']}장 배역 나누기 실패 → 낭독자 혼자: {e}", flush=True)
+            c["speakers"] = []
+    segs = _segments(text, c["speakers"])
+    if segs and segs[0][0] == "narrator":
+        segs[0] = ("narrator", head.strip() + segs[0][1])
+    else:
+        segs.insert(0, ("narrator", head.strip()))
+    tmpdir = os.path.dirname(pf(state, "cast", f"ch{c['no']:02d}", "x"))
+    files = [os.path.join(tmpdir, f"{i:03d}.mp3") for i in range(len(segs))]
+
+    def one(i):
+        role, t = segs[i]
+        if hz.usable(files[i]):
+            return
+        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), t, files[i], voice_id=cast.get(role) or narrator, info={})
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        list(ex.map(one, range(len(segs))))
+    # 목소리마다 규격(채널·표본율)이 다를 수 있어 모두 같은 WAV 로 맞춘 뒤 잇는다
+    wavs = []
+    for fp in files:
+        w = fp.replace(".mp3", ".wav")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", fp, "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", w],
+                       check=True, timeout=120)
+        wavs.append(w)
+    gap = os.path.join(tmpdir, "gap.wav")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-t", "0.25", "-i", "anullsrc=r=44100:cl=mono",
+                    "-c:a", "pcm_s16le", gap], check=True, timeout=60)
+    lst = os.path.join(tmpdir, "list.txt")
+    with open(lst, "w", encoding="utf-8") as f:
+        for i, fp in enumerate(wavs):
+            if i:
+                f.write(f"file '{os.path.abspath(gap)}'\n")
+            f.write(f"file '{os.path.abspath(fp)}'\n")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-ar", "44100", "-ac", "1",
+                    "-c:a", "libmp3lame", "-b:a", "128k", dest], check=True, timeout=600)
+    c["cast_segments"] = len(segs)
+    return dest
 
 
 def _make_motion(job, state, keys, save_fn):
