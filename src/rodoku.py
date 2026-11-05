@@ -1334,6 +1334,7 @@ def _shorts_cover(state, keys, slot: int = 0):
 
 
 # ── 자막 파일 (.srt) — YouTube 에 '자막'으로 따로 올린다. 영상에 굽지 않으므로 다시 합성할 필요가 없다 ──
+SUBTITLES_ON = False   # True 로 바꾸면 매 편 일본어 자막 파일(.srt)을 만든다
 SRT_MAX = 26     # 한 줄 최대 글자 수 (일본어)
 
 
@@ -1477,6 +1478,8 @@ def _pack(state, keys):
         tags.pop()
     pack["tags"] = tags
     state["upload_pack"] = pack
+    if not SUBTITLES_ON:                      # 작가 결정(2026-11): 지금은 자막 파일을 만들지 않는다
+        return
     try:
         state["subtitles"] = make_srt(state, keys)
     except Exception as e:
