@@ -244,7 +244,11 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
      "with_young": true,
-     "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない"}
+     "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない",
+     "more_scenes": [
+       {"image_prompt": "English. 同じ章の後半の別の一場面（寄りの小道具・手元、別の場所、時間の経過など）。image_prompt と同じ書き方", "motion_prompt": "English", "with_young": false},
+       {"image_prompt": "English. 章の終わりの一場面", "motion_prompt": "English", "with_young": false}
+     ]}
   ],
   "seo_keywords": ["検索されやすい言葉5〜8個"],
   "red_accent": "English. この物語を貫く『朱色のもの』ひとつ（例: a thin red thread, a red umbrella, a red camellia, a red knitted scarf, a red postbox）",
@@ -291,6 +295,8 @@ PLAN_SYSTEM = """あなたは日本の60〜70代に向けたYouTube「SceneStory
   「最近の作品」の前置きと同じ書き出し・同じ型にしない。「これは〜の話です」で始めない。結末は明かさない。
 - cover_chapter: サムネイルにする章の番号。その章は必ず屋外の昼、晴れた青空と白い入道雲・緑の木々・海辺や川辺の場面にし、
   young_woman が映る（with_young: true）。その章の image_prompt にも青空を書く。室内や夜の章を cover_chapter にしない。
+- more_scenes: 各章の絵は image_prompt（章の始まり）＋ more_scenes 2つ（章の中ほど・章の終わり）の3枚。朗読の流れに沿って
+  場面が変わるように、引きの絵 → 寄りの絵（手元・小道具の大写し）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち2〜3章）。その章の image_prompt では彼女の顔が見えてよい。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
@@ -750,7 +756,12 @@ def _worker(job, state, keys, save_fn, made_titles):
         state["chapters"] = [{"no": c["no"], "title_ja": c.get("title_ja", ""), "beat_ko": c.get("beat_ko", ""),
                               "image_prompt": c.get("image_prompt", ""),
                               "motion_prompt": c.get("motion_prompt", ""),
-                              "with_young": bool(c.get("with_young")) or c["no"] == _cover_no(plan)} for c in plan["chapters"]]
+                              "with_young": bool(c.get("with_young")) or c["no"] == _cover_no(plan),
+                              "extra": [{"image_prompt": m.get("image_prompt", ""), "motion_prompt": m.get("motion_prompt", ""),
+                                         "with_young": bool(m.get("with_young"))}
+                                        for m in (c.get("more_scenes") or []) if isinstance(m, dict) and m.get("image_prompt")
+                                        ][:max(int(state.get("n_scenes", DEFAULT_SCENES)) - 1, 0)]}
+                             for c in plan["chapters"]]
     plan, chs = state["plan"], state["chapters"]
 
     # ③ 집필
@@ -765,38 +776,30 @@ def _worker(job, state, keys, save_fn, made_titles):
         prev = c["text"]
     state["manuscript_chars"] = sum(c.get("chars", 0) for c in chs)
 
-    # ④ 그림
+    # ④ 그림 — 장마다 장면 1~3장 (3장씩 동시에 그림)
+    jobs = []
     for c in chs:
-        img = c.setdefault("image", {})
-        if not hz.ensure_local(keys, img, pf(state, f"ch{c['no']:02d}.jpg")):
-            _stage(job, state, save_fn, "images", 3, f"제{c['no']}장 그림")
-            body = c["image_prompt"].strip().rstrip(".") + "."
-            if "red" not in body.lower():   # 예전 설계엔 주홍색 지정이 없다 → 기본값을 넣는다
-                body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
-            if c["no"] == _cover_no(plan) and "sky" not in body.lower():
-                body += " " + COVER_SKY
-            yw = plan.get("young_woman") or {}
-            if c.get("with_young") and yw.get("look_en"):
-                body += (f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. "
-                         "Her face is visible.")
-            prompt = ART_PREFIX + " " + body + ART_SUFFIX
-            dest = pf(state, f"ch{c['no']:02d}.jpg")
-            tries = []
-            for attempt in range(MAX_IMAGE_TRIES):   # 검수에서 떨어지면 다시 그린다 (최대 3장)
-                if attempt:
-                    _stage(job, state, save_fn, "images", 3, f"제{c['no']}장 그림 다시 그리는 중 ({attempt + 1}번째)")
-                url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
-                cand = pf(state, f"ch{c['no']:02d}_try{attempt + 1}.jpg")
-                hz._download(url, cand)
-                rv = inspect_image(ak, cand, c, plan)
-                tries.append((cand, rv))
-                if rv.get("ok"):
-                    break
-            best = min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))
-            shutil.copyfile(best[0], dest)
-            img.update(local=dest, review=best[1], tries=len(tries),
-                       r2_key=keep(keys, state, dest, f"ch{c['no']:02d}.jpg", "image/jpeg"))
-            hz._save(save_fn, state)
+        for k, sc in enumerate([c] + list(c.get("extra") or [])):
+            img = sc.setdefault("image", {})
+            name = f"ch{c['no']:02d}.jpg" if k == 0 else f"ch{c['no']:02d}_s{k + 1}.jpg"
+            if not hz.ensure_local(keys, img, pf(state, name)):
+                jobs.append((c, k, sc, name))
+    if jobs:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        done = 0
+        _stage(job, state, save_fn, "images", 3, f"그림 {len(jobs)}장 (3장씩 동시에)")
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futs = {ex.submit(_draw_scene, state, keys, ak, plan, c, k, sc, name): (c, k) for c, k, sc, name in jobs}
+            for f in as_completed(futs):
+                c, k = futs[f]
+                done += 1
+                try:
+                    f.result()
+                except Exception as e:
+                    if k == 0:
+                        raise
+                    print(f"[rodoku] 제{c['no']}장 장면{k + 1} 그림 실패 → 장면 생략: {e}", flush=True)
+                _stage(job, state, save_fn, "images", 3, f"그림 {done}/{len(jobs)} · 제{c['no']}장 장면{k + 1}")
 
     # ④-2 움직임 — 장마다 6초 움직임 클립 (실패한 장은 Ken Burns 로 대신)
     _make_motion(job, state, keys, save_fn)
@@ -946,34 +949,82 @@ MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift
 ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
 
 
+def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
+    body = (sc.get("image_prompt") or c.get("image_prompt") or "").strip().rstrip(".") + "."
+    if "red" not in body.lower():
+        body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
+    if k == 0 and c["no"] == _cover_no(plan) and "sky" not in body.lower():
+        body += " " + COVER_SKY
+    yw = plan.get("young_woman") or {}
+    if sc.get("with_young") and yw.get("look_en"):
+        body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
+    return body
+
+
+def _draw_scene(state, keys, ak, plan, c, k, sc, name):
+    """장면 그림 하나: 그리기 → 검수 → 떨어지면 다시 (최대 MAX_IMAGE_TRIES). 스레드에서 돈다."""
+    body = _scene_body(plan, c, k, sc)
+    prompt = ART_PREFIX + " " + body + ART_SUFFIX
+    dest = pf(state, name)
+    tries = []
+    for attempt in range(MAX_IMAGE_TRIES):
+        url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
+        cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
+        hz._download(url, cand)
+        rv = inspect_image(ak, cand, {"no": c["no"], "image_prompt": body}, plan)
+        tries.append((cand, rv))
+        if rv.get("ok"):
+            break
+    best = min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))
+    shutil.copyfile(best[0], dest)
+    sc.setdefault("image", {}).update(local=dest, review=best[1], tries=len(tries),
+                                      r2_key=keep(keys, state, dest, name, "image/jpeg"))
+
+
+def _motion_one(state, keys, c, k, sc):
+    from src.video_replicate import generate_single_clip_url
+    mo = sc.setdefault("motion", {})
+    name = f"ch{c['no']:02d}_motion.mp4" if k == 0 else f"ch{c['no']:02d}_s{k + 1}_motion.mp4"
+    img = hz.ensure_local(keys, sc.get("image") or {}, pf(state, f"ch{c['no']:02d}.jpg" if k == 0 else f"ch{c['no']:02d}_s{k + 1}.jpg"))
+    if not img:
+        return
+    mo.pop("error", None)
+    prompt = ((sc.get("motion_prompt") or MOTION_FALLBACK).strip().rstrip(".") +
+              ". Static locked-off camera, no camera movement, no zoom, no pan, no cuts. The people stay in "
+              "place, only the small repeating elements move. Keep the hand-drawn animation look. No text.")
+    dest = pf(state, name)
+    try:
+        url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img, prompt_optimizer=False)
+        hz._download(url, dest)
+        mo.update(local=dest, prompt=prompt, r2_key=keep(keys, state, dest, name, "video/mp4"))
+    except Exception as e:
+        mo["error"] = f"{type(e).__name__}: {e}"[:300]
+        print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 실패 → Ken Burns: {e}", flush=True)
+
+
 def _make_motion(job, state, keys, save_fn):
     """그림 한 장 → MiniMax 6초 움직임 클립. state['motion_on'] 이 False 면 건너뛴다(Ken Burns)."""
     if state.get("motion_on") is False:
         return
-    from src.video_replicate import generate_single_clip_url
+    todo = []
     for c in state["chapters"]:
-        mo = c.setdefault("motion", {})
-        if hz.ensure_local(keys, mo, pf(state, f"ch{c['no']:02d}_motion.mp4")):
-            continue
-        img = hz.ensure_local(keys, c.get("image") or {}, pf(state, f"ch{c['no']:02d}.jpg"))
-        if not img:
-            continue
-        mo.pop("error", None)   # 지난번 실패한 장은 이어서 만들기 때 다시 시도
-        _stage(job, state, save_fn, "motion", 4, f"제{c['no']}장 움직임 (MiniMax 6초, 보통 2~5분)")
-        prompt = ((c.get("motion_prompt") or MOTION_FALLBACK).strip().rstrip(".") +
-                  ". Static locked-off camera, no camera movement, no zoom, no pan, no cuts. The people stay in "
-                  "place, only the small repeating elements move. Keep the hand-drawn animation look. No text.")
-        dest = pf(state, f"ch{c['no']:02d}_motion.mp4")
-        try:
-            url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img,
-                                           prompt_optimizer=False)
-            hz._download(url, dest)
-            mo.update(local=dest, prompt=prompt,
-                      r2_key=keep(keys, state, dest, f"ch{c['no']:02d}_motion.mp4", "video/mp4"))
-        except Exception as e:
-            mo["error"] = f"{type(e).__name__}: {e}"[:300]
-            print(f"[rodoku] 제{c['no']}장 움직임 실패 → Ken Burns: {e}", flush=True)
-        hz._save(save_fn, state)
+        for k, sc in enumerate([c] + list(c.get("extra") or [])):
+            if not (sc.get("image") or {}).get("local") and not (sc.get("image") or {}).get("r2_key"):
+                continue
+            name = f"ch{c['no']:02d}_motion.mp4" if k == 0 else f"ch{c['no']:02d}_s{k + 1}_motion.mp4"
+            if not hz.ensure_local(keys, sc.setdefault("motion", {}), pf(state, name)):
+                todo.append((c, k, sc))
+    if not todo:
+        return
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    _stage(job, state, save_fn, "motion", 4, f"움직임 {len(todo)}개 (MiniMax, 3개씩 동시에)")
+    done = 0
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futs = {ex.submit(_motion_one, state, keys, c, k, sc): (c, k) for c, k, sc in todo}
+        for f in as_completed(futs):
+            c, k = futs[f]
+            done += 1
+            _stage(job, state, save_fn, "motion", 4, f"움직임 {done}/{len(todo)} · 제{c['no']}장 장면{k + 1}")
 
 
 def build_anime_loop(raw: str, out: str) -> str:
@@ -1043,21 +1094,28 @@ def _render(job, state, keys, save_fn):
     chs = state["chapters"]
     segs, audio_parts, marks = [], [], []
     # 오프닝 카드 (1장 그림 · 작품 제목)
-    loops = {}
+    loops, scene_loops = {}, {}
     for c in chs:
-        raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
-        lp = pf(state, "work", f"loop{c['no']:02d}{'_anime' if raw else ''}.mp4")
-        if not hz.usable(lp):
-            job["msg"] = f"[8/10] 합성 · 제{c['no']}장 화면 루프 ({'움직임' if raw else 'Ken Burns'})"
-            if raw:
-                try:
-                    build_anime_loop(raw, lp)
-                except Exception as e:
-                    print(f"[rodoku] 제{c['no']}장 움직임 루프 실패 → Ken Burns: {e}", flush=True)
-                    lp = pf(state, "work", f"loop{c['no']:02d}.mp4")
+        scene_loops[c["no"]] = []
+        for k, sc in enumerate([c] + list(c.get("extra") or [])):
+            tag = f"{c['no']:02d}" + ("" if k == 0 else f"_s{k + 1}")
+            img = hz.ensure_local(keys, sc.get("image") or {}, pf(state, f"ch{tag}.jpg"))
+            if not img:
+                continue
+            raw = hz.ensure_local(keys, sc.get("motion") or {}, pf(state, f"ch{tag}_motion.mp4"))
+            lp = pf(state, "work", f"loop{tag}{'_anime' if raw else ''}.mp4")
             if not hz.usable(lp):
-                hz.build_kenburns_loop(c["image"]["local"], lp)
-        loops[c["no"]] = lp
+                job["msg"] = f"[8/10] 합성 · 제{c['no']}장 장면{k + 1} 화면 루프 ({'움직임' if raw else 'Ken Burns'})"
+                if raw:
+                    try:
+                        build_anime_loop(raw, lp)
+                    except Exception as e:
+                        print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 루프 실패 → Ken Burns: {e}", flush=True)
+                        lp = pf(state, "work", f"loop{tag}.mp4")
+                if not hz.usable(lp):
+                    hz.build_kenburns_loop(img, lp)
+            scene_loops[c["no"]].append(lp)
+        loops[c["no"]] = scene_loops[c["no"]][0]
     title = state["plan"].get("title_ja", "")
     t = 0.0
     cold = state.get("cold") or {}
@@ -1092,8 +1150,15 @@ def _render(job, state, keys, save_fn):
         card = _card_png(pf(state, "work", f"t{c['no']:02d}.png"), c["title_ja"],
                          f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章")
         segs.append(_card_clip(loops[c["no"]], card, TITLE_CARD_SEC, pf(state, "work", f"seg{c['no']:02d}a.mp4")))
-        segs.append(_body_clip(loops[c["no"]], TITLE_CARD_SEC, max(seg_len - TITLE_CARD_SEC, 0.5),
-                               pf(state, "work", f"seg{c['no']:02d}b.mp4")))
+        body = max(seg_len - TITLE_CARD_SEC, 0.5)
+        sl = scene_loops[c["no"]]
+        if len(sl) <= 1 or body < 20:
+            segs.append(_body_clip(loops[c["no"]], TITLE_CARD_SEC, body, pf(state, "work", f"seg{c['no']:02d}b.mp4")))
+        else:                                   # 장면 수만큼 고르게 나눠 그림을 바꾼다 (첫 장면은 제목 카드 시간만큼 짧게)
+            part = (body + TITLE_CARD_SEC) / len(sl)
+            for k, lp in enumerate(sl):
+                d = (part - TITLE_CARD_SEC) if k == 0 else (body - (part - TITLE_CARD_SEC) - part * (len(sl) - 2) if k == len(sl) - 1 else part)
+                segs.append(_body_clip(lp, 0, max(d, 0.5), pf(state, "work", f"seg{c['no']:02d}b{k + 1}.mp4")))
         marks.append((t, f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章 {c['title_ja']}"))
         audio_parts.append(("file", c["audio"]["local"]))
         audio_parts.append(("silence", CHAPTER_PAD_SEC))
@@ -1170,6 +1235,7 @@ def _render(job, state, keys, save_fn):
 
 N_SHORTS = 3          # 최대
 DEFAULT_SHORTS = 1    # 지금 운영: 매일 본편 1 + 쇼츠 1
+DEFAULT_SCENES = 3    # 장마다 그림 수 (1~3)
 SHORT_ANGLES = [
     "",   # 1번: 자유 — 続きを聴きたくなる一節
     "今回は物語の始まりから選ぶ。人物と状況が一瞬で伝わり、この人に何が起きるのかと気になる一節。",
