@@ -14,7 +14,7 @@ import time
 CHANNEL_CODE = {"coffee": "Coffee", "scenestory": "SceneStory", "hasira": "HASIRA"}
 KINDS = {
     "main": "본편·완성 영상", "trailer": "예고 쇼츠", "thumbnail": "섬네일",
-    "thumbnail-base": "글자 없는 섬네일 바탕", "trailer-cover": "쇼츠 표지", "compilation": "모음편", "upload": "업로드 정보",
+    "thumbnail-base": "글자 없는 섬네일 바탕", "trailer-cover": "쇼츠 표지", "compilation": "모음편", "subtitles-ja": "일본어 자막", "upload": "업로드 정보",
 }
 
 

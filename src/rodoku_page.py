@@ -296,6 +296,14 @@ def render_project(st, manager, api_keys, show_banner):
         with st.container(border=True):
             st.markdown(f"**본편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB · {fin.get('made_at', '')}")
             _dl(st, api_keys, fin, "⬇ 본편 내려받기", "rd_fin", "video/mp4", out_name(state, "main", "mp4"))
+            sub = state.get("subtitles") or {}
+            if hz.usable(sub.get("local", "")) or sub.get("r2_key"):
+                _dl(st, api_keys, sub, f"⬇ 일본어 자막 파일 (.srt · {sub.get('cues', 0)}줄)", "rd_srt", "application/x-subrip",
+                    out_name(state, "subtitles-ja", "srt"))
+                st.caption("YouTube 스튜디오(PC) → 동영상 → 자막 → 일본어 → '파일 업로드' → '타이밍 포함'으로 올립니다. "
+                           "영상에 굽지 않은 자막이라 시청자가 CC 버튼으로 켜고 끌 수 있습니다.")
+            elif sub.get("error"):
+                st.caption(f"자막 파일을 만들지 못했습니다: {sub['error'][:150]}")
             thumbs = state.get("thumbnails") or ([state["thumbnail"]] if (state.get("thumbnail") or {}).get("local") else [])
 
             def _thumb(t, wide=True):

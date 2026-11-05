@@ -996,6 +996,29 @@ def inspect_image(api_key: str, path: str, ch: dict, plan: dict) -> dict:
         return {"ok": True, "problems": [], "skipped": True}
 
 
+def _speech_timeline(state, audio_parts) -> list:
+    """완성 영상에서 각 낭독 파일이 시작하는 시각 + 그 낭독의 원문 (자막 파일용)."""
+    kanji = "一二三四五六七八九十"
+    texts = {}
+    for c in state.get("chapters") or []:
+        au = (c.get("audio") or {}).get("local")
+        if au:
+            texts[au] = f"第{kanji[c['no'] - 1] if c['no'] <= 10 else c['no']}章、{c['title_ja']}。\n\n{c.get('text', '')}"
+    for key, txt in (("cold", None), ("intro", None), ("outro", OUTRO_JA)):
+        it = state.get(key) or {}
+        if it.get("local"):
+            texts[it["local"]] = txt or it.get("text", "")
+    out, cur = [], 0.0
+    for kind, val in audio_parts:
+        if kind == "silence":
+            cur += float(val)
+            continue
+        d = hz.duration(val)
+        out.append({"start": round(cur, 3), "seconds": round(d, 3), "audio": val, "text": texts.get(val, "")})
+        cur += d
+    return out
+
+
 def _render(job, state, keys, save_fn):
     chs = state["chapters"]
     segs, audio_parts, marks = [], [], []
@@ -1116,7 +1139,8 @@ def _render(job, state, keys, save_fn):
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", audio, "-map", "0:v:0", "-map", "1:a:0",
                     "-c", "copy", "-t", f"{total:.2f}", "-movflags", "+faststart", final], check=True, timeout=900)
     info = {"local": final, "seconds": round(hz.duration(final), 2), "bytes": os.path.getsize(final),
-            "chapters": [[round(a, 2), b] for a, b in marks], "made_at": time.strftime("%Y-%m-%d %H:%M")}
+            "chapters": [[round(a, 2), b] for a, b in marks], "made_at": time.strftime("%Y-%m-%d %H:%M"),
+            "speech": _speech_timeline(state, audio_parts)}
     job["msg"] = f"[8/10] 합성 · R2 에 올리는 중 ({info['bytes'] / 1e6:.0f}MB)"
     info["r2_key"] = keep(keys, state, final, os.path.basename(final), "video/mp4")
     state["final"] = info
@@ -1309,6 +1333,81 @@ def _shorts_cover(state, keys, slot: int = 0):
     trl["cover"] = {"local": out, "r2_key": keep(keys, state, out, f"{folder}_cover.jpg", "image/jpeg")}
 
 
+# ── 자막 파일 (.srt) — YouTube 에 '자막'으로 따로 올린다. 영상에 굽지 않으므로 다시 합성할 필요가 없다 ──
+SRT_MAX = 26     # 한 줄 최대 글자 수 (일본어)
+
+
+def _align(keys: dict, audio: str, text: str) -> list:
+    """ElevenLabs Forced Alignment → [(글자, 시작, 끝)]. 실패하면 글자 수 비례로 나눈다."""
+    clean = re.sub(r"\s+", "", text)
+    try:
+        import requests
+        with open(audio, "rb") as f:
+            r = requests.post("https://api.elevenlabs.io/v1/forced-alignment",
+                              headers={"xi-api-key": keys.get("ELEVENLABS_API_KEY", "")},
+                              files={"file": (os.path.basename(audio), f, "audio/mpeg")}, data={"text": text}, timeout=300)
+        r.raise_for_status()
+        chars = [(str(c.get("text", "")), float(c.get("start", 0)), float(c.get("end", 0)))
+                 for c in (r.json().get("characters") or [])]
+        chars = [c for c in chars if c[0].strip()]
+        if len(chars) >= len(clean) * 0.8:
+            return chars
+        print(f"[rodoku] 자막 맞추기 결과가 짧음 ({len(chars)}/{len(clean)}) → 비례 배분", flush=True)
+    except Exception as e:
+        print(f"[rodoku] 자막 맞추기 실패 → 비례 배분: {e}", flush=True)
+    d = hz.duration(audio) or len(clean) / JA_CPS
+    n = max(len(clean), 1)
+    return [(ch, i * d / n, (i + 1) * d / n) for i, ch in enumerate(clean)]
+
+
+def _cues(chars: list) -> list:
+    """글자 목록을 자막 한 줄 단위로: 。！？ 에서 끊고, SRT_MAX 를 넘으면 다음 、에서, 많이 넘으면 강제로.
+    너무 짧게 남은 꼬리(4자 미만)는 앞줄에 붙인다."""
+    out, buf = [], []
+    def flush():
+        if buf:
+            out.append(["".join(c[0] for c in buf), buf[0][1], buf[-1][2]])
+            buf.clear()
+    for ch in chars:
+        buf.append(ch)
+        n = len(buf)
+        if ch[0] in "。！？!?" or (ch[0] in "、，," and n >= SRT_MAX * 0.7) or n >= SRT_MAX + 12:
+            flush()
+    flush()
+    merged = []
+    for t, a, b in out:
+        if merged and len(t.strip("。、 ")) < 4 and len(merged[-1][0]) + len(t) <= SRT_MAX + 16:
+            merged[-1][0] += t
+            merged[-1][2] = b
+        else:
+            merged.append([t, a, b])
+    return [(t, a, b) for t, a, b in merged if t.strip("。、 ")]
+
+def _ts(x: float) -> str:
+    ms = int(round(x * 1000))
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+
+def make_srt(state, keys) -> dict:
+    fin = state.get("final") or {}
+    rows = []
+    for sp in fin.get("speech") or []:
+        if not sp.get("text") or not hz.usable(sp.get("audio", "")):
+            continue
+        for t, a, b in _cues(_align(keys, sp["audio"], sp["text"])):
+            rows.append((sp["start"] + a, sp["start"] + max(b, a + 0.6), t))
+    if not rows:
+        return {"error": "자막을 만들 낭독 정보가 없습니다"}
+    for i in range(len(rows) - 1):            # 다음 자막과 겹치지 않게
+        if rows[i][1] > rows[i + 1][0]:
+            rows[i] = (rows[i][0], rows[i + 1][0] - 0.05, rows[i][2])
+    out = pf(state, "subtitles_ja.srt")
+    with open(out, "w", encoding="utf-8") as f:
+        for i, (a, b, t) in enumerate(rows, 1):
+            f.write(f"{i}\n{_ts(a)} --> {_ts(b)}\n{t}\n\n")
+    return {"local": out, "cues": len(rows), "r2_key": keep(keys, state, out, "subtitles_ja.srt", "application/x-subrip")}
+
+
 def _pack(state, keys):
     plan, fin = state["plan"], state["final"]
     # 섬네일 3종 (YouTube '테스트 및 비교'용) — 그림과 문구를 서로 다르게
@@ -1378,6 +1477,11 @@ def _pack(state, keys):
         tags.pop()
     pack["tags"] = tags
     state["upload_pack"] = pack
+    try:
+        state["subtitles"] = make_srt(state, keys)
+    except Exception as e:
+        state["subtitles"] = {"error": f"{type(e).__name__}: {e}"[:200]}
+        print(f"[rodoku] 자막 파일 실패: {e}", flush=True)
 
 
 def link(keys: dict, item: dict, filename: str = "") -> str:
