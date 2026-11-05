@@ -331,7 +331,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             f"最近の作品（タイトル・小道具・赤いもの・舞台を重ねない）:\n{rec or 'なし'}\n"
             f"使用禁止の小道具・赤いもの: {', '.join(banned) or 'なし'}\n"
             f"ほかに作った作品: {', '.join(made_titles[:20]) or 'なし'}\nJSONのみ出力。")
-    plan = _json_call(api_key, PLAN_SYSTEM, user, max_tokens=6000)
+    plan = _json_call(api_key, PLAN_SYSTEM, user, max_tokens=16000)
     chs = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)][:n_chapters]
     if len(chs) < 3:
         raise ValueError("설계에 장이 부족합니다.")

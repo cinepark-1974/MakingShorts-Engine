@@ -721,17 +721,45 @@ def _extract_json(raw: str) -> dict:
     return json.loads(raw[a:b + 1])
 
 
-def _call_json(client, system: str, user: str, max_tokens: int = 12000, retries: int = 1) -> dict:
+def _repair_json(raw: str):
+    """깨진 JSON(따옴표 누락·잘린 끝 등)을 고쳐 읽는다. json_repair 가 없으면 None."""
+    try:
+        from json_repair import repair_json
+    except Exception:
+        return None
+    a = raw.find("{")
+    if a == -1:
+        return None
+    try:
+        d = repair_json(raw[a:], return_objects=True)
+        return d if isinstance(d, dict) and d else None
+    except Exception:
+        return None
+
+
+def _call_json(client, system: str, user: str, max_tokens: int = 12000, retries: int = 2) -> dict:
+    """JSON 응답. 길이 한도로 잘리면 한도를 늘려 다시, 따옴표 등으로 깨지면 고쳐 읽고, 그래도 안 되면 다시 요청."""
     last = None
-    for _ in range(retries + 1):
+    for attempt in range(retries + 1):
         resp = client.messages.create(
             model=SCRIPT_MODEL, max_tokens=max_tokens, system=system,
             messages=[{"role": "user", "content": user}],
         )
-        try:
-            return _extract_json(_text_of(resp))
-        except Exception as e:      # JSON 이 깨졌으면 한 번 더
-            last = e
+        raw = _text_of(resp)
+        truncated = getattr(resp, "stop_reason", "") == "max_tokens"
+        if not truncated:
+            try:
+                return _extract_json(raw)
+            except Exception as e:
+                last = e
+                fixed = _repair_json(raw)
+                if fixed is not None:
+                    print(f"[json] 깨진 JSON 을 고쳐 읽음: {e}", flush=True)
+                    return fixed
+        else:
+            last = ValueError(f"응답이 길이 한도({max_tokens})에서 잘림")
+            print(f"[json] {last} → 한도를 늘려 다시", flush=True)
+            max_tokens = min(max_tokens * 2, 20000)   # 2만 넘으면 SDK 가 스트리밍을 요구
     raise ValueError(f"대본 JSON 파싱 실패: {last}")
 
 
