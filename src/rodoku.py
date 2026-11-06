@@ -1962,21 +1962,22 @@ def make_srt(state, keys) -> dict:
     return {"local": out, "cues": len(rows), "r2_key": keep(keys, state, out, "subtitles_ja.srt", "application/x-subrip")}
 
 
-# 재생목록 3개 (작가가 YouTube 에 직접 만든 목록 이름과 같게 유지)
+# 재생목록 3개 — 감정 주제어 (작가가 YouTube 에 직접 만든 목록 이름과 같게 유지)
 PLAYLISTS = {
-    "fufu": "夫婦の物語｜夫の秘密・熟年夫婦",
-    "koi": "恋の物語｜初恋・再会",
-    "kazoku": "家族と暮らしの物語｜嫁姑・母と娘・町の人々",
+    "ai": "愛の物語｜夫婦・初恋・もう一度の恋",
+    "kokai": "後悔と赦しの物語｜言えなかった言葉・嫁姑・母と娘",
+    "jiritsu": "自立の物語｜ひとりの時間・人生の再出発",
 }
 _KIND_PLAYLIST = {
-    "夫婦の秘密": "fufu", "定年後の再出発": "fufu", "熟年離婚・卒婚": "fufu", "夫の不可解な行動": "fufu", "小さな嘘": "fufu",
-    "初恋・再会": "koi", "新しい恋": "koi", "旅先の出会い": "koi", "昔の仲間": "koi",
+    "夫婦の秘密": "ai", "夫の不可解な行動": "ai", "初恋・再会": "ai", "新しい恋": "ai", "旅先の出会い": "ai", "小さな嘘": "ai",
+    "子の巣立ち": "jiritsu", "熟年離婚・卒婚": "jiritsu", "定年後の再出発": "jiritsu", "パートの職場": "jiritsu",
+    "故郷じまい": "jiritsu", "動物との暮らし": "jiritsu", "孫との一日": "jiritsu",
 }
 
 
 def playlist_for(plan: dict) -> str:
-    """이야기 종류 → 넣을 재생목록 이름. 나머지 종류(嫁と姑·母と娘·介護·隣人·店じまい 등)는 '家族と暮らし'."""
-    return PLAYLISTS[_KIND_PLAYLIST.get((plan or {}).get("kind", ""), "kazoku")]
+    """이야기 종류 → 넣을 재생목록 이름 (감정 주제어 3개). 나머지 종류(嫁と姑·母と娘·遺品整理·介護·隣人·店じまい 등)는 '後悔と赦し'."""
+    return PLAYLISTS[_KIND_PLAYLIST.get((plan or {}).get("kind", ""), "kokai")]
 
 
 def _short_texts(state, it: dict, k: int) -> None:
