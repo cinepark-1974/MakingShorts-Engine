@@ -708,7 +708,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
  "tags": ["検索語・ジャンル語 12〜15個"],
  "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個],
  "pinned_comment": "本編に固定するコメント。2〜3行。物語の小道具や場面に触れ、視聴者が自分の思い出を書きたくなる問いかけで終える（例：あなたにも、ずっと渡せずにいる物はありますか。）。押しつけがましい登録のお願いは書かない",
- "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編はチャンネルの動画一覧からどうぞ』"}
+ "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編は画面下のリンク（チャンネル名の下）からどうぞ』"}
 誇張・扇情的な表現、性的な言葉は使わない。"""
 
 UPLOAD_SETTINGS = [
@@ -717,7 +717,7 @@ UPLOAD_SETTINGS = [
     ("동영상 언어", "일본어"),
     ("변경되거나 합성된 콘텐츠", "AI 음성·AI 그림이 들어가므로 '예'"),
     ("올리는 순서", "매일 본편 1편 + 예고 쇼츠 1개 (본편 먼저 → 쇼츠는 같은 날, 쇼츠 고정 댓글로 본편 안내)"),
-    ("예고 쇼츠", "설명란·고정 댓글에 본편 제목, '관련 동영상'이 열리면 본편 연결"),
+    ("예고 쇼츠", "올린 뒤 스튜디오(컴퓨터) → 콘텐츠 → 쇼츠 → 관련 동영상에 본편 선택 · 고정 댓글 고정"),
     ("종료 화면", "YouTube 스튜디오(PC) → 동영상 → 종료 화면: 마지막 20초가 비어 있으니 '동영상(최신 업로드)'과 '구독' 두 개를 화면 가운데에 놓기"),
     ("고정 댓글", "본편·쇼츠 모두 위 '고정 댓글'을 직접 달고 고정 (질문형 → 시청자 댓글 유도)"),
 ]
@@ -1757,7 +1757,7 @@ def _trailer(job, state, keys, slot: int = 0):
            stroke_width=3, stroke_fill=(20, 14, 12, 255))
     d.text((540, 230), pick.get("hook_line") or state["plan"].get("title_ja", ""), font=jp_font(JP_SANS_BOLD, 76),
            fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
-    d.text((540, 1780), "続きは本編で ▶ チャンネルの動画一覧へ", font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
+    d.text((540, 1780), "続きは本編で ▼ 下のリンクから", font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=4, stroke_fill=(20, 14, 12, 255))
     im.save(top)
     caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
@@ -1965,7 +1965,7 @@ def make_srt(state, keys) -> dict:
 def _short_texts(state, it: dict, k: int) -> None:
     plan, fin = state["plan"], state.get("final") or {}
     it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
-                         f"（{hz.fmt_time(fin.get('seconds', 0), True)}）はチャンネルの動画一覧から。\n\n#朗読 #朗読ドラマ #shorts")
+                         f"（{hz.fmt_time(fin.get('seconds', 0), True)}）は画面下のリンクから。\n\n#朗読 #朗読ドラマ #shorts")
     it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、上の「SceneStory」をタップ →"
                      f"「動画」からお聴きいただけます。")
     it["post_day"] = ["본편 공개 당일", "다른 날 (본편이 없는 날의 쇼츠로)", "다른 날 (본편이 없는 날의 쇼츠로)"][min(k, 2)]
@@ -2054,7 +2054,7 @@ def _pack(state, keys):
         body += "\n\n" + " ".join(hts)
     pack["full_description"] = body
     pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
-    pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』はチャンネルの動画一覧からどうぞ。")
+    pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』は画面下のリンクからどうぞ。")
     trl = state.get("trailer") or {}
     for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
         if it.get("local") or it.get("r2_key"):
