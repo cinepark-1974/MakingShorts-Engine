@@ -86,6 +86,14 @@ STORY_KINDS = [
      ["母と娘 確執", "実家の母 本音"]),
     ("パートの職場", "子育てを終えて久しぶりに働き始めた職場（スーパー・食堂・クリーニング店など）で、思いがけない人や秘密に出会う",
      ["50代 パート", "50代 再就職"]),
+    ("スカッと・息子夫婦", "主人公を「お荷物」「老後はひとりで」と見下し、家やお金を当てにする息子夫婦。主人公は黙って準備を進め、最後に品よく、きっぱりと形勢を逆転する",
+     ["スカッとする話 息子夫婦", "スカッと 嫁 義母", "スカッと 朗読"]),
+    ("スカッと・義家族", "嫁いでから長年、義母・義姉に見下されてきた主人公。ある出来事をきっかけに、隠してきた事実と主人公の本当の力が明らかになる",
+     ["スカッとする話 義母", "スカッと 義姉", "嫁いびり スカッと"]),
+    ("スカッと・夫と浮気相手", "主人公を「何もできない妻」と侮る夫と、その相手。主人公は静かに証拠と生活の準備を整え、最後に立場が逆転する",
+     ["スカッとする話 夫 浮気", "スカッと 離婚 朗読"]),
+    ("スカッと・見下す人々", "パート先の上司・ママ友・近所の人に年齢や身なりで見下される主人公。実は誰も知らなかった経歴や人脈が明らかになり、相手が青ざめる",
+     ["スカッとする話 パート", "スカッと 見下し 逆転"]),
     ("故郷じまい", "実家じまい・墓じまいで久しぶりに帰った故郷で起きること",
      ["実家じまい", "墓じまい 故郷"]),
 ]
@@ -197,9 +205,20 @@ def pick_kind(recent_kinds: list, salt: float = 0.0) -> str:
     rnd = random.Random(salt or time.time())
     recent = [k for k in recent_kinds if k in KIND_NAMES][:6]
     fresh = [k for k in KIND_NAMES if k not in recent]
-    if fresh:
-        return rnd.choice(fresh)
-    return recent[-1]
+    if not fresh:
+        return recent[-1]
+    sk = [k for k in fresh if is_sukatto(k)]
+    if sk and rnd.random() < SUKATTO_SHARE:     # 시니어 낭독에서 가장 큰 장르 — 약 3편에 1편
+        return rnd.choice(sk)
+    rest = [k for k in fresh if not is_sukatto(k)] or fresh
+    return rnd.choice(rest)
+
+
+SUKATTO_SHARE = 0.34
+
+
+def is_sukatto(kind: str) -> bool:
+    return str(kind or "").startswith("スカッと")
 
 
 def collect_trends(n_seeds: int = 8, salt: float = 0.0, kind: str = "") -> dict:
@@ -276,6 +295,12 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - 物語の始め方（必須）: 第1章は「いま、主人公の身のまわりで起きている小さな謎」から始める（例：夫が毎朝四時に出かける／知らない番号から毎晩電話がある／
   亡き母の口座から毎月同じ額が引き出されている／空き家のはずの実家に灯りがつく）。聴き手が「なぜ？」と思う謎を第1章の最初の数行で出し、
   章を追うごとに疑いを深め、反転の章で温かい真実か静かな痛みの真実を明かす。回想はその謎の答えに近づくためにだけ挟む。
+- ただし題材の型が「スカッと・…」のときは次の形にする（謎の形より優先）:
+  第1章の最初の数行で、相手が主人公を見下す決定的な一言（台詞）を出す（例：「老後はひとりで暮らしてね」「何もできないくせに」）。
+  中盤は主人公が黙って耐えながら、相手の知らない準備・事実を積み重ねる（聴き手にだけ少しずつ見せる）。
+  反転の章で事実が明るみに出て、相手の立場が一気に崩れる。主人公は怒鳴らない・暴力も復讐の言葉も使わない。
+  最後の一言は品よく短く、聴き手が胸のすく台詞にする。結末で主人公は自分の暮らしを取り戻し、穏やかに前を向く。
+  犯罪・暴力・性的な場面・実在の団体や人物は出さない。
 - 過去（回想）は主人公が20〜30代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
   昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
@@ -702,7 +727,9 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代の女性向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
 {"title": "【朗読】で始める。いま起きている謎を一文、疑いを深める一文、最後は「…」で終える（全体55字以内）。時刻・金額・年数は算用数字（4時、2万円、26年）。
            例：【朗読】定年前の夫が、毎朝4時に家を出る。台所に、知らない店のレシートが…／【朗読】亡き母の口座から、毎月3万円が引き出されている。振込先は、知らない女性の名前で…
-           作品タイトルは入れなくてよい。結末・真実は書かない",
+           題材の型が「スカッと・…」のときは、相手が主人公を見下した台詞を「」で先頭に置き、何日後に何が起きかけたかを一文、最後は「…」。
+           例：【朗読】「老後はひとりで暮らしてね」と笑った息子夫婦。3日後、私が実家の鍵を渡した相手は…
+           作品タイトルは入れなくてよい。結末・真実は書かない。末尾にジャンルの【】は付けない（あとで付ける）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
@@ -1964,20 +1991,29 @@ def make_srt(state, keys) -> dict:
 
 # 재생목록 3개 — 감정 주제어 (작가가 YouTube 에 직접 만든 목록 이름과 같게 유지)
 PLAYLISTS = {
-    "ai": "愛の物語｜夫婦・初恋・もう一度の恋",
-    "kokai": "後悔と赦しの物語｜言えなかった言葉・嫁姑・母と娘",
-    "jiritsu": "自立の物語｜ひとりの時間・人生の再出発",
+    "naku": "泣ける話｜夫婦・家族の感動朗読",
+    "koi": "恋の話｜初恋・再会・大人の恋",
+    "natsu": "懐かしい話｜昭和・平成の思い出",
+    "suka": "スカッとする話｜品よく逆転する朗読",
 }
+PLAYLIST_TAG = {"naku": "【泣ける話】", "koi": "【恋の話】", "natsu": "【懐かしい話】", "suka": "【スカッとする話】"}
 _KIND_PLAYLIST = {
-    "夫婦の秘密": "ai", "夫の不可解な行動": "ai", "初恋・再会": "ai", "新しい恋": "ai", "旅先の出会い": "ai", "小さな嘘": "ai",
-    "子の巣立ち": "jiritsu", "熟年離婚・卒婚": "jiritsu", "定年後の再出発": "jiritsu", "パートの職場": "jiritsu",
-    "故郷じまい": "jiritsu", "動物との暮らし": "jiritsu", "孫との一日": "jiritsu",
+    "初恋・再会": "koi", "新しい恋": "koi", "旅先の出会い": "koi",
+    "昔の仲間": "natsu", "味の記憶": "natsu", "店じまい": "natsu", "故郷じまい": "natsu", "隣人": "natsu",
+    "遺品整理": "natsu", "動物との暮らし": "natsu", "孫との一日": "natsu",
 }
+
+
+def _playlist_key(plan: dict) -> str:
+    kind = (plan or {}).get("kind", "")
+    if is_sukatto(kind):
+        return "suka"
+    return _KIND_PLAYLIST.get(kind, "naku")
 
 
 def playlist_for(plan: dict) -> str:
-    """이야기 종류 → 넣을 재생목록 이름 (감정 주제어 3개). 나머지 종류(嫁と姑·母と娘·遺品整理·介護·隣人·店じまい 등)는 '後悔と赦し'."""
-    return PLAYLISTS[_KIND_PLAYLIST.get((plan or {}).get("kind", ""), "kokai")]
+    """이야기 종류 → 넣을 재생목록 이름 (4개). 夫婦·家族 계열(嫁と姑·母と娘·介護·子の巣立ち·夫の秘密 등)은 '泣ける話'."""
+    return PLAYLISTS[_playlist_key(plan)]
 
 
 def _short_texts(state, it: dict, k: int) -> None:
@@ -2058,6 +2094,7 @@ def _pack(state, keys):
         first = (chs[0].get("text") or "")[:260] if chs else ""
         user = (f"作品: {plan.get('title_ja')}\nあらすじ: {plan.get('logline_ja')}\n検索語: {plan.get('picked_query')}\n"
                 f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}\n"
+                f"題材の型: {plan.get('kind', '')}\n"
                 f"第1章の冒頭（謎の入口）:\n{first}\n"
                 f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}")
         pack.update({k: v for k, v in _json_call(keys.get("ANTHROPIC_API_KEY", ""), PACK_SYSTEM, user, 1500).items() if v})
@@ -2074,6 +2111,9 @@ def _pack(state, keys):
     pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』は画面下のリンクからどうぞ。")
     pack["playlist"] = playlist_for(plan)
+    tag = PLAYLIST_TAG[_playlist_key(plan)]
+    if pack.get("title") and tag not in pack["title"]:
+        pack["title"] = pack["title"].rstrip() + tag      # 장르 꼬리표 (시니어 낭독은 제목 꼬리표로 장르를 알아본다)
     trl = state.get("trailer") or {}
     for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
         if it.get("local") or it.get("r2_key"):
