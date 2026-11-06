@@ -700,7 +700,7 @@ def _body_clip(loop: str, start: float, sec: float, out: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です。朗読ドラマ本文から、続きを聴きたくなる一節を選びます。
 本文の連続した文をそのまま抜き出し（改変しない）、空白を除いて120〜180字。結末のネタばらしはしない。
-JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内、#朗読 と物語の題材に合うハッシュタグ1個を含む。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ）"}"""
+JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる（年数・年齢・時刻・金額・回数。例：38年後、26年目、毎朝4時、2万円、67歳）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『38年後の再会に節子が取り出したもの』『毎朝4時に消える夫、ポケットの鍵』。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ。#朗読 と題材に合うハッシュタグ1個を含む"}"""
 
 
 def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
@@ -2025,8 +2025,7 @@ def _short_texts(state, it: dict, k: int) -> None:
     plan, fin = state["plan"], state.get("final") or {}
     it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
                          f"（{hz.fmt_time(fin.get('seconds', 0), True)}）は画面下のリンクから。\n\n#朗読 #朗読ドラマ #shorts")
-    it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、上の「SceneStory」をタップ →"
-                     f"「動画」からお聴きいただけます。")
+    it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、画面下のリンクからお聴きいただけます。")
     it["post_day"] = ["본편 공개 당일", "다른 날 (본편이 없는 날의 쇼츠로)", "다른 날 (본편이 없는 날의 쇼츠로)"][min(k, 2)]
 
 
