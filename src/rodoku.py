@@ -199,10 +199,15 @@ def _n(t: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 # ① 트렌드
 # ─────────────────────────────────────────────────────────────────────────────
-def pick_kind(recent_kinds: list, salt: float = 0.0) -> str:
-    """최근 6편에 안 쓴 종류 중 하나. 다 썼으면 가장 오래전에 쓴 것."""
+def pick_kind(recent_kinds: list, salt: float = 0.0, group: str = "") -> str:
+    """최근 6편에 안 쓴 종류 중 하나. 다 썼으면 가장 오래전에 쓴 것.
+    group: 'naku'·'koi'·'natsu'·'suka' 를 주면 그 재생목록(감동·사랑·추억·통쾌편)의 종류 안에서만 고른다."""
     import random
     rnd = random.Random(salt or time.time())
+    if group in PLAYLISTS:
+        pool = [k for k in KIND_NAMES if _playlist_key({"kind": k}) == group]
+        recent = [k for k in recent_kinds if k in pool][:max(len(pool) - 1, 0)]
+        return rnd.choice([k for k in pool if k not in recent] or pool)
     recent = [k for k in recent_kinds if k in KIND_NAMES][:6]
     fresh = [k for k in KIND_NAMES if k not in recent]
     if not fresh:
@@ -901,7 +906,7 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "trend", 0)
         recent = recent_plans(keys, state.get("project_id", ""))
         state["_recent"] = recent
-        kind = pick_kind([r.get("kind", "") for r in recent])
+        kind = pick_kind([r.get("kind", "") for r in recent], group=state.get("group", ""))
         tr = collect_trends(kind=kind)
         if not tr["queries"]:
             tr["queries"] = next((sd for k, _, sd in STORY_KINDS if k == kind), ["シニア 朗読"])

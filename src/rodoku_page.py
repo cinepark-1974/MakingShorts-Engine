@@ -29,6 +29,9 @@ def render_new(st, manager, api_keys):
                         format_func=lambda n: {1: "1개 (매일 본편+쇼츠 운영 · 기본)", 3: "3개 (시작·중간·반전 직전)"}[n])
     n_scenes = st.radio("장마다 그림 수", [3, 1], index=[3, 1].index(R.DEFAULT_SCENES), horizontal=True, key="rd_nscenes",
                         format_func=lambda n: {3: "3장 (약 1분마다 장면이 바뀜 · 기본)", 1: "1장 (예전 방식 · 빠르고 싸게)"}[n])
+    group = st.radio("이번 편 종류", ["", "naku", "koi", "suka", "natsu"], horizontal=True, key="rd_group",
+                     format_func=lambda g: {"": "자동 (약 3편에 1편 통쾌편)", "naku": "감동편", "koi": "사랑편",
+                                            "suka": "통쾌편 (スカッと)", "natsu": "추억편"}[g])
     ambience_on = st.toggle("🌧 장면 소리 (빗소리·건널목·매미·파도 등을 낭독 밑에 작게)", value=True, key="rd_amb")
     subs_on = st.toggle("💬 본문 자막 (낭독을 화면 아래에 자막으로 · 소리 끄고 보는 분·귀가 어두운 분용)", value=True, key="rd_subs",
                         help="낭독 타이밍에 맞춘 자막을 화면에 입힙니다. 합성 시간이 몇 분 늘어납니다.")
@@ -43,7 +46,7 @@ def render_new(st, manager, api_keys):
         state = manager.create_new_project(chapter="朗読ドラマ", topic="朗読ドラマ 자동", channel="scenestory")
         state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued",
                      motion_on=bool(motion_on), n_shorts=int(n_shorts), n_scenes=int(n_scenes),
-                     ambience_on=bool(ambience_on), subs_on=bool(subs_on))
+                     ambience_on=bool(ambience_on), subs_on=bool(subs_on), group=group)
         manager.save_state(state)
         made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"]
         R.start_auto(state, api_keys, manager.save_state, made)
