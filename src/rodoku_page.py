@@ -171,6 +171,8 @@ def render_comp_project(st, manager, api_keys, show_banner):
                 st.code(pack.get(key, ""), language=None)
             st.markdown("태그")
             st.code(", ".join(pack.get("tags", [])), language=None)
+            st.markdown("재생목록")
+            st.code(pack.get("playlist") or R.playlist_for(state.get("plan") or {}), language=None)
 
 
 def _recover(st, manager, api_keys):
@@ -418,6 +420,8 @@ def render_project(st, manager, api_keys, show_banner):
             st.code(pack.get("full_description", ""), language=None)
             st.markdown("태그")
             st.code(", ".join(pack.get("tags", [])), language=None)
+            st.markdown("재생목록")
+            st.code(pack.get("playlist") or R.playlist_for(state.get("plan") or {}), language=None)
             if pack.get("pinned_comment"):
                 st.markdown("본편 고정 댓글")
                 st.code(pack["pinned_comment"], language=None)

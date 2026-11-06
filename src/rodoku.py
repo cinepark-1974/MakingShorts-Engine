@@ -1962,6 +1962,23 @@ def make_srt(state, keys) -> dict:
     return {"local": out, "cues": len(rows), "r2_key": keep(keys, state, out, "subtitles_ja.srt", "application/x-subrip")}
 
 
+# 재생목록 3개 (작가가 YouTube 에 직접 만든 목록 이름과 같게 유지)
+PLAYLISTS = {
+    "fufu": "夫婦の物語｜夫の秘密・熟年夫婦",
+    "koi": "恋の物語｜初恋・再会",
+    "kazoku": "家族と暮らしの物語｜嫁姑・母と娘・町の人々",
+}
+_KIND_PLAYLIST = {
+    "夫婦の秘密": "fufu", "定年後の再出発": "fufu", "熟年離婚・卒婚": "fufu", "夫の不可解な行動": "fufu", "小さな嘘": "fufu",
+    "初恋・再会": "koi", "新しい恋": "koi", "旅先の出会い": "koi", "昔の仲間": "koi",
+}
+
+
+def playlist_for(plan: dict) -> str:
+    """이야기 종류 → 넣을 재생목록 이름. 나머지 종류(嫁と姑·母と娘·介護·隣人·店じまい 등)는 '家族と暮らし'."""
+    return PLAYLISTS[_KIND_PLAYLIST.get((plan or {}).get("kind", ""), "kazoku")]
+
+
 def _short_texts(state, it: dict, k: int) -> None:
     plan, fin = state["plan"], state.get("final") or {}
     it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
@@ -2055,6 +2072,7 @@ def _pack(state, keys):
     pack["full_description"] = body
     pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』は画面下のリンクからどうぞ。")
+    pack["playlist"] = playlist_for(plan)
     trl = state.get("trailer") or {}
     for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
         if it.get("local") or it.get("r2_key"):
