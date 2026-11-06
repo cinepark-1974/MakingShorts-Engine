@@ -240,7 +240,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle for a stylish Japanese woman in her fifties (e.g. chic chin-length bob with a few soft gray strands / low loose ponytail with side-swept bangs / short layered cut), a gentle face with faint smile lines at the corners of the eyes, outfit and its colors (no red), one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle for a stylish Japanese woman in her fifties (e.g. chic chin-length bob with a few soft gray strands / low loose ponytail with side-swept bangs / short layered cut), a mature gentle face that clearly looks mid-fifties (fine laugh lines, a few gray strands), outfit and its colors (no red), one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -646,7 +646,9 @@ def _burn_subs(state, keys, job, video: str, spans: list, total: float, save_fn=
         out = pf(state, "work", "video_subs.mp4")
         hz._run_ffmpeg(["-i", video, "-f", "concat", "-safe", "0", "-i", lst, "-filter_complex",
                         "[1:v]format=rgba[c];[0:v][c]overlay=0:0:eof_action=pass,format=yuv420p[v]", "-map", "[v]",
-                        *hz.X264, "-crf", "20", "-an", "-t", f"{total:.2f}", out], total, job, "[8/10] 합성 · 자막 입히기")
+                        # 30~40분 전체를 다시 인코딩하는 단계라 CPU 를 가장 많이 쓴다 → ultrafast (Streamlit CPU 제한 회피, 약 3배 가볍다)
+                        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "animation", "-crf", "24", "-pix_fmt", "yuv420p",
+                        "-bf", "0", "-threads", "2", "-an", "-t", f"{total:.2f}", out], total, job, "[8/10] 합성 · 자막 입히기")
         state["subs_burned"] = len(caps)
         return out
     except Exception as e:
@@ -1113,6 +1115,9 @@ MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift
 ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
 
 
+HEROINE_AGE = ("She clearly looks fifty-five, not young: a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, a few gray strands at the temples, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
+
+
 def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     body = (sc.get("image_prompt") or c.get("image_prompt") or "").strip().rstrip(".") + "."
     if "red" not in body.lower():
@@ -1122,7 +1127,7 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     hr = plan.get("heroine") or {}
     if sc.get("with_hero") and hr.get("look_en"):
         body += (f" The heroine, a Japanese woman in her fifties: {hr['look_en'].strip().rstrip('.')}. "
-                 "Her face is visible with one clear quiet expression.")
+                 f"{HEROINE_AGE}Her face is visible with one clear quiet expression.")
     yw = plan.get("young_woman") or {}
     if sc.get("with_young") and yw.get("look_en"):
         body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
@@ -1418,6 +1423,7 @@ Look at the image and check ONLY these hard defects:
 2. text: readable or garbled letters, numbers or signboard writing anywhere in the image
 3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
 4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine.
+5. age: the description says the main woman is in her fifties, but she is drawn as a young woman (teens to early thirties, smooth youthful face, no gray hair)
 Small stylistic differences are fine. Output JSON only: {"ok": true or false, "problems": ["short English description", ...]}"""
 
 
@@ -1794,7 +1800,7 @@ def cover_scene(plan: dict) -> str:
         if not sc:
             sc = f"A Japanese woman in her fifties stands on a quiet seaside road holding {red}"
         if hr["look_en"][:30] not in sc:
-            sc += f". The woman in her fifties: {hr['look_en'].strip().rstrip('.')}. Her face is visible with one quiet expression"
+            sc += f". The woman in her fifties: {hr['look_en'].strip().rstrip('.')}. {HEROINE_AGE}Her face is visible with one quiet expression"
     else:                   # 예전 설계 (주인공 외형이 없던 편)
         if not sc:
             sc = f"A young Japanese woman in her twenties walks along a quiet seaside road holding {red}"
