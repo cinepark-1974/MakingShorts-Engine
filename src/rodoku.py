@@ -2011,7 +2011,9 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     body = cover_scene(plan)
     head = ART_PREFIX if aspect == "16:9" else ART_PREFIX.replace("wide cinematic 16:9 composition",
                                                                   "tall vertical 9:16 poster composition")
-    tail = (" The woman stands in the lower half of the frame, the upper-middle area is open sky." if aspect == "9:16"
+    tail = (" Composition: the woman is small in the frame and stands in the bottom third, her head at about 70 percent of the "
+            "frame height from the top; the middle band of the frame (from 30 to 65 percent height) is empty open sky with "
+            "nothing in it, because the title text goes there." if aspect == "9:16"
             else " The woman stands on the right third of the frame, open sky on the upper left.")
     prompt = head + " " + body + tail + ART_SUFFIX
     tries = []

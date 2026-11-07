@@ -52,6 +52,8 @@ def _split_ja(text: str) -> list:
             if _n(cur) >= 4 or ch in "。！？":
                 out.append(cur)
                 cur = ""
+        elif any(c in _JA_BREAK_AFTER for c in text[i + 1:i + 5]) and _n(cur) < JA_MAX + 8:
+            continue   # 4글자 안에 문장·구절 끝(。」、)이 오면 거기까지 기다린다 — 「わからんか / ら。」 같은 끊김 방지
         elif _n(cur) >= JA_MAX and ch in _JA_SOFT_AFTER:
             out.append(cur)
             cur = ""
