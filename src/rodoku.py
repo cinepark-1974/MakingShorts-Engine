@@ -1820,6 +1820,11 @@ def _trailer(job, state, keys, slot: int = 0):
     full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in pool)
     if SHORT_ANGLES[slot]:
         full = SHORT_ANGLES[slot] + "\n\n" + full
+    if is_sukatto((state.get("plan") or {}).get("kind", "")) and slot in (0, 1):
+        # 통쾌편: 무시하는 한마디가 가장 강한 미끼 → 첫 1초에 그 대사, 화면 위 문구도 그 대사
+        full = ("今回はスカッと系。相手が主人公を見下す決定的な台詞（「」）を含む文から抜き出しを始める（最初の一文がその台詞）。"
+                "hook_line はその台詞そのものを「」付きで14字以内に縮めたもの（例：「家にいるだけで楽でいいな」）。"
+                "shorts_title も台詞を「」で先頭に置き、年数などの数字を入れる。\n\n" + full)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), TRAILER_SYSTEM, full, max_tokens=1500)
     excerpt = (pick.get("excerpt") or "").strip()
     if not excerpt:
