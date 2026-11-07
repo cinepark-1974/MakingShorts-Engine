@@ -1226,13 +1226,30 @@ GPT_IMAGE_MODEL = "gpt-image-2"
 GPT_SIZES = {"16:9": "1536x864", "9:16": "864x1536"}   # 가로·세로 모두 16의 배수 (gpt-image-2 크기 규칙)
 
 
+# GPT Image 는 'realistic·hyper-detailed·lens flare' 같은 말을 사진·3D 로 받아들인다 → 2D 아니메로 못 박는다
+GPT_STYLE_HEAD = ("2D hand-drawn Japanese anime illustration, a still frame from a contemporary theatrical anime film: "
+                  "clean ink outlines, flat cel shading with soft gradients, hand-painted anime background art. ")
+GPT_STYLE_TAIL = (" Style lock: every person and object is drawn in the same 2D anime style with clean outlines — "
+                  "not a photograph, not photorealistic, not live action, not a 3D CG render, no realistic skin texture.")
+_GPT_SWAP = [("realistic adult proportions", "natural adult proportions"),
+             ("individually rendered hair strands with glossy light sheen", "hair drawn in clean anime strands with soft highlights"),
+             ("Hyper-detailed luminous painted background", "Richly detailed luminous hand-painted anime background"),
+             ("soft lens flare and ", ""), ("cinematic", "anime-film")]
+
+
+def _gpt_prompt(prompt: str) -> str:
+    for a, b in _GPT_SWAP:
+        prompt = prompt.replace(a, b)
+    return GPT_STYLE_HEAD + prompt + GPT_STYLE_TAIL
+
+
 def _gpt_image(key: str, prompt: str, aspect: str, dest: str, quality: str = "medium") -> None:
     """OpenAI 이미지 생성 (공식: POST /v1/images/generations → data[0].b64_json). JPG 로 저장."""
     import base64
     import io
     import requests
     from PIL import Image
-    body = {"model": GPT_IMAGE_MODEL, "prompt": prompt[:30000], "size": GPT_SIZES.get(aspect, "1536x864"),
+    body = {"model": GPT_IMAGE_MODEL, "prompt": _gpt_prompt(prompt)[:30000], "size": GPT_SIZES.get(aspect, "1536x864"),
             "quality": quality or "medium", "n": 1}
     r = None
     for attempt in range(3):                       # 429(요청 과다)만 쉬었다 다시
@@ -1583,9 +1600,10 @@ Look at the image and check ONLY these hard defects:
 1. anatomy: extra or missing arms, legs, fingers or eyes; fused or melted hands; a twisted or broken face
 2. text: readable or garbled letters, numbers or signboard writing anywhere in the image
 3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
-4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine.
+4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine, even with gray-streaked hair and laugh lines (that is the main character).
 5. age: the description says the main woman is in her fifties, but she is drawn as a young woman (teens to early thirties, smooth youthful face, no gray hair)
 6. weather: rain is falling while the sky is clear blue and sunny (rain must come from a gray sky)
+7. style: the image looks like a photograph, a live-action film frame or a 3D CG render instead of a 2D hand-drawn anime illustration with clean outlines and cel shading
 Small stylistic differences are fine. Output JSON only: {"ok": true or false, "problems": ["short English description", ...]}"""
 
 
