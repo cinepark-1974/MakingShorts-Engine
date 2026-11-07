@@ -1257,12 +1257,13 @@ def _gpt_image(key: str, prompt: str, aspect: str, dest: str, quality: str = "me
     Image.open(io.BytesIO(raw)).convert("RGB").save(dest, "JPEG", quality=94)
 
 
-def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None) -> str:
+def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, cover: bool = False) -> str:
     """그림 한 장. OPENAI_API_KEY 가 있으면 GPT Image 2, 없거나 실패하면 flux-dev. 쓴 모델 이름을 돌려준다."""
     ok = keys.get("OPENAI_API_KEY", "")
     if ok:
         try:
-            _gpt_image(ok, prompt, aspect, dest, (keys.get("OPENAI_IMAGE_QUALITY") or "medium").strip().lower())
+            q = (keys.get("OPENAI_COVER_QUALITY") or "high") if cover else (keys.get("OPENAI_IMAGE_QUALITY") or "medium")
+            _gpt_image(ok, prompt, aspect, dest, q.strip().lower())   # 표지는 클릭을 좌우해서 기본 high
             return GPT_IMAGE_MODEL
         except Exception as e:
             print(f"[rodoku] GPT Image 실패 → flux-dev: {e}", flush=True)
@@ -1999,7 +2000,7 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     try:
         for attempt in range(3):   # 표지는 클릭을 좌우해서 한 번 더 (50대가 젊게 그려지면 다시)
             cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
-            paint(keys, prompt, aspect, cand, state)
+            paint(keys, prompt, aspect, cand, state, cover=True)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
             tries.append((cand, rv))
             if rv.get("ok"):

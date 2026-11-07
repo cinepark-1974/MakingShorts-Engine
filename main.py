@@ -539,6 +539,7 @@ def load_api_keys():
         "YOUTUBE_API_KEY",         # 터진 영상 찾기 (YouTube Data API v3, 공개 데이터)
         "OPENAI_API_KEY",          # 그림: GPT Image 2 (있으면 flux-dev 대신)
         "OPENAI_IMAGE_QUALITY",    # low / medium / high (기본 medium)
+        "OPENAI_COVER_QUALITY",    # 표지 품질 (기본 high)
     ]:
         try:
             keys[k] = st.secrets[k]
