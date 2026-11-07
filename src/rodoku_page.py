@@ -54,6 +54,7 @@ def render_new(st, manager, api_keys):
         st.rerun()
     _recover(st, manager, api_keys)
     _cast_settings(st, api_keys)
+    _viral_box(st, api_keys)
     _comp_new(st, manager, api_keys)
     with st.expander("지금 일본에서 찾는 검색어 미리 보기 (선택)"):
         if st.button("🔎 검색어 조회", key="rd_peek"):
@@ -63,6 +64,31 @@ def render_new(st, manager, api_keys):
         if pk:
             st.caption("씨앗: " + ", ".join(pk["seeds"]))
             st.write(" · ".join(pk["queries"]) or "받아온 검색어가 없습니다.")
+
+
+def _viral_box(st, api_keys):
+    """🔥 지금 터진 시니어 낭독 영상 — 키 확인·결과 미리 보기 (새 편은 설계 단계에서 자동으로 참고)."""
+    with st.expander("🔥 지금 터진 시니어 낭독 영상 (YouTube 검색)"):
+        key = api_keys.get("YOUTUBE_API_KEY", "")
+        if not key:
+            st.caption("Secrets 에 YOUTUBE_API_KEY 를 넣으면, 새 편 설계 때 '지금 터진 영상'의 제목 패턴을 참고합니다.")
+            return
+        st.caption("최근 14일 · 일본 · 조회수 ÷ 채널 구독자(최소 500)로 '채널 규모에 비해 터진' 순. 새 편 설계 때 자동으로 참고합니다. "
+                   "한 번 검색에 YouTube 할당량 약 600단위(하루 10,000).")
+        if st.button("지금 검색해 보기", key="rd_viral_btn"):
+            try:
+                from src import viral as V
+                with st.spinner("검색 중…"):
+                    st.session_state["rd_viral"] = V.find(key)
+            except Exception as e:
+                st.session_state["rd_viral"] = []
+                st.error(f"검색 실패: {e}")
+        items = st.session_state.get("rd_viral") or []
+        for v in items:
+            tag = "쇼츠" if v.get("short") else "본편"
+            st.markdown(f"**{v['score']}배** · {tag} · [{v['title']}]({v['url']})  \n"
+                        f"<span style='color:#888'>{v['channel']} · 조회 {v.get('views', 0):,} · 구독 {v['subs']:,} · {v['published']}</span>",
+                        unsafe_allow_html=True)
 
 
 def _cast_settings(st, api_keys):

@@ -536,6 +536,7 @@ def load_api_keys():
         "R2_SECRET_ACCESS_KEY",
         "R2_BUCKET",
         "ELEVENLABS_VOICE_ID_JA",  # SceneStory 일본어 나레이션 (없으면 기본값 사용)
+        "YOUTUBE_API_KEY",         # 터진 영상 찾기 (YouTube Data API v3, 공개 데이터)
     ]:
         try:
             keys[k] = st.secrets[k]

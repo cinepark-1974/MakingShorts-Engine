@@ -409,7 +409,7 @@ def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0) 
 
 
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
-              recent: list = None) -> dict:
+              recent: list = None, viral: str = "") -> dict:
     import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
@@ -423,6 +423,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
+            + (viral + "\n" if viral else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
@@ -980,8 +981,20 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "plan", 1, "검색어에서 소재를 고르는 중")
         if recent is None:
             recent = recent_plans(keys, state.get("project_id", ""))
+        if "viral" not in state and keys.get("YOUTUBE_API_KEY"):
+            try:
+                from src import viral as V
+                _stage(job, state, save_fn, "plan", 1, "지금 터진 시니어 낭독 영상을 찾는 중")
+                state["viral"] = V.find(keys["YOUTUBE_API_KEY"])
+            except Exception as e:
+                state["viral"] = []
+                state["viral_error"] = f"{type(e).__name__}: {e}"[:300]
+                print(f"[rodoku] 터진 영상 찾기 실패 → 없이 진행: {e}", flush=True)
+            hz._save(save_fn, state)
+        from src import viral as V
         plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
-                         kind=(state.get("trend") or {}).get("kind", ""), recent=recent)
+                         kind=(state.get("trend") or {}).get("kind", ""), recent=recent,
+                         viral=V.as_prompt(state.get("viral") or []))
         state["plan"] = plan
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
