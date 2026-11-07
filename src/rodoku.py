@@ -821,8 +821,9 @@ UPLOAD_SETTINGS = [
 # ─────────────────────────────────────────────────────────────────────────────
 # ── 그림체: 단순하고 따뜻한 손그림 인물 + 빛나는 정밀 배경(하늘·구름·빛·반사) + 장마다 단 하나의 주홍색 (채널 표식) ──
 ART_PREFIX = (
-    "Contemporary Japanese animated feature film still, refined modern character design: slender realistic "
-    "proportions, delicate fine linework, detailed eyes with soft catchlights, natural small nose and lips, soft "
+    "Contemporary Japanese animated feature film still, refined modern adult character design in a mature josei style: "
+    "every adult looks their real age, realistic adult proportions, delicate fine linework, calm natural eyes "
+    "(not oversized, no blush stickers), natural small nose and lips, soft "
     "gradient cel shading on skin, individually rendered hair strands with glossy light sheen. Hyper-detailed "
     "luminous painted background with glowing light, golden highlights, soft lens flare and tiny drifting light "
     "particles, lived-in everyday Japanese details true to the era named in the scene, wide cinematic 16:9 composition."
@@ -1208,7 +1209,7 @@ MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift
 ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
 
 
-HEROINE_AGE = ("She clearly looks fifty-five, not young: a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, a few gray strands at the temples, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
+HEROINE_AGE = ("She clearly looks her real age in her fifties, not young: a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, a few gray strands at the temples, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
 
 
 def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
@@ -1219,8 +1220,10 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
         body += " " + cover_light(plan)
     hr = plan.get("heroine") or {}
     if sc.get("with_hero") and hr.get("look_en"):
-        body += (f" The heroine, a Japanese woman in her fifties: {hr['look_en'].strip().rstrip('.')}. "
-                 f"{HEROINE_AGE}Her face is visible with one clear quiet expression.")
+        # 나이는 맨 앞에 둔다 — 그림 모델은 앞쪽 단어를 더 강하게 따르고, 애니풍은 기본으로 얼굴을 젊게 그린다
+        age = hr.get("age") or 56
+        body = (f"Main character: a Japanese woman aged {age} (not a girl, not a young woman). {HEROINE_AGE}"
+                f"{hr['look_en'].strip().rstrip('.')}. Her face is visible with one clear quiet expression. " + body)
     yw = plan.get("young_woman") or {}
     if sc.get("with_young") and yw.get("look_en"):
         body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
@@ -1901,7 +1904,8 @@ def cover_scene(plan: dict) -> str:
         if not sc:
             sc = f"A Japanese woman in her fifties stands on a quiet seaside road holding {red}"
         if hr["look_en"][:30] not in sc:
-            sc += f". The woman in her fifties: {hr['look_en'].strip().rstrip('.')}. {HEROINE_AGE}Her face is visible with one quiet expression"
+            sc += f". Her look: {hr['look_en'].strip().rstrip('.')}. Her face is visible with one quiet expression"
+        sc = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}" + sc)
     else:                   # 예전 설계 (주인공 외형이 없던 편)
         if not sc:
             sc = f"A young Japanese woman in her twenties walks along a quiet seaside road holding {red}"
