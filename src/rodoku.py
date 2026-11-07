@@ -1222,6 +1222,56 @@ MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift
 ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
 
 
+GPT_IMAGE_MODEL = "gpt-image-2"
+GPT_SIZES = {"16:9": "1536x864", "9:16": "864x1536"}   # 가로·세로 모두 16의 배수 (gpt-image-2 크기 규칙)
+
+
+def _gpt_image(key: str, prompt: str, aspect: str, dest: str, quality: str = "medium") -> None:
+    """OpenAI 이미지 생성 (공식: POST /v1/images/generations → data[0].b64_json). JPG 로 저장."""
+    import base64
+    import io
+    import requests
+    from PIL import Image
+    body = {"model": GPT_IMAGE_MODEL, "prompt": prompt[:30000], "size": GPT_SIZES.get(aspect, "1536x864"),
+            "quality": quality or "medium", "n": 1}
+    r = None
+    for attempt in range(3):                       # 429(요청 과다)만 쉬었다 다시
+        r = requests.post("https://api.openai.com/v1/images/generations", json=body, timeout=300,
+                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        if r.status_code != 429:
+            break
+        time.sleep(20 * (attempt + 1))
+    if r.status_code != 200:
+        try:
+            msg = r.json().get("error", {}).get("message", "")
+        except Exception:
+            msg = r.text[:200]
+        raise RuntimeError(f"GPT Image {r.status_code}: {msg}")
+    d = (r.json().get("data") or [{}])[0]
+    if d.get("b64_json"):
+        raw = base64.b64decode(d["b64_json"])
+    elif d.get("url"):
+        raw = requests.get(d["url"], timeout=120).content
+    else:
+        raise RuntimeError("GPT Image 응답에 그림이 없습니다")
+    Image.open(io.BytesIO(raw)).convert("RGB").save(dest, "JPEG", quality=94)
+
+
+def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None) -> str:
+    """그림 한 장. OPENAI_API_KEY 가 있으면 GPT Image 2, 없거나 실패하면 flux-dev. 쓴 모델 이름을 돌려준다."""
+    ok = keys.get("OPENAI_API_KEY", "")
+    if ok:
+        try:
+            _gpt_image(ok, prompt, aspect, dest, (keys.get("OPENAI_IMAGE_QUALITY") or "medium").strip().lower())
+            return GPT_IMAGE_MODEL
+        except Exception as e:
+            print(f"[rodoku] GPT Image 실패 → flux-dev: {e}", flush=True)
+            if state is not None:
+                state["gpt_image_error"] = str(e)[:300]
+    hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect=aspect), dest)
+    return "flux-dev"
+
+
 HEROINE_AGE = ("She clearly looks her real age in her late fifties, like the mother character of a slice-of-life anime, not young: "
                "her hair is clearly streaked with gray, a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, "
                "small calm eyes, a mature slightly fuller figure, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
@@ -1252,16 +1302,15 @@ def _draw_scene(state, keys, ak, plan, c, k, sc, name):
     dest = pf(state, name)
     tries = []
     for attempt in range(MAX_IMAGE_TRIES):
-        url = hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt)
         cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
-        hz._download(url, cand)
+        model = paint(keys, prompt, "16:9", cand, state)
         rv = inspect_image(ak, cand, {"no": c["no"], "image_prompt": body}, plan)
         tries.append((cand, rv))
         if rv.get("ok"):
             break
     best = min(tries, key=lambda t: (not t[1].get("ok"), len(t[1].get("problems") or [])))
     shutil.copyfile(best[0], dest)
-    sc.setdefault("image", {}).update(local=dest, review=best[1], tries=len(tries),
+    sc.setdefault("image", {}).update(local=dest, review=best[1], tries=len(tries), model=model,
                                       r2_key=keep(keys, state, dest, name, "image/jpeg"))
 
 
@@ -1950,7 +1999,7 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     try:
         for attempt in range(3):   # 표지는 클릭을 좌우해서 한 번 더 (50대가 젊게 그려지면 다시)
             cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
-            hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect=aspect), cand)
+            paint(keys, prompt, aspect, cand, state)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
             tries.append((cand, rv))
             if rv.get("ok"):

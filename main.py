@@ -537,6 +537,8 @@ def load_api_keys():
         "R2_BUCKET",
         "ELEVENLABS_VOICE_ID_JA",  # SceneStory 일본어 나레이션 (없으면 기본값 사용)
         "YOUTUBE_API_KEY",         # 터진 영상 찾기 (YouTube Data API v3, 공개 데이터)
+        "OPENAI_API_KEY",          # 그림: GPT Image 2 (있으면 flux-dev 대신)
+        "OPENAI_IMAGE_QUALITY",    # low / medium / high (기본 medium)
     ]:
         try:
             keys[k] = st.secrets[k]
