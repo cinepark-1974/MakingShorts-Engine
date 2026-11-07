@@ -265,7 +265,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle for a stylish Japanese woman in her fifties (e.g. chic chin-length bob with a few soft gray strands / low loose ponytail with side-swept bangs / short layered cut), a mature gentle face that clearly looks mid-fifties (fine laugh lines, a few gray strands), outfit and its colors (no red), one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle that reads clearly as a woman in her late fifties (e.g. short soft permed hair streaked with gray / salt-and-pepper hair tied in a low bun / short gray-streaked layered cut — never a sleek youthful bob), a mature gentle face (fine laugh lines, slightly fuller cheeks), a mature slightly fuller figure, a calm everyday outfit of her generation and its colors (e.g. knit cardigan over a blouse, long skirt or slacks, no red), one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -389,7 +389,7 @@ def _weathers(month: int, snowy: bool, region: str) -> list:
     if month in (10, 11) and region != "沖縄":
         out += [("autumn", "brilliant red and gold autumn leaves under a high clear autumn sky")] * 2
     if month in (3, 5, 9, 10, 11):
-        out += [("soft_rain", "a soft bright drizzle, a transparent umbrella, glistening reflections, light breaking through clouds")]
+        out += [("soft_rain", "a soft drizzle under a pale pearl-gray overcast sky glowing with diffused silver light (no blue sky), she holds an open transparent umbrella above her head, glistening wet reflections on the ground")]
     if month in (7, 8, 9) or region == "沖縄":
         out += [("summer", "a vivid summer day, towering white cumulus clouds in a deep blue sky")]
     out += [("golden", "late afternoon golden light, long soft shadows, warm glowing sky")]
@@ -833,7 +833,7 @@ ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
     "The woman in her fifties may show her face; people aged seventy or older are seen from behind, in silhouette or small in the distance, with no facial features. "
     "Hands are relaxed and simple — resting in the lap, at the sides, in pockets or out of frame; no raised hands, no gestures. "
-    "No text, no letters, no numbers, no signboard writing."
+    "No text, no letters, no numbers, no signboard writing, no road signs with symbols."
 )
 
 CLOUD_INDEX = "scenestory/_index.json"
@@ -1222,7 +1222,9 @@ MOTION_FALLBACK = ("grass and clothes sway gently in a soft breeze, clouds drift
 ANIME_FPS = 7.5   # 손그림 애니메이션처럼 초당 7.5장 (30프레임 영상에서 한 장을 4프레임씩 고르게 보여 준다)
 
 
-HEROINE_AGE = ("She clearly looks her real age in her fifties, not young: a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, a few gray strands at the temples, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
+HEROINE_AGE = ("She clearly looks her real age in her late fifties, like the mother character of a slice-of-life anime, not young: "
+               "her hair is clearly streaked with gray, a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, "
+               "small calm eyes, a mature slightly fuller figure, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
 
 
 def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
@@ -1533,6 +1535,7 @@ Look at the image and check ONLY these hard defects:
 3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
 4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine.
 5. age: the description says the main woman is in her fifties, but she is drawn as a young woman (teens to early thirties, smooth youthful face, no gray hair)
+6. weather: rain is falling while the sky is clear blue and sunny (rain must come from a gray sky)
 Small stylistic differences are fine. Output JSON only: {"ok": true or false, "problems": ["short English description", ...]}"""
 
 
@@ -1945,7 +1948,7 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     prompt = head + " " + body + tail + ART_SUFFIX
     tries = []
     try:
-        for attempt in range(2):
+        for attempt in range(3):   # 표지는 클릭을 좌우해서 한 번 더 (50대가 젊게 그려지면 다시)
             cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
             hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect=aspect), cand)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
