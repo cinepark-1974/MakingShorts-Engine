@@ -277,14 +277,14 @@ def render_project(st, manager, api_keys, show_banner):
     if not running and any((c.get("image") or {}).get("local") or (c.get("image") or {}).get("r2_key") for c in chs0):
         with st.expander("🎨 그림만 새 그림체로 다시 그리기"):
             st.caption("장별 그림을 지우고 새로 그립니다. 원고·낭독·배경음악은 그대로 두고, 합성·예고편·섬네일은 새 그림으로 다시 만듭니다. "
-                       f"Replicate 그림 {len(chs0)}장 비용이 다시 듭니다.")
+                       f"그림(GPT Image 2 키가 있으면 GPT, 없으면 Replicate)과 움직임 영상 비용이 다시 듭니다. 업로드 문구도 새로 만들어집니다.")
             if st.button("그림 다시 그리고 이어서 만들기", key="rd_redraw", use_container_width=True):
                 for c in chs0:
                     c["image"] = {}
                     c["motion"] = {}
                     for sc in c.get("extra") or []:
                         sc["image"], sc["motion"] = {}, {}
-                for k in ("final", "trailer", "thumbnail", "upload_pack"):
+                for k in ("final", "trailer", "trailers", "thumbnail", "upload_pack"):
                     state.pop(k, None)
                 state["stage"] = "images"
                 import shutil

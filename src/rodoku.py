@@ -1304,7 +1304,7 @@ def _draw_scene(state, keys, ak, plan, c, k, sc, name):
     tries = []
     for attempt in range(MAX_IMAGE_TRIES):
         cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
-        model = paint(keys, prompt, "16:9", cand, state)
+        model = paint(keys, prompt, "16:9", cand, state, cover=(k == 0 and c["no"] == _cover_no(plan)))   # 표지 장 = 본편 섬네일 바탕 → high
         rv = inspect_image(ak, cand, {"no": c["no"], "image_prompt": body}, plan)
         tries.append((cand, rv))
         if rv.get("ok"):
