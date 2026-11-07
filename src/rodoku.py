@@ -15,6 +15,7 @@
 # 오래 걸리므로 백그라운드 작업으로 돈다. 단계마다 저장하므로 중간에 끊겨도 '이어서 만들기'로 남은 단계만 한다.
 # 이 모듈 안에서는 st.* 를 호출하지 않는다.
 
+import datetime as dt
 import json
 import os
 import re
@@ -270,7 +271,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
   "narrator_intro": "第一章の前に語り手（young_woman）が一人称で語る前置き。1〜2文、空白を除いて25〜60字",
   "cover_chapter": 2,
-  "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の場所の近くの、晴れた青空と白い入道雲の下（海辺の道・川の土手・緑の並木道・丘の上の駅・田んぼの畦道など）。主人公（heroine、50代）がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見え、物語の謎を胸に抱えた表情（遠くを見つめる・小さく息をのむ）。一つの状態・一つの動作で確定的に書く",
+  "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の舞台の地域らしい屋外の景色（その土地の道・川・海・坂・並木・駅など）で、指定された季節と天気と光の下。暗くしない、明るい昼。主人公（heroine、50代）がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見え、物語の謎を胸に抱えた表情（遠くを見つめる・小さく息をのむ）。一つの状態・一つの動作で確定的に書く",
   "turn": "物語の反転（後半で明かされる事実）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
@@ -337,8 +338,8 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
     物から入る型「母の鏡台の引き出しに、片方だけの手袋が入っていました。」
     問いかけ型「人は、四十年も同じ嘘をつき続けられるものでしょうか。」
   「最近の作品」の前置きと同じ書き出し・同じ型にしない。「これは〜の話です」で始めない。結末は明かさない。
-- cover_chapter: サムネイルにする章の番号。その章は必ず屋外の昼、晴れた青空と白い入道雲・緑の木々・海辺や川辺の場面にし、
-  主人公が顔の見える姿で映る（with_hero: true）。その章の image_prompt にも青空を書く。室内や夜の章を cover_chapter にしない。
+- cover_chapter: サムネイルにする章の番号。その章は必ず屋外の明るい昼で、物語の舞台の地域らしい景色と、指定された季節・天気・光にする
+  （雪の日・雨上がり・紅葉・桜・夏の入道雲・夕方の金色の光など）。主人公が顔の見える姿で映る（with_hero: true）。室内や夜の章を cover_chapter にしない。
 - more_scenes: 各章の絵は image_prompt（章の始まり）＋ more_scenes 2つ（章の中ほど・章の終わり）の3枚。朗読の流れに沿って
   場面が変わるように、引きの絵 → 寄りの絵（主人公の表情、または置かれた小道具の大写し。手のアップは描かない）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち1〜2章）。その章の image_prompt では彼女の顔が見えてよい。
@@ -354,6 +355,59 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。"""
 
 
+# ── 표지·이야기의 지역과 계절 (2026-11 작가 요청: 파란 하늘만 계속은 단조롭다 → 지역·실제 계절·날씨로 바꾼다) ──
+REGIONS = [
+    # (일본어 이름, 영어 풍경 단서, 눈이 오는 지역인가)
+    ("北海道・小樽", "Otaru in Hokkaido: an old stone canal with gas lamps, brick warehouses, wide open northern sky", True),
+    ("北海道・富良野", "Furano in Hokkaido: rolling hills, a lone tree on the slope, big northern sky", True),
+    ("東北・盛岡", "Morioka in Tohoku: a river town with a stone bridge, distant mountains", True),
+    ("北陸・金沢", "Kanazawa: an old teahouse street with wooden lattices and tiled roofs", True),
+    ("信州・松本", "Matsumoto in Nagano: apple orchards and the Northern Alps on the horizon", True),
+    ("東京・下町", "an old Tokyo shitamachi neighborhood: a narrow lane, a small shrine, a riverside embankment", False),
+    ("鎌倉・湘南", "Kamakura and the Shonan coast: a small seaside railway crossing, the sea beyond", False),
+    ("京都", "a quiet Kyoto lane: stone paving, machiya townhouses, a temple gate", False),
+    ("尾道・瀬戸内", "Onomichi on the Seto Inland Sea: a hillside town of stone steps overlooking calm islands", False),
+    ("長崎", "Nagasaki: a hillside port town with stone slopes and the harbor below", False),
+    ("高知・四万十", "the Shimanto River in Kochi: a low sinking bridge over a clear green river", False),
+    ("沖縄", "Okinawa: an emerald sea, red-tiled roofs with shisa lions, hibiscus and stone walls", False),
+]
+_SEASON = {1: "真冬", 2: "冬の終わり", 3: "早春", 4: "桜の季節", 5: "新緑", 6: "梅雨", 7: "盛夏", 8: "晩夏",
+           9: "初秋", 10: "秋", 11: "晩秋", 12: "初冬"}
+
+
+def _weathers(month: int, snowy: bool, region: str) -> list:
+    """그 달·그 지역에 실제로 있을 날씨만 (오키나와에 눈 없음). 표지는 모두 밝은 낮."""
+    out = [("clear", "bright clear daytime sky")]
+    if month in (12, 1, 2) and snowy:
+        out += [("snow", "a bright snowy day, soft white snow falling, snow on roofs and branches, pale blue sky breaking through")] * 2
+    elif month in (12, 1, 2):
+        out += [("winter_sun", "a crisp bright winter day, low golden sunlight, clear cold air")]
+    if month == 4 and region != "沖縄":
+        out += [("sakura", "cherry blossoms in full bloom, petals drifting in bright spring light")] * 2
+    if month in (6, 7) or (month in (5,) and region == "沖縄"):
+        out += [("after_rain", "just after the rain, wet stone glistening, puddles reflecting a bright sky, hydrangeas")] * 2
+    if month in (10, 11) and region != "沖縄":
+        out += [("autumn", "brilliant red and gold autumn leaves under a high clear autumn sky")] * 2
+    if month in (3, 5, 9, 10, 11):
+        out += [("soft_rain", "a soft bright drizzle, a transparent umbrella, glistening reflections, light breaking through clouds")]
+    if month in (7, 8, 9) or region == "沖縄":
+        out += [("summer", "a vivid summer day, towering white cumulus clouds in a deep blue sky")]
+    out += [("golden", "late afternoon golden light, long soft shadows, warm glowing sky")]
+    return out
+
+
+def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0) -> dict:
+    """최근 5편에 안 쓴 지역 + 지금 달 + 그 지역에 맞는 날씨."""
+    import random
+    rnd = random.Random(salt or time.time())
+    month = month or (dt.datetime.utcnow() + dt.timedelta(hours=9)).month
+    used = [r for r in recent_regions if r][:5]
+    pool = [r for r in REGIONS if r[0] not in used] or REGIONS
+    name, scene, snowy = rnd.choice(pool)
+    wkey, wen = rnd.choice(_weathers(month, snowy, name))
+    return {"region": name, "region_en": scene, "month": month, "season": _SEASON[month], "weather": wkey, "weather_en": wen}
+
+
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
               recent: list = None) -> dict:
     import random
@@ -364,10 +418,13 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
     era, era_things = random.choice(ERA_PAST)
+    pw = pick_place_weather([r.get("region", "") for r in (recent or [])])
     hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
+            f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
+            f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
@@ -385,6 +442,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     if kind:
         plan["kind"] = kind
     plan["intro_form"] = intro_form
+    plan.update({k: pw[k] for k in ("region", "region_en", "month", "season", "weather", "weather_en")})
     plan["era"] = era
     return plan
 
@@ -408,6 +466,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
         out.append({"title": pl.get("title_ja", ""), "kind": kind,
                     "object": (pl.get("setting") or {}).get("object", ""), "red": pl.get("red_accent", ""),
                     "place": (pl.get("setting") or {}).get("place", ""),
+                    "region": pl.get("region", ""),
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
                     "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
@@ -1156,8 +1215,8 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     body = (sc.get("image_prompt") or c.get("image_prompt") or "").strip().rstrip(".") + "."
     if "red" not in body.lower():
         body += f" {(plan.get('red_accent') or 'A thin red thread').strip().rstrip('.')} in vivid vermilion red."
-    if k == 0 and c["no"] == _cover_no(plan) and "sky" not in body.lower():
-        body += " " + COVER_SKY
+    if k == 0 and c["no"] == _cover_no(plan):
+        body += " " + cover_light(plan)
     hr = plan.get("heroine") or {}
     if sc.get("with_hero") and hr.get("look_en"):
         body += (f" The heroine, a Japanese woman in her fifties: {hr['look_en'].strip().rstrip('.')}. "
@@ -1817,6 +1876,14 @@ COVER_SKY = ("Bright daytime outdoors under a clear saturated cobalt-blue sky wi
              "lush green trees, sunlight sparkling, fresh and hopeful mood.")
 
 
+def cover_light(plan: dict) -> str:
+    """표지의 빛·날씨. 설계에 지역·날씨가 있으면 그것, 없으면(예전 편) 파란 하늘."""
+    if plan.get("weather_en"):
+        return (f"Bright daytime outdoors in {plan.get('region_en', 'Japan')}, {plan['weather_en']}, "
+                "luminous and inviting, never dark or gloomy.")
+    return COVER_SKY
+
+
 def _cover_no(plan: dict) -> int:
     try:
         return int(plan.get("cover_chapter") or 0)
@@ -1842,7 +1909,7 @@ def cover_scene(plan: dict) -> str:
             sc += f". The young woman: {yw['look_en'].strip().rstrip('.')}. Her face is visible"
     if "red" not in sc.lower():
         sc += f". {red} in vivid vermilion red"
-    return sc + ". " + COVER_SKY
+    return sc + ". " + cover_light(plan)
 
 
 def _cover_image(state, keys, aspect: str, dest: str) -> str:
@@ -1851,8 +1918,8 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     body = cover_scene(plan)
     head = ART_PREFIX if aspect == "16:9" else ART_PREFIX.replace("wide cinematic 16:9 composition",
                                                                   "tall vertical 9:16 poster composition")
-    tail = (" The woman stands in the lower half of the frame, the upper-middle area is open blue sky." if aspect == "9:16"
-            else " The woman stands on the right third of the frame, open blue sky on the upper left.")
+    tail = (" The woman stands in the lower half of the frame, the upper-middle area is open sky." if aspect == "9:16"
+            else " The woman stands on the right third of the frame, open sky on the upper left.")
     prompt = head + " " + body + tail + ART_SUFFIX
     tries = []
     try:
