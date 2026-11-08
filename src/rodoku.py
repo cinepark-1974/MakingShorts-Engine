@@ -515,7 +515,7 @@ def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, re
                 + (viral + "\n" if viral else "") + (perf + "\n" if perf else "")
                 + "検索語（実際に検索されている言葉）:\n" + "\n".join(f"- {q}" for q in queries[:20])
                 + f"\n最近の作品（重ねない）:\n{recent_txt or 'なし'}\n" + (f"\n[前回の種の弱点 — 今回は避ける]\n{feedback}\n" if feedback else ""))
-        seeds = [x for x in (_json_call(api_key, SEED_SYSTEM, user, 4000).get("seeds") or []) if isinstance(x, dict)][:3]
+        seeds = [x for x in (_json_call(api_key, SEED_SYSTEM, user, 7000).get("seeds") or []) if isinstance(x, dict)][:3]
         if not seeds:
             break
         sc = _json_call(api_key, SCORE_SYSTEM, "題材の型: " + (kind or "自由") + f"\n最近の作品:\n{recent_txt or 'なし'}\n\n[種]\n"
@@ -525,8 +525,10 @@ def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, re
             sd["hook_score"], sd["core_score"] = _sum(r.get("hook")), _sum(r.get("core"))
             sd["score_detail"] = {"hook": r.get("hook"), "core": r.get("core")}
             sd["weak"] = r.get("weak", "")
-        best = max(seeds, key=lambda x: x["hook_score"] + x["core_score"])
-        tries.append({"seeds": seeds, "best": best.get("title_ja", "")})
+        tries.append({"seeds": [dict(x) for x in seeds],
+                      "best": max(seeds, key=lambda x: x["hook_score"] + x["core_score"]).get("title_ja", "")})
+        # 복사본에만 tries 를 붙인다 — 원본(seeds 안의 dict)에 붙이면 자기 자신을 품는 순환 참조가 되어 상태 저장이 실패한다 (2026-11-08 무한 반복 원인)
+        best = dict(max(seeds, key=lambda x: x["hook_score"] + x["core_score"]))
         if best["hook_score"] >= 35 or attempt == 1:
             best["tries"] = tries
             return best
@@ -1832,7 +1834,13 @@ def inspect_image(api_key: str, path: str, ch: dict, plan: dict) -> dict:
             messages=[{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}},
                 {"type": "text", "text": f"Scene description: {scene}\nJSON only."}]}])
-        rv = _extract_json(_text_of(resp))
+        txt = _text_of(resp)
+        try:
+            rv = _extract_json(txt)
+        except Exception:
+            # 「Extra data」: JSON 뒤에 설명이 붙어 온 경우 — 첫 JSON 객체만 읽는다
+            i = txt.find("{")
+            rv = json.JSONDecoder().raw_decode(txt[i:])[0] if i >= 0 else {}
         return {"ok": bool(rv.get("ok")), "problems": [str(p)[:120] for p in (rv.get("problems") or [])][:5]}
     except Exception as e:
         print(f"[rodoku] 그림 검수 실패 → 통과 처리: {e}", flush=True)

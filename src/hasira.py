@@ -767,11 +767,31 @@ def _wrap(job, target, args):
         job["finished_at"] = time.time()
 
 
+def _acyclic(o, seen=None):
+    """순환 참조를 끊은 복사본 (저장 실패로 작업이 처음부터 반복되는 일을 막는 안전장치)."""
+    seen = seen or set()
+    if isinstance(o, dict):
+        if id(o) in seen:
+            return None
+        seen = seen | {id(o)}
+        return {k: _acyclic(v, seen) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        if id(o) in seen:
+            return None
+        seen = seen | {id(o)}
+        return [_acyclic(v, seen) for v in o]
+    return o
+
+
 def _save(save_fn, state):
     try:
         save_fn(state)
     except Exception as e:
-        print(f"[hasira] 상태 저장 실패: {e}", flush=True)
+        print(f"[hasira] 상태 저장 실패: {e} → 순환 참조를 끊고 다시 저장", flush=True)
+        try:
+            save_fn(_acyclic(state))
+        except Exception as e2:
+            print(f"[hasira] 상태 저장 다시 실패: {e2}", flush=True)
 
 
 # ── ③ 루프 작업 ──
