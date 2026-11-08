@@ -514,7 +514,7 @@ def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, re
                 + (genre_build(kind) + "\n" if genre_build(kind) else "")
                 + (viral + "\n" if viral else "") + (perf + "\n" if perf else "")
                 + "検索語（実際に検索されている言葉）:\n" + "\n".join(f"- {q}" for q in queries[:20])
-                + f"\n最近の作品（重ねない）:\n{recent_txt or 'なし'}\n" + (f"\n[前回の種の弱点 — 今回は避ける]\n{feedback}\n" if feedback else ""))
+                + f"\nこれまでの作品（題材・商売・小道具の組み合わせを重ねない）:\n{recent_txt or 'なし'}\n" + (f"\n[前回の種の弱点 — 今回は避ける]\n{feedback}\n" if feedback else ""))
         seeds = [x for x in (_json_call(api_key, SEED_SYSTEM, user, 7000).get("seeds") or []) if isinstance(x, dict)][:3]
         if not seeds:
             break
@@ -547,7 +547,7 @@ def seed_prompt(seed: dict) -> str:
 
 
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
-              recent: list = None, viral: str = "", seed: dict = None) -> dict:
+              recent: list = None, viral: str = "", seed: dict = None, archive: str = "") -> dict:
     import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
@@ -562,6 +562,8 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
             + (viral + "\n" if viral else "") + seed_prompt(seed or {})
+            + ("これまでの全作品（同じ商売・職業・店・小道具・出来事の組み合わせを繰り返さない。例: 閉店する豆腐屋が既にあれば、閉店する店の話は別の形にする）:\n"
+               + archive + "\n" if archive else "")
             + ("この作品の組み立て（必須）:\n" + genre_build(kind) + "\n" if genre_build(kind) else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
@@ -612,6 +614,28 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
                     "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
+
+
+def story_archive(keys: dict, skip_pid: str = "", limit: int = 60) -> str:
+    """지금까지 만든 편 전체(최대 60편)의 한 줄 요약 — 소재·가게·직업·소품이 겹치지 않게 설계와 편집 회의에 준다.
+    (최근 8편만 보던 때, 사흘 전의 『土曜日の豆腐屋』를 모르고 '문 닫는 두부 가게'를 다시 고른 일이 있었다 — 2026-11-08)"""
+    from concurrent.futures import ThreadPoolExecutor
+    idx = cloud_index(keys)
+    pids = [p for p in sorted(idx, reverse=True) if p != skip_pid][:limit]
+
+    def one(pid):
+        try:
+            pl = cloud_state(keys, pid).get("plan") or {}
+        except Exception:
+            return ""
+        if not pl.get("title_ja"):
+            return ""
+        st_ = pl.get("setting") or {}
+        return (f"- 『{pl.get('title_ja', '')}』 型:{pl.get('kind', '?')} / 舞台:{st_.get('place', '')} / 小道具:{st_.get('object', '')} / "
+                f"{(pl.get('logline_ja') or '')[:70]}")
+    with ThreadPoolExecutor(8) as ex:
+        rows = [r for r in ex.map(one, pids) if r]
+    return "\n".join(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1192,10 +1216,16 @@ def _worker(job, state, keys, save_fn, made_titles):
             hz._save(save_fn, state)
         from src import viral as V
         kind_now = (state.get("trend") or {}).get("kind", "")
+        if "_archive" not in state:
+            try:
+                state["_archive"] = story_archive(keys, state.get("project_id", ""))
+            except Exception as e:
+                state["_archive"] = ""
+                print(f"[rodoku] 지난 편 목록 읽기 실패 → 최근 8편만: {e}", flush=True)
         if "seed" not in state:
             _stage(job, state, save_fn, "plan", 1, "편집 회의: 소재 후보 3개를 만들고 채점하는 중")
             try:
-                rtxt = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 舞台:{r.get('place', '')}" for r in (recent or [])[:8])
+                rtxt = state.get("_archive") or "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 舞台:{r.get('place', '')}" for r in (recent or [])[:8])
                 state["seed"] = pick_seed(ak, kind_now, next((d for k, d, _ in STORY_KINDS if k == kind_now), ""),
                                           state["trend"]["queries"], V.as_prompt(state.get("viral") or []), rtxt)
             except Exception as e:
@@ -1206,7 +1236,8 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "plan", 1, "설계 중 (6장 골격·복선표·장별 질문)")
         plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
                          kind=kind_now, recent=recent,
-                         viral=V.as_prompt(state.get("viral") or []), seed=state.get("seed") or {})
+                         viral=V.as_prompt(state.get("viral") or []), seed=state.get("seed") or {},
+                         archive=state.get("_archive", ""))
         state["plan"] = plan
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
