@@ -297,7 +297,8 @@ def _cloud_files(st, api_keys, pid):
             return
         def want(k):
             n = k.rsplit("/", 1)[-1]
-            return (n.endswith(".mp4") and ("_main" in n or n.startswith("trailer"))) or n.startswith("thumbnail_") \
+            return (n.endswith(".mp4") and ("_main" in n or n.startswith("trailer") or n.startswith("SceneStory_"))) \
+                or n.startswith("thumbnail_") \
                 or n.endswith("_cover.jpg") or n.endswith(".srt")
         rows = [it for it in items if want(it["key"])]
         if not rows:
