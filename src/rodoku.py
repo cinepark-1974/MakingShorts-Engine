@@ -2133,6 +2133,49 @@ SHORT_ANGLES = [
 ]
 
 
+_NORM_DROP = set("　 \n\t、。，．,.!！?？「」『』（）()…・ー―－-〜~:：;；\"'")
+
+
+def _norm_ja(t: str) -> str:
+    return "".join(ch for ch in speakable(t or "") if ch not in _NORM_DROP)
+
+
+def excerpt_from_main(keys: dict, c: dict, excerpt: str, dest: str) -> float:
+    """쇼츠 대목을 본편 장 낭독에서 잘라 쓴다 (ElevenLabs 크레딧 0, 목소리도 본편과 똑같음).
+    c['subs'] = [[글자, 시작, 끝], ...] (장 낭독 기준 초, 본편 자막 맞추기 때 저장된 것)를 이어 붙여 대목의 위치를 찾는다.
+    잘라 낸 길이(초)를 돌려주고, 못 찾으면 0."""
+    subs = c.get("subs") or []
+    if not subs or not (c.get("audio") or {}).get("local") and not (c.get("audio") or {}).get("r2_key"):
+        return 0.0
+    want = _norm_ja(excerpt)
+    if len(want) < 8:
+        return 0.0
+    joined, spans = "", []
+    for txt, a, b in subs:
+        n = _norm_ja(txt)
+        spans.append((len(joined), len(joined) + len(n), float(a), float(b)))
+        joined += n
+    i = joined.find(want)
+    if i < 0:                                    # 대목 끝이 조금 다르게 다듬어졌을 수 있다 → 앞 70% 로 다시
+        head = want[: max(8, int(len(want) * 0.7))]
+        i = joined.find(head)
+        if i < 0:
+            return 0.0
+    j = i + len(want)
+    a = next((sa for s0, s1, sa, sb in spans if s0 <= i < s1), None)
+    b = next((sb for s0, s1, sa, sb in spans if s0 < j <= s1), spans[-1][3] if j >= len(joined) else None)
+    if a is None or b is None or b - a < 3:
+        return 0.0
+    src_au = hz.ensure_local(keys, c["audio"], c["audio"].get("local") or dest + ".src.mp3")
+    if not src_au:
+        return 0.0
+    start, end = max(0.0, a - 0.15), b + 0.35
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", src_au,
+                    "-af", "afade=t=in:d=0.08,afade=t=out:st=" + f"{max(0.0, end - start - 0.25):.3f}" + ":d=0.25",
+                    "-c:a", "libmp3lame", "-b:a", "192k", dest], check=True, timeout=120)
+    return round(end - start, 2) if hz.usable(dest) else 0.0
+
+
 def _trailer(job, state, keys, slot: int = 0):
     """예고 쇼츠 slot 번째 (0: state['trailer'], 1·2: state['trailers'][slot-1]). 장면이 겹치지 않게 고른다."""
     from src.audio import generate_narration
@@ -2174,7 +2217,14 @@ def _trailer(job, state, keys, slot: int = 0):
     au = pf(state, folder, "voice.mp3")
     cast = state.get("cast_voices") or {}
     voiced = False
-    if cast and "「" in excerpt:
+    try:
+        # 1순위: 본편 낭독에서 그 대목을 잘라 쓴다 (크레딧 0 · 본편과 같은 배역 목소리)
+        voiced = excerpt_from_main(keys, c, excerpt, au) > 0
+        if voiced:
+            print(f"[rodoku] 쇼츠 목소리: 본편 제{no}장 낭독에서 잘라 씀", flush=True)
+    except Exception as e:
+        print(f"[rodoku] 본편 낭독 자르기 실패 → 새로 낭독: {e}", flush=True)
+    if not voiced and cast and "「" in excerpt:
         # 쇼츠도 본편처럼 대사는 인물 목소리로 — 첫 1초의 무시하는 한마디가 낭독자 목소리면 힘이 빠진다
         # (2026-11-08 「あなたたちのものでは」 쇼츠: 계속 시청 55.2% / 이탈 44.8% → 첫 1초 보강)
         try:
