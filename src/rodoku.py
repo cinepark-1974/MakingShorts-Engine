@@ -850,6 +850,8 @@ def save_cloud(keys: dict, state: dict) -> None:
         idx = r2_store.get_json(keys, CLOUD_INDEX) or {}
         row = {"title": (state.get("plan") or {}).get("title_ja") or state.get("title", ""),
                "stage": state.get("stage", ""), "at": time.strftime("%Y-%m-%d %H:%M")}
+        if (idx.get(pid) or {}).get("purged"):
+            row["purged"] = idx[pid]["purged"]
         if idx.get(pid) != row:
             idx[pid] = row
             r2_store.put_json(keys, CLOUD_INDEX, idx)
@@ -870,6 +872,18 @@ def cloud_index(keys: dict) -> dict:
 def cloud_state(keys: dict, pid: str) -> dict:
     from src import r2_store
     return r2_store.get_json(keys, f"scenestory/{pid}/state.json") or {}
+
+
+def purge_cloud(keys: dict, pid: str) -> int:
+    """'영구 삭제': R2 의 영상·음성·그림을 지우고 되살리기 목록에서 뺀다.
+    state.json(작은 설계 기록)만 남겨, 다음 편이 같은 이야기·지역·소품을 되풀이하지 않게 한다."""
+    from src import r2_store
+    n = r2_store.delete_prefix(keys, f"scenestory/{pid}/", keep=("state.json",))
+    idx = r2_store.get_json(keys, CLOUD_INDEX) or {}
+    if pid in idx:
+        idx[pid]["purged"] = time.strftime("%Y-%m-%d %H:%M")
+        r2_store.put_json(keys, CLOUD_INDEX, idx)
+    return n
 
 
 def _rss_mb() -> int:

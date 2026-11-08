@@ -210,15 +210,53 @@ def _recover(st, manager, api_keys):
     if not idx:
         return
     local = {p.get("id") for p in manager.list_projects()}
-    lost = [(pid, row) for pid, row in sorted(idx.items(), reverse=True) if pid not in local][:8]
+    lost = [(pid, row) for pid, row in sorted(idx.items(), reverse=True)
+            if pid not in local and not row.get("purged")][:8]
     if not lost:
         return
     with st.container(border=True):
         st.markdown("**↩ 서버 재시작으로 목록에서 사라진 작업** — 클라우드(R2)에 저장된 진행 상태로 되살립니다. "
                     "끝난 단계(원고·그림·낭독 등)는 다시 만들지 않습니다.")
+        st.caption("🗑 영구 삭제: 업로드까지 끝난 편을 이 목록에서 빼고, R2 의 영상·음성·그림 파일을 지웁니다. "
+                   "작은 설계 기록만 남아 다음 편이 같은 이야기·지역을 되풀이하지 않게 합니다. 되돌릴 수 없습니다.")
+        done = [(pid, row) for pid, row in idx.items()
+                if pid not in local and not row.get("purged") and row.get("stage") == "done"]
+        if len(done) > 1:
+            if st.button(f"🗑 완성된 편 {len(done)}개 모두 영구 삭제", key="rd_del_all", use_container_width=True):
+                st.session_state["rd_del_all_ask"] = True
+            if st.session_state.get("rd_del_all_ask"):
+                w1, w2 = st.columns([3, 1])
+                w1.warning(f"완성(done)된 {len(done)}편의 R2 파일을 모두 지웁니다. 되돌릴 수 없습니다.")
+                if w2.button("정말 모두 삭제", key="rd_del_all_ok", type="primary", use_container_width=True):
+                    total, bad = 0, []
+                    for pid, row in done:
+                        try:
+                            total += R.purge_cloud(api_keys, pid)
+                        except Exception as e:
+                            bad.append(f"{row.get('title', pid)}: {e}")
+                    st.session_state.pop("rd_del_all_ask", None)
+                    if bad:
+                        st.error("일부 실패 — " + " / ".join(bad))
+                        return
+                    st.toast(f"{len(done)}편 정리 완료 (파일 {total}개 삭제)")
+                    st.rerun()
         for pid, row in lost:
-            c1, c2 = st.columns([3, 1])
+            c1, c2, c3 = st.columns([3, 1, 1])
             c1.caption(f"{row.get('title', '')} · 마지막 단계: {dict(R.STAGES).get(row.get('stage', ''), row.get('stage', ''))} · {row.get('at', '')}")
+            if c3.button("🗑 영구 삭제", key=f"rd_del_{pid}", use_container_width=True):
+                st.session_state[f"rd_del_ask_{pid}"] = True
+            if st.session_state.get(f"rd_del_ask_{pid}"):
+                w1, w2 = st.columns([3, 1])
+                w1.warning(f"『{row.get('title', '')}』의 R2 파일을 지웁니다. 되돌릴 수 없습니다.")
+                if w2.button("정말 삭제", key=f"rd_del_ok_{pid}", type="primary", use_container_width=True):
+                    try:
+                        n = R.purge_cloud(api_keys, pid)
+                        st.session_state.pop(f"rd_del_ask_{pid}", None)
+                        st.toast(f"『{row.get('title', '')}』 정리 완료 (파일 {n}개 삭제)")
+                    except Exception as e:
+                        st.error(f"삭제 실패: {e}")
+                        return
+                    st.rerun()
             if c2.button("되살리기", key=f"rd_rec_{pid}", use_container_width=True):
                 state = R.cloud_state(api_keys, pid)
                 if not state:

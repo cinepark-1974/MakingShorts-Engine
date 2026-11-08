@@ -82,6 +82,25 @@ def put_json(keys: dict, key: str, data) -> None:
                              ContentType="application/json")
 
 
+def delete_prefix(keys: dict, prefix: str, keep: tuple = ()) -> int:
+    """prefix 아래 파일을 모두 지운다 (keep 에 든 파일 이름은 남김). 지운 개수를 돌려준다."""
+    c = _client(keys)
+    bucket = keys["R2_BUCKET"].strip()
+    n, token = 0, None
+    while True:
+        kw = {"Bucket": bucket, "Prefix": prefix}
+        if token:
+            kw["ContinuationToken"] = token
+        res = c.list_objects_v2(**kw)
+        objs = [{"Key": o["Key"]} for o in res.get("Contents", []) if o["Key"].rsplit("/", 1)[-1] not in keep]
+        for i in range(0, len(objs), 1000):
+            c.delete_objects(Bucket=bucket, Delete={"Objects": objs[i:i + 1000], "Quiet": True})
+            n += len(objs[i:i + 1000])
+        if not res.get("IsTruncated"):
+            return n
+        token = res.get("NextContinuationToken")
+
+
 def download_link(keys: dict, key: str, seconds: int = LINK_MAX_SECONDS, filename: str = "") -> str:
     params = {"Bucket": keys["R2_BUCKET"].strip(), "Key": key}
     if filename:
