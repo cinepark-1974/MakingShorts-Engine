@@ -268,7 +268,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a hairstyle that reads clearly as a woman in her late fifties (e.g. short soft permed hair streaked with gray / salt-and-pepper hair tied in a low bun / short gray-streaked layered cut — never a sleek youthful bob), a mature gentle face (fine laugh lines, slightly fuller cheeks), a mature slightly fuller figure, a calm everyday outfit of her generation and its colors (e.g. knit cardigan over a blouse, long skirt or slacks, no red), one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a chic hairstyle of an elegant woman in her mid-fifties with a few silver strands (e.g. a short layered bob with soft waves / shoulder-length soft waves tucked behind one ear / an elegant low chignon — never long girlish hair), a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, a tasteful outfit of her generation and its colors (e.g. fine-knit cardigan over a blouse, camel coat, wide slacks or a long pleated skirt, no red), one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -1552,9 +1552,20 @@ def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, c
     return "flux-dev"
 
 
-HEROINE_AGE = ("She clearly looks her real age in her late fifties, like the mother character of a slice-of-life anime, not young: "
-               "her hair is clearly streaked with gray, a mature face with softer fuller cheeks, fine laugh lines at the corners of the eyes and mouth, "
-               "small calm eyes, a mature slightly fuller figure, calm adult posture. ")   # 애니풍은 기본으로 얼굴을 젊게 그려서 나이를 분명히 적는다
+HEROINE_AGE = ("She is an elegant, beautiful woman in her mid-fifties, like the graceful heroine of a mature josei anime: "
+               "a slim refined figure, a slender oval face with clear bright eyes, soft natural makeup, faint laugh lines only at the corners of the eyes, "
+               "a few fine silver strands in her neatly styled hair, graceful upright posture. Attractive and dignified, clearly an adult woman, "
+               "not a girl, not plump, not a plain housewife character. ")   # 2026-11-09: 썸네일 주인공은 채널 배너처럼 예쁜 50대 (가마쿠라 편 반응 > 금붕어 편의 평범한 체형)
+
+
+_PLAIN_LOOK = re.compile(r"\s*(,|;|\band\b)?\s*(a\s+)?((calm|mature|soft|gentle|sturdy)\s+)*(slightly\s+|a bit\s+)?(fuller|plump|chubby|stocky|heavy[- ]set|rounder)\s+(figure|cheeks|face|build|body)", re.I)
+
+
+def _slim_look(look: str) -> str:
+    """예전 설계의 '통통한 체형' 문구를 지운다 (다시 그리기 때도 배너처럼 예쁜 50대로)."""
+    t = _PLAIN_LOOK.sub("", look or "")
+    t = re.sub(r"\s*([;,])(\s*[;,])+", r"\1", t)
+    return re.sub(r"\s{2,}", " ", t).strip().strip(";,").strip().rstrip(".")
 
 
 def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
@@ -1568,7 +1579,7 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
         # 나이는 맨 앞에 둔다 — 그림 모델은 앞쪽 단어를 더 강하게 따르고, 애니풍은 기본으로 얼굴을 젊게 그린다
         age = hr.get("age") or 56
         body = (f"Main character: a Japanese woman aged {age} (not a girl, not a young woman). {HEROINE_AGE}"
-                f"{hr['look_en'].strip().rstrip('.')}. Her face is visible with one clear quiet expression. " + body)
+                f"{_slim_look(hr['look_en'])}. Her face is visible with one clear quiet expression. " + body)
     yw = plan.get("young_woman") or {}
     if sc.get("with_young") and yw.get("look_en"):
         body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
@@ -1864,7 +1875,7 @@ Look at the image and check ONLY these hard defects:
 1. anatomy: extra or missing arms, legs, fingers or eyes; fused or melted hands; a twisted or broken face
 2. text: readable or garbled letters, numbers or signboard writing anywhere in the image
 3. scene: the image clearly does not match the scene description (wrong place, indoor drawn as outdoor, wrong number of people)
-4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine, even with gray-streaked hair and laugh lines (that is the main character).
+4. elderly faces: a clearly very old person (seventy or older, white hair, deep wrinkles) has the face shown from the front. A woman in her fifties showing her face is fine, even with silver strands and laugh lines (that is the main character).
 5. age: the description says the main woman is in her fifties, but she is drawn as a young woman (teens to early thirties, smooth youthful face, no gray hair)
 6. weather: rain is falling while the sky is clear blue and sunny (rain must come from a gray sky)
 7. style: the image looks like a photograph, a live-action film frame or a 3D CG render instead of a 2D hand-drawn anime illustration with clean outlines and cel shading
@@ -2327,7 +2338,7 @@ def cover_scene(plan: dict) -> str:
         if not sc:
             sc = f"A Japanese woman in her fifties stands on a quiet seaside road holding {red}"
         if hr["look_en"][:30] not in sc:
-            sc += f". Her look: {hr['look_en'].strip().rstrip('.')}. Her face is visible with one quiet expression"
+            sc += f". Her look: {_slim_look(hr['look_en'])}. Her face is visible with one quiet expression"
         sc = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}" + sc)
     else:                   # 예전 설계 (주인공 외형이 없던 편)
         if not sc:
