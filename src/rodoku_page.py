@@ -280,6 +280,37 @@ def _dl(st, keys, item, label, key, mime, filename=""):
                                use_container_width=True)
 
 
+def _cloud_files(st, api_keys, pid):
+    """R2 에 올라가 있는 이 편의 완성 파일(본편·쇼츠·섬네일·자막)을 바로 받는 곳.
+    진행 기록이 사라져도 파일은 R2 에 남아 있으므로 여기서 꺼낼 수 있다 (2026-11-08 저장 실패 사고 대비)."""
+    if not hz._r2_ok(api_keys):
+        return
+    with st.expander("☁️ 클라우드(R2)에 있는 완성 파일 받기"):
+        if not st.button("파일 목록 불러오기", key=f"rd_cf_{pid}"):
+            st.caption("본편 영상·예고 쇼츠·쇼츠 표지·섬네일·자막 파일을 시간순으로 보여 줍니다. 진행 기록에 없는 파일도 나옵니다.")
+            return
+        from src import r2_store
+        try:
+            items = r2_store.list_prefix(api_keys, f"scenestory/{pid}/")
+        except Exception as e:
+            st.error(f"목록 실패: {e}")
+            return
+        def want(k):
+            n = k.rsplit("/", 1)[-1]
+            return (n.endswith(".mp4") and ("_main" in n or n.startswith("trailer"))) or n.startswith("thumbnail_") \
+                or n.endswith("_cover.jpg") or n.endswith(".srt")
+        rows = [it for it in items if want(it["key"])]
+        if not rows:
+            st.caption("완성 파일이 아직 없습니다.")
+        for it in rows:
+            n = it["key"].rsplit("/", 1)[-1]
+            try:
+                url = r2_store.download_link(api_keys, it["key"], filename=n)
+            except Exception:
+                url = ""
+            st.markdown(f"- {it['at']} · [{n}]({url}) · {it['size'] / 1e6:.1f}MB" if url else f"- {it['at']} · {n}")
+
+
 def render_project(st, manager, api_keys, show_banner):
     show_banner("scenestory")
     state = st.session_state.current_project
@@ -291,6 +322,7 @@ def render_project(st, manager, api_keys, show_banner):
     if plan.get("title_ko"):
         st.caption(f"{plan['title_ko']} · {plan.get('logline_ko', '')}")
     _job_panel(st, state, "top")
+    _cloud_files(st, api_keys, pid)
 
     # 단계 표시
     cur = state.get("stage", "")

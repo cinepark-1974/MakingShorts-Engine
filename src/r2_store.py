@@ -82,6 +82,26 @@ def put_json(keys: dict, key: str, data) -> None:
                              ContentType="application/json")
 
 
+def list_prefix(keys: dict, prefix: str) -> list:
+    """prefix 아래 파일 목록 [{key, size, at}] (최근 것부터)."""
+    c = _client(keys)
+    bucket = keys["R2_BUCKET"].strip()
+    out, token = [], None
+    while True:
+        kw = {"Bucket": bucket, "Prefix": prefix}
+        if token:
+            kw["ContinuationToken"] = token
+        res = c.list_objects_v2(**kw)
+        for o in res.get("Contents", []):
+            at = o.get("LastModified")
+            out.append({"key": o["Key"], "size": int(o.get("Size") or 0),
+                        "at": at.strftime("%m-%d %H:%M") if hasattr(at, "strftime") else str(at or "")})
+        if not res.get("IsTruncated"):
+            break
+        token = res.get("NextContinuationToken")
+    return sorted(out, key=lambda x: x["at"], reverse=True)
+
+
 def delete_prefix(keys: dict, prefix: str, keep: tuple = ()) -> int:
     """prefix 아래 파일을 모두 지운다 (keep 에 든 파일 이름은 남김). 지운 개수를 돌려준다."""
     c = _client(keys)
