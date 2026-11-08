@@ -95,6 +95,9 @@ STORY_KINDS = [
      ["スカッとする話 夫 浮気", "スカッと 離婚 朗読"]),
     ("スカッと・見下す人々", "パート先の上司・ママ友・近所の人に年齢や身なりで見下される主人公。実は誰も知らなかった経歴や人脈が明らかになり、相手が青ざめる",
      ["スカッとする話 パート", "スカッと 見下し 逆転"]),
+    ("スカッと・身分逆転", "質素に暮らす主人公を「貧乏」「年金暮らし」「田舎者」と見下し、お金を当てにする家族や相手。実は主人公には誰も知らない資産や経歴"
+     "（亡き夫から継いだ不動産、元校長、地元企業の大株主など）があり、相手の欲と本性が露わになったところで静かに明かされる",
+     ["スカッとする話 資産", "スカッと 年金暮らし 見下し", "スカッと 貧乏 逆転"]),
     ("故郷じまい", "実家じまい・墓じまいで久しぶりに帰った故郷で起きること",
      ["実家じまい", "墓じまい 故郷"]),
 ]
@@ -273,9 +276,15 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "cover_chapter": 2,
   "cover_scene": "English. サムネイル・ショート表紙専用の屋外の昼の一場面。この物語の舞台の地域らしい屋外の景色（その土地の道・川・海・坂・並木・駅など）で、指定された季節と天気と光の下。暗くしない、明るい昼。主人公（heroine、50代）がひとり立つか歩き、red_accent の朱色の物を持つか身につける。顔が見え、物語の謎を胸に抱えた表情（遠くを見つめる・小さく息をのむ）。一つの状態・一つの動作で確定的に書く",
   "turn": "物語の反転（後半で明かされる事実）",
+  "core": {"loss_or_lack": "喪失|欠如", "wound_event": "主人公の傷を一つの出来事で（いつ・どこで・誰が・何を）", "goal": "主人公が望む具体的なもの（名詞）",
+           "need": "本人は気づいていない本当に必要なもの", "strategy_first": "物語の始めの主人公のやり方", "strategy_last": "結末で変わったやり方"},
+  "plants": [{"what": "伏線（物・台詞・習慣。具体的に）", "plant_ch": 1, "payoff_ch": 5, "meaning": "回収で変わる意味"}],
+  "ally": "クライマックスで主人公の側に立つ人物と、その場にいる理由（前の章で用意しておく。偶然にしない）",
+  "settlement": "結末で、お金・名義・家・関係がどう決着したか（具体的に。スカッと以外は空でよい）",
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
+     "question": "この章の終わりに聴き手が抱く問い（日本語一文。次の章を聴かずにいられない問い）",
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, the heroine (face visible, one clear expression) or one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
      "with_hero": true,
      "with_young": false,
@@ -307,6 +316,16 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   反転の章で事実が明るみに出て、相手の立場が一気に崩れる。主人公は怒鳴らない・暴力も復讐の言葉も使わない。
   最後の一言は品よく短く、聴き手が胸のすく台詞にする。結末で主人公は自分の暮らしを取り戻し、穏やかに前を向く。
   犯罪・暴力・性的な場面・実在の団体や人物は出さない。
+  スカッとの組み立て（よく聴かれている作品の構造）:
+  ① 屈辱のはしご: 相手の見下しは二度、だんだん強くなる（一度目は小さな侮辱、二度目は決定的な一言）。主人公は毎回静かに受け流し、聴き手の怒りだけが溜まる。反撃は物語の六割を過ぎてから。
+  ② 対比の人物: 主人公にやさしい人（もう一人の嫁・孫・近所の人など）を置き、その人は目に見える形で報われる。その報いを知った相手の嫉妬や欲が、相手を自滅の場へ引き寄せる（偶然ではなく因果で対決が起きる）。
+  ③ 明かされる事実には伏線を: 相手が序盤に口にした何気ない一言や、主人公の質素な暮らしの描写が、後で意味を変える。
+  ④ 相手が自分の口で本音（欲・嘘）をさらす場面を作り、それを ally が聞く・録音が残る、などで決定打にする。ally がその場にいる理由は前の章で用意する。
+  ⑤ 夫（または息子）が誰の味方か必ず決め、その立場が動く瞬間を一場面で書く（視聴者がいちばん反応する点）。
+  ⑥ お金・相続・年金・名義・離婚の手続きは日本の実際の制度と常識に合わせる（例: 公正証書遺言、年金分割、財産分与、退職金は数週間後に振り込まれる、本人確認なしに大金は下ろせない）。
+     聴き手は自分の暮らしで知っているので、現実とずれると冷める。金額は日本の常識の範囲で具体的に（結婚祝いに百万円は非常識、など）。
+  ⑦ 結末では settlement（お金・家・関係がどう決着したか）を一場面で示し、相手のその後を短く添える。勝ったあとの主人公の品のよい小さな親切を一つ入れる（相手を見捨てない・やるべきことはする）。
+  ⑧ 第1章の冒頭の出来事や無礼な人物は、最終章で回収する（首尾呼応）。
 - 過去（回想）は主人公が20〜30代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
   昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
@@ -352,7 +371,18 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   反転の章ではその赤の意味が変わる置き方にする（例：結ばれていた赤い糸がほどけている、閉じていた赤い傘が開いている）。
 - turn_chapter は反転が起きる章の番号。music は歌のない劇伴（instrumental, no vocals）。朗読の邪魔をしない静かな編成にする
   （ピアノ・弦・アコースティックギター・クラリネット・アコーディオンなど。昭和の喫茶店なら古いレコードのような質感なども可）。
-  実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。"""
+  実在の曲名・アーティスト名は書かない。ドラム・電子音・急な盛り上がりは入れない。
+
+物語の骨格（BLUE JEANS の作家エンジンの方法を短編に縮めたもの）
+- 6章のときの役目: 1 日常の中の欠如と、最初の謎か侮辱（フック） / 2 事件と、もう後戻りできない主人公の選択 / 3 中盤の偽りの勝利か偽りの敗北（状況のルールが変わる） /
+  4 すべてを失う。まだ反撃しない（敗北を知るだけ） / 5 クライマックス。主人公が自分で決めて自分で動き、状況を戻れない形で変える。4章で失ったものが武器になる / 6 結末と余韻。第1章の場面と対比させる。
+  章の数が違うときもこの順番を保ち、近い役目をまとめる。
+- core: 主人公の傷は説明ではなく出来事で（「寂しい人だった」は不可、「七歳の春、母が台所で倒れた」は可）。結末は strategy_first から strategy_last への変化で見せる。
+- plants: 伏線を3つ。plant_ch は1〜3章に散らし、payoff_ch はクライマックスか結末。名前のある人物・物はすべて回収する。植えていない答えで解決しない。同じ章で植えて回収しない。
+- 各章に question（聴き手の開いた問い）を一つ。前の章の問いには部分的にだけ答え、より大きな問いを開く。
+- クライマックスは主人公の行動で決まる。偶然・第三者・見つめるだけ・気づくだけで解決しない。
+- 型ごとの背骨: 初恋・再会／新しい恋 = 章ごとに二人の距離が変わる。感動系 = 告白か和解で感情が爆発し、その前後の温度差を大きく。スカット = 上の組み立て。
+- 感情のいちばん高い場面は抑えすぎない（抑制は爆発のあとの余韻であって、爆発がないことではない）。"""
 
 
 # ── 표지·이야기의 지역과 계절 (2026-11 작가 요청: 파란 하늘만 계속은 단조롭다 → 지역·실제 계절·날씨로 바꾼다) ──
@@ -408,8 +438,77 @@ def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0) 
     return {"region": name, "region_en": scene, "month": month, "season": _SEASON[month], "weather": wkey, "weather_en": wen}
 
 
+# ── 소재 후보 3개 → 엄격한 편집자 채점 → 1위로 설계 (Idea-Engine 의 HUNTER 시드 3안 + TRIAGE Hook 5축·Story Core 5원칙) ──
+SEED_SYSTEM = """あなたは日本の50〜70代の女性に向けた朗読ドラマの企画者です（25年のキャリアを持つ映画・ドラマ作家の感覚で考える）。
+今回の題材の型と手がかりから、短編（約15分）の「種」を3つ作ります。3つは路線を変える:
+ 安全 = この型で実証済みの形を、いちばん強い一場面で磨く / 変主 = 実証済みの形を一か所だけ裏切る / 挑戦 = 視聴者がまだ見ていない題材や視点。
+各種の条件:
+- 主人公は50〜60歳の女性。具体的な名詞の目的を持つ（「幸せになりたい」ではなく「夫の退職金で開く小さな店」）。
+- 欠如（最初からなかったもの）か喪失（奪われた・失ったもの）かを決め、その傷を一つの出来事として書く（いつ・どこで・誰が・何を）。
+- 第1章の最初の数行で起きる出来事を一行で（謎か、主人公を見下す決定的な台詞）。
+- 結末の型を決める: 逆転（立場がひっくり返る）/ 気づき（本当のことを知る）/ 和解 / 告白 / 別れ。結末が決まらない種は出さない。
+- お金・年数・年齢は具体的な数字で（例: 月六万五千円の年金、退職金三千万円、四十年）。数字は日本の暮らしの常識に合わせる。
+- 実在の人物・団体・商品名は使わない。犯罪・暴力・性的な場面は使わない。
+JSONのみ: {"seeds": [{"lane": "安全|変主|挑戦", "title_ja": "12字以内", "logline_ja": "主人公は〜を望むが、〜のせいで〜を失いかける（一文）",
+ "first_event": "第1章冒頭の出来事", "loss_or_lack": "喪失|欠如", "wound_event": "傷の出来事", "goal": "具体的な目的",
+ "turn": "反転", "ending_type": "逆転|気づき|和解|告白|別れ", "ending_ja": "最後の場面", "numbers": "使う数字", "why_now": "視聴者の暮らしとの接点"}]}"""
+
+SCORE_SYSTEM = """あなたは朗読ドラマの企画を判定する厳しい編集者です。書いた人とは別人として、点数を甘くしない（迷ったら低い方）。
+各種を次の10項目で0〜10点で採点する。
+[フック5軸] specificity（すぐ映像が浮かぶ固有の一場面か。100回見た題材は0）/ conflict（対立が一行で見えるか）/ genre（型の約束が明確か）/
+stakes（失うものの大きさ・外と内と関係）/ originality（最近の作品・よくある形と違うか）
+[物語の芯5原則] empathy（50〜70代の女性が自分のこととして聴けるか）/ desire（目的が具体的な名詞か）/ calibration（難しいが可能な障害か）/
+impact（一週間覚えている一場面があるか）/ ending（結末の型が決まっていて満足できるか）
+減点: 最近の作品と主人公の型・題材が重なる（originality を下げる）。お金・法律・手続きが日本の現実とずれている（calibration を下げる）。
+JSONのみ: {"scores": [{"lane": "...", "hook": {"specificity": 0, "conflict": 0, "genre": 0, "stakes": 0, "originality": 0},
+ "core": {"empathy": 0, "desire": 0, "calibration": 0, "impact": 0, "ending": 0}, "weak": "7点未満の軸ごとの具体的な補強案（日本語、なければ空）"}]}"""
+
+
+def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, recent_txt: str, perf: str = "") -> dict:
+    """소재 후보 3개를 만들고 채점해 1위를 고른다. 1위의 훅 점수가 35 미만이면 한 번 다시 만든다. 실패하면 {} (예전 방식으로 설계)."""
+    def _sum(d):
+        try:
+            return sum(int(v) for v in (d or {}).values())
+        except Exception:
+            return 0
+    tries = []
+    feedback = ""
+    for attempt in range(2):
+        user = (f"題材の型: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
+                + (viral + "\n" if viral else "") + (perf + "\n" if perf else "")
+                + "検索語（実際に検索されている言葉）:\n" + "\n".join(f"- {q}" for q in queries[:20])
+                + f"\n最近の作品（重ねない）:\n{recent_txt or 'なし'}\n" + (f"\n[前回の種の弱点 — 今回は避ける]\n{feedback}\n" if feedback else ""))
+        seeds = [x for x in (_json_call(api_key, SEED_SYSTEM, user, 4000).get("seeds") or []) if isinstance(x, dict)][:3]
+        if not seeds:
+            break
+        sc = _json_call(api_key, SCORE_SYSTEM, "題材の型: " + (kind or "自由") + f"\n最近の作品:\n{recent_txt or 'なし'}\n\n[種]\n"
+                        + json.dumps(seeds, ensure_ascii=False), 3000).get("scores") or []
+        for i, sd in enumerate(seeds):
+            r = sc[i] if i < len(sc) and isinstance(sc[i], dict) else {}
+            sd["hook_score"], sd["core_score"] = _sum(r.get("hook")), _sum(r.get("core"))
+            sd["score_detail"] = {"hook": r.get("hook"), "core": r.get("core")}
+            sd["weak"] = r.get("weak", "")
+        best = max(seeds, key=lambda x: x["hook_score"] + x["core_score"])
+        tries.append({"seeds": seeds, "best": best.get("title_ja", "")})
+        if best["hook_score"] >= 35 or attempt == 1:
+            best["tries"] = tries
+            return best
+        feedback = "\n".join(f"- 『{x.get('title_ja', '')}』 フック{x['hook_score']}/50: {x.get('weak', '')}" for x in seeds)
+    return {}
+
+
+def seed_prompt(seed: dict) -> str:
+    """고른 소재를 설계 단계에 넘기는 문장."""
+    if not seed:
+        return ""
+    keys = ("title_ja", "logline_ja", "first_event", "loss_or_lack", "wound_event", "goal", "turn", "ending_type", "ending_ja", "numbers")
+    body = "\n".join(f"  {k}: {seed.get(k, '')}" for k in keys if seed.get(k))
+    return ("今回の種（編集会議で選ばれた企画。必ずこの種で設計する。題名は磨いてよい）:\n" + body
+            + (f"\n  補強すること: {seed['weak']}" if seed.get("weak") else "") + "\n")
+
+
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
-              recent: list = None, viral: str = "") -> dict:
+              recent: list = None, viral: str = "", seed: dict = None) -> dict:
     import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
@@ -423,7 +522,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
-            + (viral + "\n" if viral else "") +
+            + (viral + "\n" if viral else "") + seed_prompt(seed or {}) +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
@@ -501,39 +600,76 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
   ・時刻は「午後三時」「夜の九時すぎ」。日付は「三月十日」。
   ・読み方が二つある言葉はひらがなで書く（はたち、ついたち、ひとり、ふたり、ひとつ、ふたつ、きょう、あした、おととし）。
   ・電話番号・番地・金額の細かい数字は出さない（「駅前の古いアパートの二階」「千円札が三枚」程度にする）。
-- 感情を説明しない。手・物・音・匂いで見せる。
+- 感情を説明しない。手・物・音・匂いで見せる。「モヤモヤした」「腹が立った」「悲しくなった」と書かない。泣く場面で人物を泣かせすぎない（人物が泣くと聴き手は泣かない）。
 - 章の最後の一文は、次の章を聴きたくなる一文で終える（最終章は物語の最後の一行）。
+
+[台詞の決まり]
+- どの台詞も、欲しがる・守る・避ける・責める・誘う・押す のどれかをしている。説明のための台詞（「あなたも知っての通り」）は書かない。
+- 言葉と本心をずらす。気持ちは別の話題・動作・沈黙で出す（「ご飯、食べた？」）。ただし聴き手が本心に気づく手がかりは必ず残す。
+- 人物ごとに話し方を変える: 世代（六十代の主人公、七十代の義母、二十代の孫で語尾も語彙も違う。若い人に古い女性語「〜だわ」「〜かしら」を言わせない）、
+  関係（敬語とタメ口。関係が変わる場面では言葉づかいも変わり、それ自体を転換点にする）。
+- 舞台の土地の生まれの人物は、その土地の言葉を一言二言だけ混ぜる（聴いて分かる程度に）。
+- 同じ感情を同じ言葉で三回以上言わせない。同じ言い回し・同じ動作を繰り返さない。
+- 意味のない動作は書かない（「視線が止まる」「口を開きかけて閉じる」）。動作は物・情報・関係のどれかを変える。
+- 一文は息つぎできる長さにし、読点は朗読の息の位置に置く。
 
 [下の作家ルールは韓国語で書かれた原則です。日本語で書くときもこの原則をそのまま守ってください]
 """
 
 
-EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者です。60〜70代の女性が夜に耳で聴く短編の原稿を読み、弱い章を見つけます。
-見る点: ①第1章の冒頭3文で出来事が始まるか（説明や天気から入っていないか） ②各章で出来事が一つ起き、次の章を聴きたくなる終わり方か
-③反転が前の章で漏れていないか ④台詞が説明的になっていないか ⑤最後の一行に余韻があるか ⑥同じ言い回し・同じ動作の繰り返し。
-直すべき章だけを最大2つ選び、具体的な直し方を書く（「もっと良く」ではなく「冒頭を〇〇の場面から始める」のように）。
-JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "fix": [{"no": 章番号, "note": "具体的な直し方"}]}"""
+EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者です（書いた作家とは別人。点数を甘くしない、迷ったら低い方）。
+60〜70代の女性が夜に耳で聴く短編の原稿を、設計図と照らして読みます。
+採点（各0〜10点）:
+ agency（クライマックスを主人公が自分の行動で決めたか。偶然・第三者・見つめるだけ・気づくだけは3点以下）
+ payoff（設計図の伏線がすべて回収されたか。植えていない答えで解決していないか）
+ temperature（感情のいちばん高い場面の前後で温度差が大きいか）
+ promise（題材の型の約束を果たしたか。スカッとなら胸がすき、感動なら泣ける、恋なら距離が動く）
+ questions（各章の終わりに次を聴きたくなる問いがあるか）
+ reality（お金・相続・年金・名義・離婚・病院などの手続きと金額が日本の現実と常識に合っているか）
+ dialogue（台詞が自然な日本語か。世代・関係・土地で話し方が分かれているか。説明台詞・同じ言い回しの繰り返し・感情の説明がないか）
+ opening（第1章の冒頭3文で出来事が始まるか）
+直すべき章を最大3つ選び、具体的な直し方を書く（「もっと良く」ではなく「第5章で、相手が序盤に言った〇〇を主人公が自分で突きつける場面にする」のように）。
+reality が6点以下なら、その問題がある章は必ず直す対象に入れる。
+JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "scores": {"agency": 0, "payoff": 0, "temperature": 0, "promise": 0, "questions": 0, "reality": 0, "dialogue": 0, "opening": 0},
+ "fix": [{"no": 章番号, "note": "具体的な直し方"}]}"""
 
 
 def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
-    """원고 전체를 편집자 눈으로 읽고 약한 장 최대 2개에 고칠 점을 받는다."""
+    """완성도 게이트: 원고 전체를 설계도와 대조해 8항목 채점 → 약한 장 최대 3개에 고칠 점."""
     full = "\n\n".join(f"第{c['no']}章「{c.get('title_ja', '')}」\n{c.get('text', '')}" for c in chs)
+    design = {k: plan.get(k) for k in ("kind", "logline_ja", "turn", "core", "plants", "ally", "settlement", "ending_ja") if plan.get(k)}
     try:
-        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n反転: {plan.get('turn')}\n\n{full}", 1500)
-        fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:2]
-        return {"overall": rv.get("overall", ""), "fix": fix}
+        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n\n{full}", 2500)
+        fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:3]
+        sc = rv.get("scores") if isinstance(rv.get("scores"), dict) else {}
+        return {"overall": rv.get("overall", ""), "scores": sc, "fix": fix}
     except Exception as e:
         print(f"[rodoku] 편집 검토 실패 → 건너뜀: {e}", flush=True)
         return {"overall": "", "fix": [], "error": str(e)[:200]}
 
 
+def _int0(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
 def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_chars: int, note: str = "",
                   draft: str = "") -> str:
     system = WRITE_SYSTEM_HEAD + _novel_rules()
-    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "characters", "young_woman", "narrator_intro", "turn", "ending_ja")}
-    outline = [{"no": c["no"], "title_ja": c.get("title_ja"), "beat": c.get("beat_ko")} for c in plan["chapters"]]
+    design = {k: plan.get(k) for k in ("title_ja", "logline_ja", "setting", "region", "characters", "young_woman", "narrator_intro",
+                                       "turn", "ending_ja", "core", "ally", "settlement") if plan.get(k)}
+    outline = [{"no": c["no"], "title_ja": c.get("title_ja"), "beat": c.get("beat_ko"), "question": c.get("question", "")}
+               for c in plan["chapters"]]
+    pl = [p for p in (plan.get("plants") or []) if isinstance(p, dict)]
+    here = ([f"この章で植える伏線: {p.get('what', '')}（目立たせすぎない）" for p in pl if _int0(p.get("plant_ch")) == ch["no"]]
+            + [f"この章で回収する伏線: {p.get('what', '')} → {p.get('meaning', '')}" for p in pl if _int0(p.get("payoff_ch")) == ch["no"]])
+    pq = next((c.get("question", "") for c in plan["chapters"] if c.get("no") == ch["no"]), "")
     user = (f"[作品設計]\n{json.dumps(design, ensure_ascii=False)}\n\n[全章の流れ]\n{json.dumps(outline, ensure_ascii=False)}\n\n"
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
+            + ("\n".join(here) + "\n" if here else "")
+            + (f"この章の終わりに聴き手に残す問い: {pq}\n" if pq else "") +
             f"[分量] 空白を除いて {int(target_chars * 0.9)}〜{int(target_chars * 1.1)} 字\n\n"
             + (f"[直前の章の終わり]\n{prev_text[-600:]}\n\n" if prev_text else "")
             + (f"[編集者の指摘 — この点を直して書き直す]\n{note}\n\n[前回の原稿]\n{draft}\n\n" if note else "")
@@ -796,13 +932,15 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代の女性向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
 {"title": "【朗読】で始める。いま起きている謎を一文、疑いを深める一文、最後は「…」で終える（全体55字以内）。時刻・金額・年数は算用数字（4時、2万円、26年）。
            例：【朗読】定年前の夫が、毎朝4時に家を出る。台所に、知らない店のレシートが…／【朗読】亡き母の口座から、毎月3万円が引き出されている。振込先は、知らない女性の名前で…
-           題材の型が「スカッと・…」のときは、相手が主人公を見下した台詞を「」で先頭に置き、何日後に何が起きかけたかを一文、最後は「…」。
-           例：【朗読】「老後はひとりで暮らしてね」と笑った息子夫婦。3日後、私が実家の鍵を渡した相手は…
+           題材の型が「スカッと・…」のときは、台詞のやりとりで組む: 相手の見下す（欲深い）台詞「」 → 主人公の静かな返し 私「」 → 時間の跳躍と出来事（翌朝、3日後）→ 主人公の落ち着いた一言 私「」 →「実は…」。
+           金額・年数を算用数字で入れる。主人公の最後の一言は、彼女が一歩先にいたと分かる言葉にする（例：「待ってたわ」「本当にいいのね？」）。
+           例：【朗読】「老後はひとりで暮らしてね」と笑った息子夫婦。私「ええ、そうするわ」3日後、公証役場から届いた封筒に、嫁は…
            作品タイトルは入れなくてよい。結末・真実は書かない。末尾にジャンルの【】は付けない（あとで付ける）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
  "hashtags": ["#朗読", "#朗読ドラマ", 題材に合う1個],
+ "cover_text": "サムネイルに大きく入れる一行（14字以内）。物語の結果や核心を数字ひとつで見せる（例：残高、三千百八十七円。／四十年分の、領収書）。結末そのものは書かない",
  "pinned_comment": "本編に固定するコメント。2〜3行。物語の小道具や場面に触れ、視聴者が自分の思い出を書きたくなる問いかけで終える（例：あなたにも、ずっと渡せずにいる物はありますか。）。押しつけがましい登録のお願いは書かない",
  "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編は画面下のリンク（チャンネル名の下）からどうぞ』"}
 誇張・扇情的な表現、性的な言葉は使わない。"""
@@ -1011,9 +1149,22 @@ def _worker(job, state, keys, save_fn, made_titles):
                 print(f"[rodoku] 터진 영상 찾기 실패 → 없이 진행: {e}", flush=True)
             hz._save(save_fn, state)
         from src import viral as V
+        kind_now = (state.get("trend") or {}).get("kind", "")
+        if "seed" not in state:
+            _stage(job, state, save_fn, "plan", 1, "편집 회의: 소재 후보 3개를 만들고 채점하는 중")
+            try:
+                rtxt = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 舞台:{r.get('place', '')}" for r in (recent or [])[:8])
+                state["seed"] = pick_seed(ak, kind_now, next((d for k, d, _ in STORY_KINDS if k == kind_now), ""),
+                                          state["trend"]["queries"], V.as_prompt(state.get("viral") or []), rtxt)
+            except Exception as e:
+                state["seed"] = {}
+                state["seed_error"] = f"{type(e).__name__}: {e}"[:300]
+                print(f"[rodoku] 소재 후보 채점 실패 → 예전 방식으로 설계: {e}", flush=True)
+            hz._save(save_fn, state)
+        _stage(job, state, save_fn, "plan", 1, "설계 중 (6장 골격·복선표·장별 질문)")
         plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
-                         kind=(state.get("trend") or {}).get("kind", ""), recent=recent,
-                         viral=V.as_prompt(state.get("viral") or []))
+                         kind=kind_now, recent=recent,
+                         viral=V.as_prompt(state.get("viral") or []), seed=state.get("seed") or {})
         state["plan"] = plan
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
