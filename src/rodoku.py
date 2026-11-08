@@ -1541,7 +1541,9 @@ def cast_narration(keys: dict, ak: str, state: dict, c: dict, head: str, dest: s
             print(f"[rodoku] 제{c['no']}장 배역 나누기 실패 → 낭독자 혼자: {e}", flush=True)
             c["speakers"] = []
     segs = _segments(text, c["speakers"])
-    if segs and segs[0][0] == "narrator":
+    if not head.strip():
+        pass                                    # 쇼츠: 장 제목 없이 바로 본문(대사)부터
+    elif segs and segs[0][0] == "narrator":
         segs[0] = ("narrator", head.strip() + segs[0][1])
     else:
         segs.insert(0, ("narrator", head.strip()))
@@ -1940,7 +1942,21 @@ def _trailer(job, state, keys, slot: int = 0):
     no = c["no"]
     voice = keys.get("ELEVENLABS_VOICE_ID_JA") or JA_VOICE_ID
     au = pf(state, folder, "voice.mp3")
-    generate_narration(keys.get("ELEVENLABS_API_KEY", ""), excerpt, au, voice_id=voice)
+    cast = state.get("cast_voices") or {}
+    voiced = False
+    if cast and "「" in excerpt:
+        # 쇼츠도 본편처럼 대사는 인물 목소리로 — 첫 1초의 무시하는 한마디가 낭독자 목소리면 힘이 빠진다
+        # (2026-11-08 「あなたたちのものでは」 쇼츠: 계속 시청 55.2% / 이탈 44.8% → 첫 1초 보강)
+        try:
+            import shutil
+            pc = {"no": 90 + slot, "text": excerpt}
+            shutil.rmtree(os.path.dirname(pf(state, "cast", f"ch{90 + slot:02d}", "x")), ignore_errors=True)
+            cast_narration(keys, keys.get("ANTHROPIC_API_KEY", ""), state, pc, "", au, voice, cast)
+            voiced = hz.usable(au)
+        except Exception as e:
+            print(f"[rodoku] 쇼츠 배역 목소리 실패 → 낭독자 혼자: {e}", flush=True)
+    if not voiced:
+        generate_narration(keys.get("ELEVENLABS_API_KEY", ""), speakable(excerpt), au, voice_id=voice)
     sec = min(hz.duration(au) + 1.5, 58.0)
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
