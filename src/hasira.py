@@ -570,7 +570,7 @@ def make_thumbnail(keys: dict, state: dict, big: str, small: str, brand: str = "
 # ─────────────────────────────────────────────────────────────────────────────
 # ③ 루프 영상
 # ─────────────────────────────────────────────────────────────────────────────
-X264 = ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-bf", "0",
+X264 = ["-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-pix_fmt", "yuv420p", "-bf", "0",
         "-g", str(FPS * 2), "-keyint_min", str(FPS * 2), "-sc_threshold", "0"]
 FILL = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
 
@@ -598,17 +598,19 @@ def build_pingpong_loop(raw_clip: str, out: str) -> str:
     return out
 
 
-def build_kenburns_loop(image: str, out: str, period: int = KB_PERIOD, zoom: float = KB_ZOOM) -> str:
+def build_kenburns_loop(image: str, out: str, period: int = KB_PERIOD, zoom: float = KB_ZOOM,
+                        base: tuple = (3840, 2160), x264: list = None) -> str:
     """그림 한 장 → 1.00 → 1.03 → 1.00 배로 천천히 숨 쉬듯 확대·축소 (매뉴얼: 1~3% 줌, 완전 정지 금지).
     코사인 곡선이라 끝 프레임이 첫 프레임과 같아져 이음매 없이 반복된다.
     흔들림을 줄이려고 4K 로 키운 뒤 줌하고 1080p 로 내보낸다."""
     n = int(period * FPS)
     z = f"1+{zoom / 2:.4f}*(1-cos(2*PI*on/{n}))"
-    vf = (f"scale=3840:2160:force_original_aspect_ratio=increase,crop=3840:2160,"
+    bw, bh = base
+    vf = (f"scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},"
           f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
           f"setsar=1,format=yuv420p")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(FPS), "-t", f"{n / FPS:.3f}",
-                    "-i", image, "-vf", vf, "-frames:v", str(n), *X264, "-crf", "20", "-an",
+                    "-i", image, "-vf", vf, "-frames:v", str(n), *(x264 or X264), "-crf", "20", "-an",
                     "-movflags", "+faststart", out], check=True, timeout=900)
     return out
 
@@ -952,9 +954,10 @@ def chapter_text(chs: list, total: float) -> str:
     return "\n".join(lines)
 
 
-def _run_ffmpeg(args: list, total_sec: float, job: dict, label: str, timeout: int = 7200):
-    """-progress 로 진행률을 읽으며 ffmpeg 실행."""
-    cmd = ["ffmpeg", "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *args]
+def _run_ffmpeg(args: list, total_sec: float, job: dict, label: str, timeout: int = 7200, nice: bool = False):
+    """-progress 로 진행률을 읽으며 ffmpeg 실행. nice=True 면 낮은 우선순위로 (화면이 멈추지 않게)."""
+    cmd = (["nice", "-n", "15"] if nice and shutil.which("nice") else []) + \
+          ["ffmpeg", "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *args]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     t0 = time.time()
     for line in p.stdout:

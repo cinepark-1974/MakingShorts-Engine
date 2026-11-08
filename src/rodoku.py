@@ -642,7 +642,7 @@ def _caption_clip(loop: str, text: str, sec: float, lead: float, speech: float, 
         fc += f"[{k + 1}:v]format=rgba{fade}[o{k}];[{last}][o{k}]overlay=0:0:enable='between(t,{a:.2f},{b:.2f})'[b{k + 1}];"
         last = f"b{k + 1}"
     fc += f"[{last}]format=yuv420p[v]"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", *ins, "-filter_complex", fc, "-map", "[v]", *hz.X264,
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *ins, "-filter_complex", fc, "-map", "[v]", *X264_FAST,
                     "-crf", "20", "-an", "-t", f"{sec}", out], check=True, timeout=600)
     return out
 
@@ -674,7 +674,7 @@ def _outro_clip(loop: str, png: str, sec: float, out: str) -> str:
     fc = ("[0:v]setpts=PTS-STARTPTS[b];[1:v]format=rgba,fade=t=in:st=0:d=0.8:alpha=1[o];"
           "[b][o]overlay=0:0,format=yuv420p[v]")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", loop, "-loop", "1", "-framerate",
-                    str(hz.FPS), "-t", f"{sec}", "-i", png, "-filter_complex", fc, "-map", "[v]", *hz.X264,
+                    str(hz.FPS), "-t", f"{sec}", "-i", png, "-filter_complex", fc, "-map", "[v]", *X264_FAST,
                     "-crf", "20", "-an", "-t", f"{sec}", out], check=True, timeout=600)
     return out
 
@@ -687,7 +687,7 @@ def _card_clip(loop: str, png: str, sec: float, out: str) -> str:
     fc = (f"[0:v]trim={a:.3f}:{a + sec:.3f},setpts=PTS-STARTPTS[b];[1:v]format=rgba,fade=t=in:st=0:d=0.6:alpha=1,"
           f"fade=t=out:st={sec - 0.6:.2f}:d=0.6:alpha=1[o];[b][o]overlay=0:0,format=yuv420p[v]")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", loop, "-loop", "1", "-framerate", str(hz.FPS),
-                    "-t", f"{sec}", "-i", png, "-filter_complex", fc, "-map", "[v]", *hz.X264, "-crf", "20",
+                    "-t", f"{sec}", "-i", png, "-filter_complex", fc, "-map", "[v]", *X264_FAST, "-crf", "20",
                     "-an", "-t", f"{sec}", out], check=True, timeout=600)
     return out
 
@@ -734,11 +734,13 @@ def _burn_subs(state, keys, job, video: str, spans: list, total: float, save_fn=
             caps.append((a, b, _caption_png(pf(state, "work", "subs", f"s{i:04d}.png"), "", lines=lines)))
         lst = _caption_track(caps, total, pf(state, "work", "subs", "track.mp4"))
         out = pf(state, "work", "video_subs.mp4")
-        hz._run_ffmpeg(["-i", video, "-f", "concat", "-safe", "0", "-i", lst, "-filter_complex",
+        hz._run_ffmpeg(["-threads", "1", "-i", video, "-f", "concat", "-safe", "0", "-i", lst, "-filter_complex",
                         "[1:v]format=rgba[c];[0:v][c]overlay=0:0:eof_action=pass,format=yuv420p[v]", "-map", "[v]",
                         # 30~40분 전체를 다시 인코딩하는 단계라 CPU 를 가장 많이 쓴다 → ultrafast (Streamlit CPU 제한 회피, 약 3배 가볍다)
                         "-c:v", "libx264", "-preset", "ultrafast", "-tune", "animation", "-crf", "24", "-pix_fmt", "yuv420p",
-                        "-bf", "0", "-threads", "2", "-an", "-t", f"{total:.2f}", out], total, job, "[8/10] 합성 · 자막 입히기")
+                        # 1코어만 쓰게 해 Streamlit 2코어 상한에 붙지 않도록 (시간은 조금 더 걸리지만 CPU 제한 경고·화면 멈춤을 막는다)
+                        "-bf", "0", "-threads", "1", "-filter_complex_threads", "1", "-an", "-t", f"{total:.2f}", out],
+                       total, job, "[8/10] 합성 · 자막 입히기", nice=True)
         state["subs_burned"] = len(caps)
         return out
     except Exception as e:
@@ -772,7 +774,7 @@ def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
     vf = (f"[0:v]fps={ANIME_FPS},split[f][b];[b]reverse,trim=start_frame=1:end_frame={n - 1},setpts=PTS-STARTPTS[r];"
           f"[f][r]concat=n=2:v=1:a=0,fps={hz.FPS},scale=-2:1920,crop=1080:1920,setsar=1,format=yuv420p[v]")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-filter_complex", vf, "-map", "[v]",
-                    *hz.X264, "-crf", "21", "-an", one], check=True, timeout=600)
+                    *X264_FAST, "-crf", "21", "-an", one], check=True, timeout=600)
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", one, "-t", f"{sec}",
                     "-c", "copy", out], check=True, timeout=300)
     return out
@@ -783,7 +785,7 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
     vf = (f"scale=-2:2400,crop=1350:2400,zoompan=z='1+0.015*(1-cos(2*PI*on/{n}))':"
           f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps={hz.FPS},setsar=1,format=yuv420p")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(hz.FPS), "-t", f"{sec}",
-                    "-i", image, "-vf", vf, "-frames:v", str(n), *hz.X264, "-crf", "21", "-an", out],
+                    "-i", image, "-vf", vf, "-frames:v", str(n), *X264_FAST, "-crf", "21", "-an", out],
                    check=True, timeout=600)
     return out
 
@@ -835,6 +837,9 @@ ART_SUFFIX = (
     "Hands are relaxed and simple — resting in the lap, at the sides, in pockets or out of frame; no raised hands, no gestures. "
     "No text, no letters, no numbers, no signboard writing, no road signs with symbols."
 )
+
+# 중간 영상: veryfast 그대로 (superfast·ultrafast 는 CPU 는 20~40% 줄지만 파일이 3배 커져 완성본이 무거워진다 — 2026-11-08 실측)
+X264_FAST = list(hz.X264)
 
 CLOUD_INDEX = "scenestory/_index.json"
 
@@ -1604,7 +1609,7 @@ def build_anime_loop(raw: str, out: str) -> str:
     vf = (f"[0:v]fps={ANIME_FPS},split[f][b];[b]reverse,trim=start_frame=1:end_frame={n - 1},setpts=PTS-STARTPTS[r];"
           f"[f][r]concat=n=2:v=1:a=0,fps={hz.FPS},{hz.FILL},format=yuv420p[v]")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-filter_complex", vf, "-map", "[v]",
-                    *hz.X264, "-crf", "20", "-an", "-movflags", "+faststart", out], check=True, timeout=900)
+                    *X264_FAST, "-crf", "20", "-an", "-movflags", "+faststart", out], check=True, timeout=900)
     return out
 
 
@@ -1757,7 +1762,7 @@ def _render(job, state, keys, save_fn):
                         print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 루프 실패 → Ken Burns: {e}", flush=True)
                         lp = pf(state, "work", f"loop{tag}.mp4")
                 if not hz.usable(lp):
-                    hz.build_kenburns_loop(img, lp)
+                    hz.build_kenburns_loop(img, lp, base=(2560, 1440), x264=X264_FAST)   # 4K 대신 2.5K 에서 줌 → 계산량 약 절반
             scene_loops[c["no"]].append(lp)
         loops[c["no"]] = scene_loops[c["no"]][0]
     title = state["plan"].get("title_ja", "")
