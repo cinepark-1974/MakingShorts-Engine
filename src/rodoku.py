@@ -381,7 +381,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - plants: 伏線を3つ。plant_ch は1〜3章に散らし、payoff_ch はクライマックスか結末。名前のある人物・物はすべて回収する。植えていない答えで解決しない。同じ章で植えて回収しない。
 - 各章に question（聴き手の開いた問い）を一つ。前の章の問いには部分的にだけ答え、より大きな問いを開く。
 - クライマックスは主人公の行動で決まる。偶然・第三者・見つめるだけ・気づくだけで解決しない。
-- 型ごとの背骨: 初恋・再会／新しい恋 = 章ごとに二人の距離が変わる。感動系 = 告白か和解で感情が爆発し、その前後の温度差を大きく。スカット = 上の組み立て。
+- 型ごとの組み立て: スカッとは上の組み立て。感動・恋・懐かしい話は、ユーザー文の「この作品の組み立て」に必ず従う。
 - 感情のいちばん高い場面は抑えすぎない（抑制は爆発のあとの余韻であって、爆発がないことではない）。"""
 
 
@@ -438,6 +438,42 @@ def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0) 
     return {"region": name, "region_en": scene, "month": month, "season": _SEASON[month], "weather": wkey, "weather_en": wen}
 
 
+# ── 장르별 조립법 (통쾌편 8개 장치와 같은 수준으로, 감동·사랑·추억도 각자의 엔진을 갖게) ──
+# 출처: Creator-Engine 대체 골격(관계 아크)·Idea-Engine 상실/결핍·Shortform-Engine 감성 숏폼(Sweet 2 → Bitter 1)·우리 채널 성적(古時計·再会 쇼츠)
+GENRE_BUILD = {
+    "naku": """感動（夫婦・家族）の組み立て:
+  ① 疑いの積み上げ: 主人公は相手（夫・母・義母・子）の不可解な行動を悪く受け取り、聴き手も一緒に疑う。証拠は章ごとに一段ずつ増える（二〜三段階）。
+  ② 真実は相手の不器用な愛か、言えずにきた痛み。その手がかりは序盤から置いておく（相手の小さな癖・いつもの物・言いかけてやめた一言）。病気や余命を真実にしない（使い古されている）。
+  ③ 相手が言葉にできなかった理由を、相手の人生の出来事として一つ用意する（説明ではなく出来事）。
+  ④ 涙の頂点は、相手が直接気持ちを語る場面ではなく、物や行動で主人公が真実を知る瞬間に置く。その直前の章で二人の関係はいちばん冷える（温度差）。
+  ⑤ クライマックスは主人公の行動: 今度は主人公の方から伝える・迎えに行く・同じことをし返す。
+  ⑥ 首尾呼応: 第1章の不可解な行動を、結末では主人公が（あるいは二人で）する。
+  ⑦ 誰も悪者にしない。温かさか、静かな痛みが残る。""",
+    "koi": """恋（初恋・再会・大人の恋）の組み立て:
+  ① 章ごとに二人の距離が必ず変わる（近づく・離れる・すれ違う）。同じ距離の章を作らない。
+  ② 二人を隔てる壁を二種類以上重ねる（時間・家族・立場・主人公自身の心）。壁は章を追って一段ずつ高くなる。
+  ③ 中盤で偽りの勝利（ぐっと近づく）→ 秘密や誤解が明るみに出て、いちばん遠く離れる。
+  ④ クライマックスは主人公が守りを下ろす行動で、何かを代償に払う（自分から会いに行く・何十年も言えなかった一言を言う・持っていた物を手放す）。
+  ⑤ 気持ちは言葉より物と行動で。台詞はずらす（「元気だった？」「ご飯、食べた？」）。告白の一言は一度だけ、いちばん高い場面で。
+  ⑥ 主人公の今の人生（夫・家族・亡き伴侶）を否定しない。悪者にしない。過去の恋は今の人生を照らすものとして描く。
+  ⑦ 結末は結ばれるか、会って別れて前を向くか。どちらでも、最後の場面は二人の間の小さな物か約束で閉じる。年数（四十年ぶり等）を物語の芯の数字にする。""",
+    "natsu": """懐かしい話（昭和・平成の思い出）の組み立て:
+  ① いまの喪失が期限になる（店が閉まるまで七日、実家の引き渡しまで三日、取り壊しの前の晩）。期限を第1章で示す。
+  ② 過去への扉は具体的な物・音・味・匂い（その時代のものを三つ以上）。説明ではなく、物に触れた瞬間に回想が始まる。
+  ③ 謎は昔の誰かの「やり残し」（返せなかった物・言えなかった礼・果たせなかった約束）。主人公はそれを探す。
+  ④ 中盤で記憶違いか知らなかった事実が出て、懐かしい過去の意味が変わる（美しいだけの思い出にしない、苦い一点を入れる）。
+  ⑤ クライマックスは主人公が過去と今をつなぐ行動（味を再現して振る舞う・仲間を集める・物を本来の持ち主に返す）。
+  ⑥ 結末: 失うものは失う。けれど何かが次の世代（young_woman）に手渡される。
+  ⑦ 昔を美化しすぎず、今を否定しない。""",
+}
+
+
+def genre_build(kind: str) -> str:
+    if is_sukatto(kind):
+        return ""            # 통쾌편 조립법은 PLAN_SYSTEM 안에 있다
+    return GENRE_BUILD.get(_KIND_PLAYLIST.get(kind, "naku"), "")
+
+
 # ── 소재 후보 3개 → 엄격한 편집자 채점 → 1위로 설계 (Idea-Engine 의 HUNTER 시드 3안 + TRIAGE Hook 5축·Story Core 5원칙) ──
 SEED_SYSTEM = """あなたは日本の50〜70代の女性に向けた朗読ドラマの企画者です（25年のキャリアを持つ映画・ドラマ作家の感覚で考える）。
 今回の題材の型と手がかりから、短編（約15分）の「種」を3つ作ります。3つは路線を変える:
@@ -475,6 +511,7 @@ def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, re
     feedback = ""
     for attempt in range(2):
         user = (f"題材の型: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
+                + (genre_build(kind) + "\n" if genre_build(kind) else "")
                 + (viral + "\n" if viral else "") + (perf + "\n" if perf else "")
                 + "検索語（実際に検索されている言葉）:\n" + "\n".join(f"- {q}" for q in queries[:20])
                 + f"\n最近の作品（重ねない）:\n{recent_txt or 'なし'}\n" + (f"\n[前回の種の弱点 — 今回は避ける]\n{feedback}\n" if feedback else ""))
@@ -522,7 +559,8 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
             f"回想の時代（必須）: {era} — 例: {era_things}\n"
-            + (viral + "\n" if viral else "") + seed_prompt(seed or {}) +
+            + (viral + "\n" if viral else "") + seed_prompt(seed or {})
+            + ("この作品の組み立て（必須）:\n" + genre_build(kind) + "\n" if genre_build(kind) else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
@@ -639,7 +677,9 @@ def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
     full = "\n\n".join(f"第{c['no']}章「{c.get('title_ja', '')}」\n{c.get('text', '')}" for c in chs)
     design = {k: plan.get(k) for k in ("kind", "logline_ja", "turn", "core", "plants", "ally", "settlement", "ending_ja") if plan.get(k)}
     try:
-        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n\n{full}", 2500)
+        gb = genre_build(plan.get("kind", ""))
+        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
+                        + (f"この型の組み立て（promise はこれを満たしたかで採点）:\n{gb}\n" if gb else "") + f"\n{full}", 2500)
         fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:3]
         sc = rv.get("scores") if isinstance(rv.get("scores"), dict) else {}
         return {"overall": rv.get("overall", ""), "scores": sc, "fix": fix}
