@@ -649,11 +649,22 @@ with st.sidebar:
     if st.session_state.get("current_project"):
         import json as _json
         _proj = st.session_state.current_project
-        _json_bytes = _json.dumps(_proj, ensure_ascii=False, indent=2).encode("utf-8")
         _filename = f"{_proj.get('title', 'project')[:30]}.json"
+
+        def _json_now(_p=_proj):
+            # 누르는 순간의 상태를 담는다 (백그라운드 작업이 끝난 뒤 화면을 새로 고치지 않아도 최신 기록).
+            # 2026-11-08: 쇼츠를 만든 뒤 받은 JSON 에 새 쇼츠가 빠져 있던 문제.
+            from src import hasira as _hz
+            for _ in range(3):
+                try:
+                    return _json.dumps(_hz._acyclic(_p), ensure_ascii=False, indent=2).encode("utf-8")
+                except RuntimeError:          # 작업 스레드가 쓰는 도중이면 잠깐 뒤 다시
+                    time.sleep(0.3)
+            return _json.dumps(_hz._acyclic(_p), ensure_ascii=False, indent=2, default=str).encode("utf-8")
+
         st.download_button(
             label="⬇ 현재 프로젝트 JSON 저장",
-            data=_json_bytes,
+            data=_json_now,
             file_name=_filename,
             mime="application/json",
             use_container_width=True,

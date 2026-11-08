@@ -401,6 +401,22 @@ REGIONS = [
     ("高知・四万十", "the Shimanto River in Kochi: a low sinking bridge over a clear green river", False),
     ("沖縄", "Okinawa: an emerald sea, red-tiled roofs with shisa lions, hibiscus and stone walls", False),
 ]
+# 지역 → 그 지역 말 (2026-11-08: 가나자와 이야기에 간사이 사투리 「信じられへん」이 섞인 문제)
+DIALECTS = {"北海道・小樽": "北海道弁", "北海道・富良野": "北海道弁", "東北・盛岡": "盛岡弁", "北陸・金沢": "金沢弁",
+            "信州・松本": "松本の言葉（信州弁）", "東京・下町": "東京の下町言葉", "鎌倉・湘南": "標準語（方言は使わない）",
+            "京都": "京ことば", "尾道・瀬戸内": "備後弁（尾道）", "長崎": "長崎弁", "高知・四万十": "幡多弁（土佐の言葉）",
+            "沖縄": "沖縄の言葉（ウチナーヤマトグチ）"}
+
+
+def dialect_rule(region: str) -> str:
+    name = DIALECTS.get(region or "", "")
+    if not name:
+        return ""
+    kansai = "" if region == "京都" else "関西弁（〜へん・〜やん・〜や・ほんま・あかん・〜はる）は一言も使わない。"
+    return (f"[土地の言葉] 舞台は{region}。土地の生まれの人物が混ぜてよいのは{name}だけ。"
+            f"ほかの地方の方言は混ぜない。{kansai}自信のない方言の言い回しは使わず、標準語にする。\n")
+
+
 _SEASON = {1: "真冬", 2: "冬の終わり", 3: "早春", 4: "桜の季節", 5: "新緑", 6: "梅雨", 7: "盛夏", 8: "晩夏",
            9: "初秋", 10: "秋", 11: "晩秋", 12: "初冬"}
 
@@ -705,7 +721,9 @@ def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
     try:
         gb = genre_build(plan.get("kind", ""))
         rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
-                        + (f"この型の組み立て（promise はこれを満たしたかで採点）:\n{gb}\n" if gb else "") + f"\n{full}", 2500)
+                        + (f"この型の組み立て（promise はこれを満たしたかで採点）:\n{gb}\n" if gb else "")
+                        + (f"{dialect_rule(plan.get('region', ''))}→ 舞台と違う地方の方言が一言でも混ざっていたら dialogue を下げ、その章を fix に入れる。\n"
+                           if dialect_rule(plan.get("region", "")) else "") + f"\n{full}", 2500)
         fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:3]
         sc = rv.get("scores") if isinstance(rv.get("scores"), dict) else {}
         return {"overall": rv.get("overall", ""), "scores": sc, "fix": fix}
@@ -735,7 +753,8 @@ def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_cha
     user = (f"[作品設計]\n{json.dumps(design, ensure_ascii=False)}\n\n[全章の流れ]\n{json.dumps(outline, ensure_ascii=False)}\n\n"
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
             + ("\n".join(here) + "\n" if here else "")
-            + (f"この章の終わりに聴き手に残す問い: {pq}\n" if pq else "") +
+            + (f"この章の終わりに聴き手に残す問い: {pq}\n" if pq else "")
+            + dialect_rule(plan.get("region", "")) +
             f"[分量] 空白を除いて {int(target_chars * 0.9)}〜{int(target_chars * 1.1)} 字\n\n"
             + (f"[直前の章の終わり]\n{prev_text[-600:]}\n\n" if prev_text else "")
             + (f"[編集者の指摘 — この点を直して書き直す]\n{note}\n\n[前回の原稿]\n{draft}\n\n" if note else "")
@@ -2511,6 +2530,7 @@ def _short_texts(state, it: dict, k: int) -> None:
 def start_extra_short(state: dict, keys: dict, save_fn) -> bool:
     """완성된 편에서 다른 장면으로 쇼츠 하나 더 (새 본편 없이 쇼츠만 올리는 날용)."""
     def save_both(s):
+        s["saved_at"] = time.time()
         save_fn(s)
         save_cloud(keys, s)
     return hz._start(state["project_id"], "rodoku_short", "쇼츠 하나 더", _extra_short_worker, (state, keys, save_both))
