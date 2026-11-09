@@ -1606,6 +1606,16 @@ def _draw_scene(state, keys, ak, plan, c, k, sc, name):
                                       r2_key=keep(keys, state, dest, name, "image/jpeg"))
 
 
+# 움직임 검수는 '움직이다 생긴 일그러짐'만 본다. 그림 자체의 화풍·나이·소품 지적은 정지 그림 검수에서 이미 통과했으므로
+# 여기서 다시 떨어뜨리지 않는다 (2026-11-09: 금붕어 편 18컷 중 9컷이 "hand-drawn"의 hand, "youthful face"의 face 에 걸려 정지 그림이 됨).
+_MOTION_BREAK = re.compile(r"\b(hands?|fingers?|arms?|legs?|eyes?|faces?|anatom\w*|limbs?|fused|melt\w*|morph\w*|distort\w*|warp\w*|deform\w*|extra)\b(?!-drawn)", re.I)
+_NOT_MOTION = re.compile(r"3D|\bCG\b|render|photo|style|hand-drawn|young|youthful|twenties|teen|girl|\bage\b|aged|older|description|contrary|text|letter|writing|diary|sign", re.I)
+
+
+def _motion_breakage(problem: str) -> bool:
+    return bool(_MOTION_BREAK.search(problem)) and not _NOT_MOTION.search(problem)
+
+
 def _motion_defect(keys, clip: str, scene: str, plan: dict) -> list:
     """움직임 영상의 중간·끝 장면 두 장을 이어 붙여 Claude 에게 손·팔·얼굴이 일그러졌는지 본다. 문제 목록(없으면 [])."""
     try:
@@ -1623,8 +1633,7 @@ def _motion_defect(keys, clip: str, scene: str, plan: dict) -> list:
             pass
         if rv.get("ok"):
             return []
-        probs = [p for p in rv.get("problems") or [] if re.search(r"hand|finger|arm|leg|eye|face|anatom|limb|fused|melt", p, re.I)]
-        return probs
+        return [p for p in rv.get("problems") or [] if _motion_breakage(p)]
     except Exception as e:
         print(f"[rodoku] 움직임 검수 실패 → 통과 처리: {e}", flush=True)
         return []
