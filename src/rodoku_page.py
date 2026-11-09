@@ -510,6 +510,8 @@ def render_project(st, manager, api_keys, show_banner):
                     st.caption("YouTube 스튜디오(PC) → 콘텐츠 → Shorts → 연필 아이콘 → 미리보기 이미지")
             elif cv.get("error"):
                 st.caption(f"쇼츠 표지를 만들지 못했습니다: {cv['error'][:150]}")
+            st.warning("올린 뒤 꼭: YouTube 스튜디오 → 콘텐츠 → Shorts → 이 쇼츠 → **관련 동영상**에 이 편 본편 선택. "
+                       "안 걸면 쇼츠를 끝까지 본 사람이 본편으로 못 넘어옵니다 (금붕어 편: 쇼츠 1.3천 회 → 본편 5회).")
             for lab, key in (("쇼츠 제목", "shorts_title"), ("쇼츠 설명", "description"), ("쇼츠 고정 댓글", "comment")):
                 if it.get(key):
                     st.markdown(lab)

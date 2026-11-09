@@ -1020,6 +1020,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            題材の型が「スカッと・…」のときは、台詞のやりとりで組む: 相手の見下す（欲深い）台詞「」 → 主人公の静かな返し 私「」 → 時間の跳躍と出来事（翌朝、3日後）→ 主人公の落ち着いた一言 私「」 →「実は…」。
            金額・年数を算用数字で入れる。主人公の最後の一言は、彼女が一歩先にいたと分かる言葉にする（例：「待ってたわ」「本当にいいのね？」）。
            例：【朗読】「老後はひとりで暮らしてね」と笑った息子夫婦。私「ええ、そうするわ」3日後、公証役場から届いた封筒に、嫁は…
+           予告ショートの台詞が渡されたときは、【朗読】の直後にその台詞（「」付き）を一字も変えずに置いて始める。ショートを見た人が本編のサムネイルで同じ話だと気づくため（2026-11-09: ショート1.3千回 → 本編5回）。
            作品タイトルは入れなくてよい。結末・真実は書かない。末尾にジャンルの【】は付けない（あとで付ける）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
@@ -2576,7 +2577,8 @@ def _pack(state, keys):
         tno = 0
     young = next((c for c in chs if (c.get("with_hero") or c.get("with_young")) and (c.get("image") or {}).get("local")), chs[0])
     turn = next((c for c in chs if c["no"] == tno and (c.get("image") or {}).get("local")), chs[-2] if len(chs) > 1 else chs[0])
-    hook = (state.get("trailer") or {}).get("hook_line") or plan.get("title_ja", "")
+    trl0 = state.get("trailer") or {}
+    hook = trl0.get("hook_line") or plan.get("title_ja", "")
     cch = next((c for c in chs if c["no"] == _cover_no(plan) and (c.get("image") or {}).get("local")), None)
     if cch:                                   # 본편에서 이미 그린 파란 하늘 장을 그대로 섬네일로
         a_src = cch
@@ -2610,7 +2612,8 @@ def _pack(state, keys):
                 f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}\n"
                 f"題材の型: {plan.get('kind', '')}\n"
                 f"第1章の冒頭（謎の入口）:\n{first}\n"
-                f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}")
+                f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}"
+                + (f"\n予告ショートの台詞（本編タイトルは【朗読】の直後にこの台詞をそのまま置いて始める）: {hook}" if trl0.get("hook_line") else ""))
         pack.update({k: v for k, v in _json_call(keys.get("ANTHROPIC_API_KEY", ""), PACK_SYSTEM, user, 1500).items() if v})
     except Exception as e:
         print(f"[rodoku] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
