@@ -281,6 +281,9 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "plants": [{"what": "伏線（物・台詞・習慣。具体的に）", "plant_ch": 1, "payoff_ch": 5, "meaning": "回収で変わる意味"}],
   "ally": "クライマックスで主人公の側に立つ人物と、その場にいる理由（前の章で用意しておく。偶然にしない）",
   "settlement": "結末で、お金・名義・家・関係がどう決着したか（具体的に。スカッと以外は空でよい）",
+  "short_lines": [{"role": "blow", "ch": 1, "line": "主人公が受ける一撃の台詞（見下す言葉・突き放す宣告・残酷な事実。「」付き25字以内）"},
+                  {"role": "turn", "ch": 4, "line": "形勢が変わる瞬間の一文（隠していた物・事実が出る。台詞か短い地の文、40字以内）"},
+                  {"role": "last", "ch": 6, "line": "最後に主人公が言う品のある一言（「」付き25字以内。勝ち誇らない）"}],
   "ending_ja": "最後の一行の方向性",
   "chapters": [
     {"no": 1, "title_ja": "章題（8字以内）", "beat_ko": "이 장에서 일어나는 사건 (한국어, 구체적 장면)",
@@ -749,6 +752,8 @@ def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_cha
     pl = [p for p in (plan.get("plants") or []) if isinstance(p, dict)]
     here = ([f"この章で植える伏線: {p.get('what', '')}（目立たせすぎない）" for p in pl if _int0(p.get("plant_ch")) == ch["no"]]
             + [f"この章で回収する伏線: {p.get('what', '')} → {p.get('meaning', '')}" for p in pl if _int0(p.get("payoff_ch")) == ch["no"]])
+    here += [f"この章に必ずそのまま入れる一文（60秒ショートで切り出すため、一字も変えない）: {x.get('line', '')}"
+             for x in (plan.get("short_lines") or []) if isinstance(x, dict) and _int0(x.get("ch")) == ch["no"] and x.get("line")]
     pq = next((c.get("question", "") for c in plan["chapters"] if c.get("no") == ch["no"]), "")
     user = (f"[作品設計]\n{json.dumps(design, ensure_ascii=False)}\n\n[全章の流れ]\n{json.dumps(outline, ensure_ascii=False)}\n\n"
             f"[いま書く章] 第{ch['no']}章「{ch.get('title_ja', '')}」: {ch.get('beat_ko', '')}\n"
@@ -2274,6 +2279,79 @@ def _face_opener(image: str, rest: str, out: str, sec_rest: float) -> str:
         return rest
 
 
+COMPLETE_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者です。本編の全文から、短い3か所をそのまま抜き出し、つなげて一話完結の60秒にします。
+2026-11-12: 続きが気になるだけの予告ショートは、見た人の反応（高評価・コメント）が0.4%しかなかった。見下された主人公が最後に品よく報われる流れを60秒で完結させる。
+① blow: 主人公が受ける一撃。見下す台詞・突き放す宣告。ショートの最初の1秒になるので、いちばん強い一文から始める。
+② turn: 形勢が変わる瞬間。隠していた物・事実が明かされる。
+③ last: 結末で主人公が言う品のある一言、またはそれを受けた相手の沈黙。勝ち誇らない。
+各か所は本文から一字も変えずに1〜3文。3か所の合計は空白を除いて220〜330字（60秒以内）。設計に short_lines があればそれを含む文を優先する。
+JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "turn", ...}, {"role": "last", ...}],
+"hook_line": "①の台詞を「」付きで14字以内に縮めたもの", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
+"shorts_title": "台詞「」を先頭に、年数か金額を入れた30字以内の題"}"""
+
+
+def _complete_short(job, state, keys, folder: str):
+    """한 편 안에서 완결되는 60초 쇼츠의 재료: 본편 낭독 세 군데를 잘라 잇는다 (크레딧 0). 못 만들면 None."""
+    chs = state["chapters"]
+    plan = state.get("plan") or {}
+    full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in chs)
+    hint = json.dumps(plan.get("short_lines") or [], ensure_ascii=False)
+    pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), COMPLETE_SYSTEM, f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
+    parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:3]
+    if len(parts) < 3:
+        return None
+    tmp = pf(state, folder, "x").rsplit("/", 1)[0]
+    segs = []
+    for i, x in enumerate(parts):
+        ex = x["excerpt"].strip()
+        c = next((y for y in chs if y["no"] == _int0(x.get("chapter")) and ex[:12] in y.get("text", "")),
+                 next((y for y in chs if ex[:12] in y.get("text", "")), None))
+        if not c:
+            return None
+        a = os.path.join(tmp, f"part{i}.mp3")
+        if excerpt_from_main(keys, c, ex, a) <= 0:
+            return None
+        segs.append((c, ex, a, hz.duration(a)))
+    gap = os.path.join(tmp, "gap.mp3")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.45",
+                    "-c:a", "libmp3lame", gap], check=True, timeout=60)
+    lst = os.path.join(tmp, "parts.txt")
+    with open(lst, "w") as f:
+        for i, sg in enumerate(segs):
+            f.write(f"file '{sg[2]}'\n" + (f"file '{gap}'\n" if i < len(segs) - 1 else ""))
+    au = pf(state, folder, "voice.mp3")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c:a", "libmp3lame", "-b:a", "192k", au],
+                   check=True, timeout=120)
+    if hz.duration(au) > 62:
+        print(f"[rodoku] 완결형 쇼츠가 {hz.duration(au):.0f}초로 길어 예고형으로 만듭니다.", flush=True)
+        return None
+    # 그림: 세 대목 각자의 장 그림(움직임 우선)을 그 길이만큼 이어 붙인다
+    clips = []
+    for i, (c, ex, a, d) in enumerate(segs):
+        ln = d + (0.45 if i < len(segs) - 1 else 1.5)
+        raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
+        v = ""
+        if raw:
+            try:
+                v = _vertical_anime(raw, os.path.join(tmp, f"vl{i}.mp4"), sec=int(ln) + 1)
+            except Exception:
+                v = ""
+        if not v:
+            v = _vertical_loop(c["image"]["local"], os.path.join(tmp, f"vl{i}.mp4"), sec=int(ln) + 1)
+        clips.append((v, ln))
+    vloop = os.path.join(tmp, "vloop_complete.mp4")
+    ins, fc = [], ""
+    for i, (v, ln) in enumerate(clips):
+        ins += ["-t", f"{ln:.2f}", "-i", v]
+        fc += f"[{i}:v]fps={hz.FPS},scale=1080:1920,setsar=1,format=yuv420p[v{i}];"
+    fc += "".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[v]"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *ins, "-filter_complex", fc, "-map", "[v]", *X264_FAST, "-crf", "20", "-an", vloop],
+                   check=True, timeout=900)
+    pick["excerpt"] = "\n".join(sg[1] for sg in segs)
+    return {"pick": pick, "audio": au, "vloop": vloop, "chapter": segs[0][0]["no"], "c": segs[0][0],
+            "chapters": [sg[0]["no"] for sg in segs]}
+
+
 def _trailer(job, state, keys, slot: int = 0):
     """예고 쇼츠 slot 번째 (0: state['trailer'], 1·2: state['trailers'][slot-1]). 장면이 겹치지 않게 고른다."""
     from src.audio import generate_narration
@@ -2293,6 +2371,17 @@ def _trailer(job, state, keys, slot: int = 0):
         pool = [c for c in chs if c["no"] == max(tno - 1, 1)] or chs[-3:-1]
     if slot:
         pool = [c for c in pool if c["no"] not in used] or pool
+    done = None
+    if slot == 2 and state.get("complete_short_on", True):
+        job["msg"] = "쇼츠 3: 60초 완결형 만드는 중"
+        try:
+            done = _complete_short(job, state, keys, folder)
+        except Exception as e:
+            print(f"[rodoku] 완결형 쇼츠 실패 → 예고형: {e}", flush=True)
+            done = None
+    if done:
+        return _finish_short(job, state, keys, slot, folder, done["pick"], done["c"], done["audio"], done["vloop"],
+                             kind="complete", chapters=done["chapters"])
     full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in pool)
     if SHORT_ANGLES[slot]:
         full = SHORT_ANGLES[slot] + "\n\n" + full
@@ -2346,6 +2435,17 @@ def _trailer(job, state, keys, slot: int = 0):
             print(f"[rodoku] 예고편 움직임 실패 → Ken Burns: {e}", flush=True)
     if not vloop:
         vloop = _vertical_loop(c["image"]["local"], os.path.join(tmp, "vloop.mp4"), sec=int(sec) + 1)
+    return _finish_short(job, state, keys, slot, folder, pick, c, au, vloop)
+
+
+def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teaser", chapters=None):
+    """얼굴 첫 장면 + 위 문구 + 자막 + 소리를 합쳐 쇼츠를 완성하고 state 에 넣는다."""
+    from src import captions as cap
+    from src.assembler import render_scene_clip
+    excerpt = pick.get("excerpt", "")
+    no = c["no"]
+    sec = min(hz.duration(au) + 1.5, 62.0)
+    tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     face_img = ""
     if state.get("hook_face_on", True):
         job["msg"] = f"쇼츠 {slot + 1} 첫 장면 얼굴 그리는 중"
@@ -2361,7 +2461,8 @@ def _trailer(job, state, keys, slot: int = 0):
            stroke_width=3, stroke_fill=(20, 14, 12, 255))
     d.text((540, 230), pick.get("hook_line") or state["plan"].get("title_ja", ""), font=jp_font(JP_SANS_BOLD, 76),
            fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
-    d.text((540, 1780), "続きは本編で ▼ 下のリンクから", font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
+    d.text((540, 1780), "ここまでの物語は本編で ▼ 下のリンクから" if kind == "complete" else "続きは本編で ▼ 下のリンクから",
+           font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=4, stroke_fill=(20, 14, 12, 255))
     im.save(top)
     caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
@@ -2373,7 +2474,7 @@ def _trailer(job, state, keys, slot: int = 0):
                     "-movflags", "+faststart", out], check=True, timeout=600)
     item = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
                         "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
-                        "face_opener": bool(face_img),
+                        "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no],
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
         state["trailer"] = item
