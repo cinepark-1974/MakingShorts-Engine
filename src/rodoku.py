@@ -2242,6 +2242,10 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
             paint(keys, prompt, "9:16", dest, state)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), dest, {"no": c.get("no", 0), "image_prompt": body}, plan)
             if rv.get("ok"):
+                try:   # 글자 없는 얼굴 그림도 R2 에 남겨 '클라우드 완성 파일 받기'에서 받을 수 있게 (표지 직접 교체용)
+                    keep(keys, state, dest, f"{folder}_face.jpg", "image/jpeg")
+                except Exception:
+                    pass
                 return dest
             print(f"[rodoku] 쇼츠 얼굴 그림 검수 탈락 {attempt + 1}/2: {(rv.get('problems') or [''])[0][:120]}", flush=True)
         except Exception as e:
