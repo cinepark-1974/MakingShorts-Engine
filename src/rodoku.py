@@ -2231,8 +2231,8 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
         return ""
     face = (pick.get("face_en") or "her eyes wide and lips slightly parted in stunned silence").strip().rstrip(".")
     place = ((plan.get("setting") or {}).get("place") or "").strip()
-    body = (f"Vertical close-up portrait. Her face and shoulders fill the middle of the frame; the top fifth of the frame is "
-            f"soft out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
+    body = (f"Vertical close-up portrait. Her face and shoulders fill the lower two thirds of the frame, the top of her head "
+            f"at about one third from the top; the top third of the frame is soft out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
             f"(not a girl, not a young woman). {HEROINE_AGE}{_slim_look(hr['look_en'])}. {face}. "
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
@@ -2458,21 +2458,32 @@ def _shorts_cover(state, keys, slot: int = 0):
     folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
     c = next((x for x in state["chapters"] if x["no"] == trl.get("chapter")), state["chapters"][0])
     base = pf(state, folder, "cover_base.jpg")
-    if not _cover_image(state, keys, "9:16", base):   # 야외 그림을 못 그리면 그 장 그림을 세로로 잘라 쓴다
+    face = pf(state, folder, "hook_face.jpg")
+    if trl.get("face_opener") and hz.usable(face):
+        # 2026-11-11: 표지 글자 띠가 인물 얼굴을 가림 → 쇼츠 첫 장면과 같은 얼굴 클로즈업을 표지로 (위 1/3 은 비워 그린 그림)
+        shutil.copyfile(face, base)
+    elif not _cover_image(state, keys, "9:16", base):   # 야외 그림을 못 그리면 그 장 그림을 세로로 잘라 쓴다
         shutil.copyfile(c["image"]["local"], base)
     W, H = 1080, 1920
     im = Image.open(base).convert("RGB")
     s = max(W / im.width, H / im.height)
     im = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
     l, t = (im.width - W) // 2, (im.height - H) // 2
-    im = im.crop((l, t, l + W, t + H)).convert("RGBA")
+    im = im.crop((l, t, l + W, t + H))
+    if trl.get("face_opener") and hz.usable(face):
+        # 얼굴 그림이 위 1/3 을 비우지 않고 그려졌을 때를 대비: 그림을 520px 내려 얼굴을 띠 아래에 두고, 위는 흐린 배경으로 채운다
+        from PIL import ImageFilter
+        bg = im.filter(ImageFilter.GaussianBlur(28))
+        bg.paste(im.crop((0, 0, W, H - 520)), (0, 520))
+        im = bg
+    im = im.convert("RGBA")
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(over)
     ink, cream, rose = (20, 14, 12, 255), (255, 244, 234, 255), (227, 181, 164, 255)
-    # 가운데 띠: 위아래로 옅어지는 어두운 바탕 위에 큰 질문 + 작품 제목
-    top_y, bot_y = 620, 1240
-    for y in range(top_y - 120, bot_y + 120):
-        a = 150 if top_y <= y <= bot_y else int(150 * (1 - min(abs(y - top_y), abs(y - bot_y)) / 120))
+    # 위쪽 띠 (화면 위 9~36%): 얼굴은 그 아래에 그대로 보이게. 예전엔 가운데(32~65%)라 얼굴을 덮었다
+    top_y, bot_y = 170, 690
+    for y in range(0, bot_y + 140):
+        a = 150 if y <= bot_y else int(150 * (1 - (y - bot_y) / 140))
         d.line([(0, y), (W, y)], fill=(16, 12, 10, a))
     hook = (trl.get("hook_line") or plan.get("title_ja", "")).strip()
     f_hook, lines = None, [hook]
