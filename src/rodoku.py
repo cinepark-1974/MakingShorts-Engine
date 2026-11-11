@@ -985,7 +985,11 @@ TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です�
 本文の連続した文をそのまま抜き出し（改変しない）、空白を除いて120〜180字。結末のネタばらしはしない。
 選ぶ基準（よく見られたショートの共通点）: 人生が決まる瞬間の一節を選ぶ。離婚届を出す前の夜、閉店の最後の日、
 何十年ぶりに手紙や声が届いた瞬間、壁越し・電話越しに本音を聞いてしまった瞬間など。最初の一文で「いつ・誰が・何が起きているか」が伝わる箇所から始める。
-JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す8〜14字の問いかけ", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる（年数・年齢・時刻・金額・回数。例：38年後、26年目、毎朝4時、2万円、67歳）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『38年後の再会に節子が取り出したもの』『毎朝4時に消える夫、ポケットの鍵』。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ。#朗読 と題材に合うハッシュタグ1個を含む"}"""
+【最初の一文が勝負】ショートは最初の1秒で指が止まるかで決まる（2026-11-11: 見ずにスワイプ57%）。抜き出しの最初の一文は、その一節でいちばん強い一言にする。
+できれば人物の台詞「」（見下す言葉、隠していた本音、取り返しのつかない宣告、金額や年数の入った一言）。挨拶・説明・天気・丁寧な前置きから始めない。
+hook_line は、最初の一文が台詞ならその台詞を「」付きで14字以内に縮めたもの。台詞でなければ8〜14字の問いかけ。
+face_en は、その最初の一文を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定して書く（例: her eyes wide and lips slightly parted in stunned silence / her jaw set and eyes cold with quiet resolve）。
+JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す文言", "face_en": "English", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる（年数・年齢・時刻・金額・回数。例：38年後、26年目、毎朝4時、2万円、67歳）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『38年後の再会に節子が取り出したもの』『毎朝4時に消える夫、ポケットの鍵』。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ。#朗読 と題材に合うハッシュタグ1個を含む"}"""
 
 
 def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
@@ -2216,6 +2220,56 @@ def excerpt_from_main(keys: dict, c: dict, excerpt: str, dest: str) -> float:
     return round(end - start, 2) if hz.usable(dest) else 0.0
 
 
+HOOK_FACE_SEC = 1.6   # 쇼츠 첫 장면: 주인공 얼굴 클로즈업 (2026-11-11: 뒷모습으로 시작한 쇼츠 6시간 28회 vs 평소 1천 회)
+
+
+def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
+    """쇼츠 첫 1.6초용 세로 얼굴 클로즈업 그림. 검수 2번까지, 실패하면 ''(기존처럼 장면 영상으로 시작)."""
+    plan = state.get("plan") or {}
+    hr = plan.get("heroine") or {}
+    if not hr.get("look_en"):
+        return ""
+    face = (pick.get("face_en") or "her eyes wide and lips slightly parted in stunned silence").strip().rstrip(".")
+    place = ((plan.get("setting") or {}).get("place") or "").strip()
+    body = (f"Vertical close-up portrait. Her face and shoulders fill the middle of the frame; the top fifth of the frame is "
+            f"soft out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
+            f"(not a girl, not a young woman). {HEROINE_AGE}{_slim_look(hr['look_en'])}. {face}. "
+            f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
+    prompt = ART_PREFIX + " " + body + ART_SUFFIX
+    dest = pf(state, folder, "hook_face.jpg")
+    for attempt in range(2):
+        try:
+            paint(keys, prompt, "9:16", dest, state)
+            rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), dest, {"no": c.get("no", 0), "image_prompt": body}, plan)
+            if rv.get("ok"):
+                return dest
+            print(f"[rodoku] 쇼츠 얼굴 그림 검수 탈락 {attempt + 1}/2: {(rv.get('problems') or [''])[0][:120]}", flush=True)
+        except Exception as e:
+            print(f"[rodoku] 쇼츠 얼굴 그림 실패: {e}", flush=True)
+            return ""
+    return ""
+
+
+def _face_opener(image: str, rest: str, out: str, sec_rest: float) -> str:
+    """얼굴 그림 1.6초(천천히 다가감) + 기존 장면 영상을 이어 붙인다. 실패하면 기존 영상 그대로."""
+    try:
+        n = int(HOOK_FACE_SEC * hz.FPS)
+        op = out.replace(".mp4", "_face.mp4")
+        vf = (f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=2160:3840,"
+              f"zoompan=z='1.0+0.06*on/{n}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps={hz.FPS},"
+              f"setsar=1,format=yuv420p")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(hz.FPS), "-i", image, "-vf", vf,
+                        "-frames:v", str(n), *X264_FAST, "-crf", "20", "-an", op], check=True, timeout=300)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", op, "-t", f"{sec_rest:.2f}", "-i", rest, "-filter_complex",
+                        f"[0:v]fps={hz.FPS},setsar=1,format=yuv420p[a];[1:v]fps={hz.FPS},scale=1080:1920,setsar=1,format=yuv420p[b];"
+                        "[a][b]concat=n=2:v=1:a=0[v]", "-map", "[v]", *X264_FAST, "-crf", "20", "-an", out],
+                       check=True, timeout=600)
+        return out if hz.usable(out) else rest
+    except Exception as e:
+        print(f"[rodoku] 얼굴 첫 장면 붙이기 실패 → 장면 영상으로 시작: {e}", flush=True)
+        return rest
+
+
 def _trailer(job, state, keys, slot: int = 0):
     """예고 쇼츠 slot 번째 (0: state['trailer'], 1·2: state['trailers'][slot-1]). 장면이 겹치지 않게 고른다."""
     from src.audio import generate_narration
@@ -2288,6 +2342,12 @@ def _trailer(job, state, keys, slot: int = 0):
             print(f"[rodoku] 예고편 움직임 실패 → Ken Burns: {e}", flush=True)
     if not vloop:
         vloop = _vertical_loop(c["image"]["local"], os.path.join(tmp, "vloop.mp4"), sec=int(sec) + 1)
+    face_img = ""
+    if state.get("hook_face_on", True):
+        job["msg"] = f"쇼츠 {slot + 1} 첫 장면 얼굴 그리는 중"
+        face_img = _hook_face(state, keys, folder, pick, c)
+        if face_img:
+            vloop = _face_opener(face_img, vloop, os.path.join(tmp, "vloop_face.mp4"), sec - HOOK_FACE_SEC + 1)
     top = os.path.join(tmp, "top.png")
     from PIL import Image, ImageDraw
     from src.scenestory import jp_font, JP_SERIF_BOLD, JP_SANS_BOLD
@@ -2309,6 +2369,7 @@ def _trailer(job, state, keys, slot: int = 0):
                     "-movflags", "+faststart", out], check=True, timeout=600)
     item = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
                         "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
+                        "face_opener": bool(face_img),
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
         state["trailer"] = item
