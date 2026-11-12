@@ -2773,9 +2773,17 @@ def _pack(state, keys):
         if not hz.usable(cov):
             _cover_image(state, keys, "16:9", cov)
         a_src = {"image": {"local": cov}} if hz.usable(cov) else young
+    # 세 장은 반드시 서로 다른 그림 (2026-11-12: 표지 장 = 반전 장이면 A·B 가 같은 그림·같은 제목으로 나왔다)
+    def _img(x):
+        return (x.get("image") or {}).get("local") or ""
+    usedimg = {_img(a_src)}
+    cands = [turn] + [c for c in chs if c.get("with_hero")] + [c for c in chs if c.get("with_young")] + list(chs)
+    b_src = next((c for c in cands if _img(c) and _img(c) not in usedimg), turn)
+    usedimg.add(_img(b_src))
+    c_src = next((c for c in [chs[0]] + cands if _img(c) and _img(c) not in usedimg), b_src)
     variants = [("A", a_src, plan.get("title_ja", ""), "기본 — 파란 하늘 표지 · 한 장만 올릴 때는 이것"),
-                ("B", turn, plan.get("title_ja", ""), "반전 장면 + 제목"),
-                ("C", chs[0] if chs[0] is not young else turn, hook, "다른 장면 + 질문 문구")]
+                ("B", b_src, plan.get("title_ja", ""), "반전 장면 + 제목" if b_src is turn else "다른 장면 + 제목"),
+                ("C", c_src, hook, "다른 장면 + 질문 문구")]
     thumbs = []
     for tag, c, big, label in variants:
         proxy = {"project_id": state["project_id"], "project_dir": state["project_dir"], "image": c["image"], "thumbnail": {}}
