@@ -1024,13 +1024,16 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 # ⑧ 업로드 정보
 # ─────────────────────────────────────────────────────────────────────────────
 PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代の女性向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
-{"title": "【朗読】で始める。いま起きている謎を一文、疑いを深める一文、最後は「…」で終える（全体55字以内）。時刻・金額・年数は算用数字（4時、2万円、26年）。
-           例：【朗読】定年前の夫が、毎朝4時に家を出る。台所に、知らない店のレシートが…／【朗読】亡き母の口座から、毎月3万円が引き出されている。振込先は、知らない女性の名前で…
-           題材の型が「スカッと・…」のときは、台詞のやりとりで組む: 相手の見下す（欲深い）台詞「」 → 主人公の静かな返し 私「」 → 時間の跳躍と出来事（翌朝、3日後）→ 主人公の落ち着いた一言 私「」 →「実は…」。
-           金額・年数を算用数字で入れる。主人公の最後の一言は、彼女が一歩先にいたと分かる言葉にする（例：「待ってたわ」「本当にいいのね？」）。
-           例：【朗読】「老後はひとりで暮らしてね」と笑った息子夫婦。私「ええ、そうするわ」3日後、公証役場から届いた封筒に、嫁は…
-           予告ショートの台詞が渡されたときは、【朗読】の直後にその台詞（「」付き）を一字も変えずに置いて始める。ショートを見た人が本編のサムネイルで同じ話だと気づくため（2026-11-09: ショート1.3千回 → 本編5回）。
-           作品タイトルは入れなくてよい。結末・真実は書かない。末尾にジャンルの【】は付けない（あとで付ける）",
+{"title": "本文だけ（前後の【】はあとで付ける）。60〜85字。人気のシニア朗読チャンネルの型で組む（2026-11-12 調査: 再生上位の題はすべてこの形）:
+           ①具体的な時と状況を数字で（離婚2日後の早朝6時／定年退職の翌朝／結婚30年目の誕生日）→ ②相手の台詞を話者付きで（義母「…」夫「…」息子の嫁「…」。見下す・欲深い・突き放す言葉）→
+           ③主人公の静かな返し 私「…」→ ④「直後、」「3日後、」「→結果」など、形勢が変わる予告で「…」と終える。時刻・金額・年数は算用数字。
+           例：定年退職の翌朝、夫「これからは俺の年金で食わせてやる」私「では、私の通帳はお返ししますね」3日後、夫の顔が真っ青に…
+           例：父の葬儀の翌日、兄「家も土地も長男の俺が継ぐ」兄嫁「あなたは他人でしょ」私「ええ、では遺言書を読みますね」直後…
+           スカッと以外の型（感動・恋・懐かしい）も同じ形で、②を相手の忘れられない一言、④を「その理由に…」「40年後に届いた答えは…」にする。
+           予告ショートの台詞が渡されたときは、それを②の最初の台詞として一字も変えずに使う（ショートを見た人が同じ話だと気づくため）。
+           作品タイトルは入れない。結末・真実は書かない",
+ "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの）",
+ "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
@@ -1038,7 +1041,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
  "cover_text": "サムネイルに大きく入れる一行（14字以内）。物語の結果や核心を数字ひとつで見せる（例：残高、三千百八十七円。／四十年分の、領収書）。結末そのものは書かない",
  "pinned_comment": "本編に固定するコメント。2〜3行。物語の小道具や場面に触れ、視聴者が自分の思い出を書きたくなる問いかけで終える（例：あなたにも、ずっと渡せずにいる物はありますか。）。押しつけがましい登録のお願いは書かない",
  "shorts_comment": "予告ショートに固定するコメント。1〜2行。問いかけ＋『本編は画面下のリンク（チャンネル名の下）からどうぞ』"}
-誇張・扇情的な表現、性的な言葉は使わない。"""
+性的な言葉は使わない。相手の嘲笑の台詞に限り、末尾の「w」は使ってよい（ジャンルの慣習）。主人公は品よく。"""
 
 UPLOAD_SETTINGS = [
     ("카테고리", "エンターテイメント (엔터테인먼트)"),
@@ -2753,6 +2756,101 @@ def _extra_short_worker(job, state, keys, save_fn):
     job["msg"], job["pct"] = f"완료 — 쇼츠 {slot + 1}", 1.0
 
 
+def _quote_lines(d, text: str, font_path, jp_font, maxw: int):
+    """대사를 조사·쉼표 뒤에서만 끊어, 2줄(우선) 또는 3줄로 들어가는 가장 큰 글씨 (어절 중간 끊김 방지)."""
+    cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "、。！？はがをにでもへの…" and 2 <= i + 1 <= len(text) - 2]
+
+    def fit(f, n):
+        if n == 1:
+            return [text] if d.textlength(text, font=f) <= maxw else None
+        best = None
+        import itertools
+        for cs in itertools.combinations(cuts, n - 1):
+            idx = (0,) + cs + (len(text),)
+            ls = [text[idx[i]:idx[i + 1]] for i in range(n)]
+            w = max(d.textlength(x, font=f) for x in ls)
+            bal = max(len(x) for x in ls) - min(len(x) for x in ls)
+            if w <= maxw and (best is None or (bal, w) < best[0]):
+                best = ((bal, w), ls)
+        return best[1] if best else None
+
+    for size in (122, 112, 102, 94, 86, 80, 74):        # 1~2줄을 먼저 (큰 글씨 2줄이 가장 읽힌다)
+        f = jp_font(font_path, size)
+        ls = fit(f, 1) or fit(f, 2)
+        if ls:
+            return ls, f
+    for size in (102, 94, 86, 78, 70, 62):
+        f = jp_font(font_path, size)
+        ls = fit(f, 3)
+        if ls:
+            return ls, f
+    from src.scenestory import phrase_wrap
+    f = jp_font(font_path, 62)
+    return phrase_wrap(d, text, f, maxw)[:3], f
+
+
+def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
+    """대사형 본편 섬네일 (1280x720): 오른쪽에 주인공 얼굴 크게, 왼쪽에 상대의 대사를 노란 특대 글씨로.
+    2026-11-12: 클릭률 2.6% → 시니어 낭독 상위 채널들처럼 '대사 + 얼굴'로. 실패하면 None (예비 섬네일 사용)."""
+    from PIL import Image, ImageDraw
+    from src.scenestory import jp_font, JP_SANS_BOLD, JP_SERIF_BOLD
+    plan = state.get("plan") or {}
+    hr = plan.get("heroine") or {}
+    quote = (quote or "").strip()
+    if not quote or not hr.get("look_en"):
+        return None
+    suka = is_sukatto(plan.get("kind", ""))
+    face = ("calm and dignified, a faint knowing smile, her eyes looking straight at the viewer" if suka
+            else "her eyes glistening with held-back tears, lips pressed together, looking straight at the viewer")
+    place = ((plan.get("setting") or {}).get("place") or "a quiet Japanese living room").strip()
+    body = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}"
+            f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the right half of the frame, framed from the chest up, "
+            f"her face large and sharp. The left half of the frame is {place}, softly blurred, with no people and no detail. "
+            f"Warm light on her face. One person only.")
+    prompt = ART_PREFIX + " " + body + ART_SUFFIX
+    base = pf(state, "thumb_v2_base.jpg")
+    best = None
+    for attempt in range(2):
+        cand = base.replace(".jpg", f"_try{attempt + 1}.jpg")
+        paint(keys, prompt, "16:9", cand, state, cover=True)
+        rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
+        best = cand
+        if rv.get("ok"):
+            break
+    W, H = 1280, 720
+    im = Image.open(best).convert("RGB")
+    sc = max(W / im.width, H / im.height)
+    im = im.resize((round(im.width * sc), round(im.height * sc)), Image.LANCZOS)
+    l, t = (im.width - W) // 2, (im.height - H) // 2
+    im = im.crop((l, t, l + W, t + H)).convert("RGBA")
+    over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(over)
+    for x in range(0, 800):                      # 왼쪽을 어둡게 (글씨가 읽히도록), 오른쪽 얼굴은 그대로
+        a = 175 if x < 520 else int(175 * (1 - (x - 520) / 280))
+        d.line([(x, 0), (x, H)], fill=(12, 8, 6, a))
+    ink = (10, 6, 4, 255)
+    y = 56
+    if sub:
+        fs = jp_font(JP_SANS_BOLD, 40)
+        tw = d.textlength(sub, font=fs)
+        d.rounded_rectangle([44, y - 6, 44 + tw + 36, y + 56], radius=10, fill=(196, 48, 40, 235))
+        d.text((62, y), sub, font=fs, fill=(255, 246, 236, 255))
+        y += 96
+    # 대사: 왼쪽 600px 안에 들어가는 가장 큰 글씨, 3줄까지
+    lines, fq = _quote_lines(d, quote, JP_SANS_BOLD, jp_font, 610)
+    lh = int(fq.size * 1.18)
+    y = max(y + 10, (H - lh * len(lines[:3])) // 2 + 10)
+    for ln in lines[:3]:
+        d.text((52, y), ln, font=fq, fill=(255, 226, 84, 255), stroke_width=9, stroke_fill=ink)
+        y += lh
+    d.text((52, H - 70), "SceneStory 朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 34), fill=(232, 190, 170, 255),
+           stroke_width=3, stroke_fill=ink)
+    dst = pf(state, "thumbnail_A.jpg")
+    Image.alpha_composite(im, over).convert("RGB").save(dst, quality=93)
+    return {"tag": "A", "label": "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것", "local": dst,
+            "r2_key": keep(keys, state, dst, "thumbnail_A.jpg", "image/jpeg")}
+
+
 def _pack(state, keys):
     plan, fin = state["plan"], state["final"]
     # 섬네일 3종 (YouTube '테스트 및 비교'용) — 그림과 문구를 서로 다르게
@@ -2781,9 +2879,9 @@ def _pack(state, keys):
     b_src = next((c for c in cands if _img(c) and _img(c) not in usedimg), turn)
     usedimg.add(_img(b_src))
     c_src = next((c for c in [chs[0]] + cands if _img(c) and _img(c) not in usedimg), b_src)
-    variants = [("A", a_src, plan.get("title_ja", ""), "기본 — 파란 하늘 표지 · 한 장만 올릴 때는 이것"),
-                ("B", b_src, plan.get("title_ja", ""), "반전 장면 + 제목" if b_src is turn else "다른 장면 + 제목"),
-                ("C", c_src, hook, "다른 장면 + 질문 문구")]
+    # A 는 업로드 정보(대사)를 만든 뒤 '대사형 섬네일'로 따로 만든다 (2026-11-12: 잘 되는 채널들의 형식)
+    variants = [("B", a_src, plan.get("title_ja", ""), "예비 — 파란 하늘 표지 + 작품 제목"),
+                ("C", c_src if c_src is not a_src else b_src, hook, "예비 — 다른 장면 + 질문 문구")]
     thumbs = []
     for tag, c, big, label in variants:
         proxy = {"project_id": state["project_id"], "project_dir": state["project_dir"], "image": c["image"], "thumbnail": {}}
@@ -2822,9 +2920,22 @@ def _pack(state, keys):
     pack.setdefault("pinned_comment", "最後までお聴きくださり、ありがとうございました。\nこのお話で思い出したことがあれば、そっと聞かせてください。")
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』は画面下のリンクからどうぞ。")
     pack["playlist"] = playlist_for(plan)
+    try:
+        a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "")
+        if a:
+            thumbs = [a] + [t for t in state.get("thumbnails") or [] if t.get("tag") != "A"]
+            state["thumbnails"] = thumbs
+            state["thumbnail"] = a
+    except Exception as e:
+        print(f"[rodoku] 대사형 섬네일 실패 → 예비 섬네일 사용: {e}", flush=True)
     tag = PLAYLIST_TAG[_playlist_key(plan)]
     if pack.get("title") and tag not in pack["title"]:
-        pack["title"] = pack["title"].rstrip() + tag      # 장르 꼬리표 (시니어 낭독은 제목 꼬리표로 장르를 알아본다)
+        tb = re.sub(r"^【[^】]*】", "", pack["title"].strip()).strip()
+        tail = "【朗読】【シニア】"
+        room = 100 - len(tag) - len(tail)
+        if len(tb) > room:
+            tb = tb[:room - 1].rstrip("、。 ") + "…"
+        pack["title"] = tag + tb + tail   # 잘 되는 채널들처럼 장르 꼬리표를 앞에 (2026-11-12)
     trl = state.get("trailer") or {}
     for k, it in enumerate([state.get("trailer") or {}] + list(state.get("trailers") or [])):
         if it.get("local") or it.get("r2_key"):
