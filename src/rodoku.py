@@ -2728,6 +2728,19 @@ def _short_texts(state, it: dict, k: int) -> None:
     it["post_day"] = ["본편 공개 당일", "다른 날 (본편이 없는 날의 쇼츠로)", "다른 날 (본편이 없는 날의 쇼츠로)"][min(k, 2)]
 
 
+def start_repack(state: dict, keys: dict, save_fn) -> bool:
+    """완성된 편의 제목·설명·섬네일만 새 형식으로 다시 만든다 (이미 올린 편 교체용. GPT 그림 1~2장 + 글 1번)."""
+    def worker(job, st, ks, sv):
+        job["msg"] = "업로드 정보·섬네일 다시 만드는 중"
+        st.pop("upload_pack", None)
+        _pack(st, ks)
+        st["saved_at"] = time.time()
+        sv(st)
+        save_cloud(ks, st)
+        job["msg"] = "완료"
+    return hz._start(state["project_id"], "rodoku_pack", "업로드 정보 다시", worker, (state, keys, save_fn))
+
+
 def start_extra_short(state: dict, keys: dict, save_fn) -> bool:
     """완성된 편에서 다른 장면으로 쇼츠 하나 더 (새 본편 없이 쇼츠만 올리는 날용)."""
     def save_both(s):

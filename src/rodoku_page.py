@@ -525,6 +525,11 @@ def render_project(st, manager, api_keys, show_banner):
         st.caption("새 본편 없이 쇼츠만 올리는 날에 씁니다. 쇼츠 고정 댓글이 이 편 본편으로 안내합니다.")
 
     pack = state.get("upload_pack")
+    if (state.get("final") or {}).get("seconds") and not running:
+        if st.button("🔁 제목·설명·섬네일만 새 형식으로 다시 만들기", use_container_width=True, key="rd_repack"):
+            R.start_repack(state, api_keys, manager.save_state)
+            st.rerun()
+        st.caption("본편 영상은 그대로 두고 업로드 정보와 섬네일만 바꿉니다. 이미 올린 편은 YouTube 스튜디오에서 제목·섬네일을 교체하세요.")
     if pack:
         with st.container(border=True):
             st.markdown("**업로드 정보 (일본어)**")
