@@ -329,6 +329,12 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
      聴き手は自分の暮らしで知っているので、現実とずれると冷める。金額は日本の常識の範囲で具体的に（結婚祝いに百万円は非常識、など）。
   ⑦ 結末では settlement（お金・家・関係がどう決着したか）を一場面で示し、相手のその後を短く添える。勝ったあとの主人公の品のよい小さな親切を一つ入れる（相手を見捨てない・やるべきことはする）。
   ⑧ 第1章の冒頭の出来事や無礼な人物は、最終章で回収する（首尾呼応）。
+- SceneStory らしさ（よくあるスカッと朗読との違い。2026-11-13 視聴者の不満の調査から）:
+  ・嘘くさくしない: パトカー・警察・救急車が都合よく現れる、大勢の前で土下座、相手が逮捕・破産・失踪で破滅、のような作り話くさい決着は使わない。
+    決着は日本の制度と人間関係の中で起きる（遺言書、名義、通帳、録音、本人が口にした言葉、第三者の証言）。聴き手が「うちでも起こりうる」と思える大きさにする。
+  ・悪役にも一つだけ理由を置く（老後の不安、見栄、寂しさ、昔の傷）。主人公は最後にそれに気づく一行を持つ。単なる悪人の成敗で終わらせない。
+  ・結末は「スカッと＋じんわり」: 勝ったあと、相手との距離を主人公が自分で決める（許す、または静かに離れる）。最後はその後の暮らしの小さな場面（台所、庭、駅のホーム）で終える。
+  ・毎回、物語の鍵になる「物」と「場所」と「職業」を前の作品と変える（過去作の一覧と重ねない）。
 - 過去（回想）は主人公が20〜30代だった頃（若い恋の頃、子育ての頃、働き盛りの頃）。主人公の年齢は時代と矛盾させない。ユーザー文で指定される時代を使い、その時代の具体的な物・音・言葉を一つ以上入れる。
   昭和30〜40年代（戦後・高度成長期の初め）は使わない。視聴者自身の若い頃と重なる時代にする。
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
@@ -1031,8 +1037,11 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            例：父の葬儀の翌日、兄「家も土地も長男の俺が継ぐ」兄嫁「あなたは他人でしょ」私「ええ、では遺言書を読みますね」直後…
            スカッと以外の型（感動・恋・懐かしい）も同じ形で、②を相手の忘れられない一言、④を「その理由に…」「40年後に届いた答えは…」にする。
            予告ショートの台詞が渡されたときは、それを②の最初の台詞として一字も変えずに使う（ショートを見た人が同じ話だと気づくため）。
+           並びは毎回同じにしない（同じ型の題が並ぶと量産チャンネルに見え、YouTube の収益審査で不利）。ユーザー文の「並び」に従う:
+           A=①状況→②台詞→③返し→④予告 / B=②台詞から始め→①状況→④予告（③は省いてよい）/ C=数字の事実から始める（「30年分の通帳を…」「年金月6万の母に…」）→②台詞→④予告。
            作品タイトルは入れない。結末・真実は書かない",
  "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの）",
+ "title_order": "使った並び（A/B/C）",
  "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時）",
  "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
@@ -2765,6 +2774,13 @@ def _extra_short_worker(job, state, keys, save_fn):
     job["msg"], job["pct"] = f"완료 — 쇼츠 {slot + 1}", 1.0
 
 
+def _variant(state, n: int, salt: str = "") -> int:
+    """편마다 다르게, 같은 편 안에서는 늘 같게 고르는 번호 (섬네일 배치·제목 순서 변주용)."""
+    import hashlib
+    h = hashlib.md5((str(state.get("project_id", "")) + salt).encode()).hexdigest()
+    return int(h[:8], 16) % n
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -2803,9 +2819,14 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     face = ("calm and dignified, a faint knowing smile, her eyes looking straight at the viewer" if suka
             else "her eyes glistening with held-back tears, lips pressed together, looking straight at the viewer")
     place = ((plan.get("setting") or {}).get("place") or "a quiet Japanese living room").strip()
+    # 편마다 배치·색·글씨 높이를 바꾼다 (같은 틀의 섬네일이 줄지어 있으면 '템플릿 대량 생산'으로 보임. 2026-11-13)
+    right = _variant(state, 2, "side") == 0
+    pal = [((255, 226, 84), (196, 48, 40)), ((255, 250, 242), (34, 58, 104)), ((255, 205, 178), (38, 92, 70))][_variant(state, 3, "pal")]
+    vpos = ["mid", "high", "low"][_variant(state, 3, "pos")]
+    me, other = ("right", "left") if right else ("left", "right")
     body = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}"
-            f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the right half of the frame, framed from the chest up, "
-            f"her face large and sharp. The left half of the frame is {place}, softly blurred, with no people and no detail. "
+            f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame, framed from the chest up, "
+            f"her face large and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
             f"Warm light on her face. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_base.jpg")
@@ -2825,26 +2846,31 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     im = im.crop((l, t, l + W, t + H)).convert("RGBA")
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(over)
-    for x in range(0, 900):                      # 왼쪽을 어둡게 (글씨가 읽히도록), 오른쪽 얼굴은 그대로
-        a = 175 if x < 600 else int(175 * (1 - (x - 600) / 300))
+    for i in range(0, 900):                      # 글씨 쪽을 어둡게, 얼굴 쪽은 그대로
+        a = 175 if i < 600 else int(175 * (1 - (i - 600) / 300))
+        x = i if right else W - 1 - i
         d.line([(x, 0), (x, H)], fill=(12, 8, 6, a))
     ink = (10, 6, 4, 255)
+    qcol, boxcol = pal
+    lx = 52 if right else W - 52            # 글씨 기준선 (얼굴 반대편)
+    anchor = "la" if right else "ra"
     y = 56
     if sub:
         fs = jp_font(JP_SANS_BOLD, 40)
         tw = d.textlength(sub, font=fs)
-        d.rounded_rectangle([44, y - 6, 44 + tw + 36, y + 56], radius=10, fill=(196, 48, 40, 235))
-        d.text((62, y), sub, font=fs, fill=(255, 246, 236, 255))
+        bx = 44 if right else W - 44 - tw - 36
+        d.rounded_rectangle([bx, y - 6, bx + tw + 36, y + 56], radius=10, fill=boxcol + (235,))
+        d.text((bx + 18, y), sub, font=fs, fill=(255, 246, 236, 255))
         y += 96
-    # 대사: 왼쪽 600px 안에 들어가는 가장 큰 글씨, 3줄까지
     lines, fq = _quote_lines(d, quote, JP_SANS_BOLD, jp_font, 700)
     lh = int(fq.size * 1.18)
-    y = max(y + 10, (H - lh * len(lines[:3])) // 2 + 10)
+    block = lh * len(lines[:3])
+    y = {"mid": max(y + 10, (H - block) // 2 + 10), "high": y + 30, "low": max(y + 10, H - 130 - block)}[vpos]
     for ln in lines[:3]:
-        d.text((52, y), ln, font=fq, fill=(255, 226, 84, 255), stroke_width=9, stroke_fill=ink)
+        d.text((lx, y), ln, font=fq, fill=qcol + (255,), anchor=anchor, stroke_width=9, stroke_fill=ink)
         y += lh
-    d.text((52, H - 70), "SceneStory 朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 34), fill=(232, 190, 170, 255),
-           stroke_width=3, stroke_fill=ink)
+    d.text((lx, H - 70), "SceneStory 朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 34), fill=(232, 190, 170, 255),
+           anchor=anchor, stroke_width=3, stroke_fill=ink)
     dst = pf(state, f"thumbnail_{tag}.jpg")
     Image.alpha_composite(im, over).convert("RGB").save(dst, quality=93)
     return {"tag": tag, "label": label, "local": dst, "base": best,
@@ -2905,7 +2931,8 @@ def _pack(state, keys):
                 f"題材の型: {plan.get('kind', '')}\n"
                 f"第1章の冒頭（謎の入口）:\n{first}\n"
                 f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}"
-                + (f"\n予告ショートの台詞（本編タイトルは【朗読】の直後にこの台詞をそのまま置いて始める）: {hook}" if trl0.get("hook_line") else ""))
+                + (f"\n予告ショートの台詞（題の最初の台詞として一字も変えずに使う）: {hook}" if trl0.get("hook_line") else "")
+                + f"\n並び: {'ABC'[_variant(state, 3)]}")
         pack.update({k: v for k, v in _json_call(keys.get("ANTHROPIC_API_KEY", ""), PACK_SYSTEM, user, 1500).items() if v})
     except Exception as e:
         print(f"[rodoku] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
