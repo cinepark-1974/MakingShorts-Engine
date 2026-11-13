@@ -1034,6 +1034,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            作品タイトルは入れない。結末・真実は書かない",
  "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの）",
  "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時）",
+ "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
@@ -2594,12 +2595,7 @@ def _shorts_cover(state, keys, slot: int = 0):
         a = 150 if y <= bot_y else int(150 * (1 - (y - bot_y) / 140))
         d.line([(0, y), (W, y)], fill=(16, 12, 10, a))
     hook = (trl.get("hook_line") or plan.get("title_ja", "")).strip()
-    f_hook, lines = None, [hook]
-    for size in (112, 100, 90, 80, 72):
-        f_hook = jp_font(JP_SANS_BOLD, size)
-        lines = phrase_wrap(d, hook, f_hook, W - 140)
-        if len(lines) <= 3:
-            break
+    lines, f_hook = _quote_lines(d, hook, JP_SANS_BOLD, jp_font, W - 100, min_one=64)
     lh = int(f_hook.size * 1.25)
     y = top_y + 60
     d.text((W // 2, y), "朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 44), fill=rose, anchor="ma")
@@ -2769,40 +2765,31 @@ def _extra_short_worker(job, state, keys, save_fn):
     job["msg"], job["pct"] = f"완료 — 쇼츠 {slot + 1}", 1.0
 
 
-def _quote_lines(d, text: str, font_path, jp_font, maxw: int):
-    """대사를 조사·쉼표 뒤에서만 끊어, 2줄(우선) 또는 3줄로 들어가는 가장 큰 글씨 (어절 중간 끊김 방지)."""
-    cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "、。！？はがをにでもへの…" and 2 <= i + 1 <= len(text) - 2]
-
-    def fit(f, n):
-        if n == 1:
-            return [text] if d.textlength(text, font=f) <= maxw else None
+def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
+    """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
+    min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
+    for size in range(124, min_one - 1, -4):
+        f = jp_font(font_path, size)
+        if d.textlength(text, font=f) <= maxw:
+            return [text], f
+    cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "、。！？はがをにでもへの…" and 3 <= i + 1 <= len(text) - 3]
+    for size in range(110, 50, -4):
+        f = jp_font(font_path, size)
         best = None
-        import itertools
-        for cs in itertools.combinations(cuts, n - 1):
-            idx = (0,) + cs + (len(text),)
-            ls = [text[idx[i]:idx[i + 1]] for i in range(n)]
+        for c in cuts:
+            ls = [text[:c], text[c:]]
             w = max(d.textlength(x, font=f) for x in ls)
-            bal = max(len(x) for x in ls) - min(len(x) for x in ls)
-            if w <= maxw and (best is None or (bal, w) < best[0]):
-                best = ((bal, w), ls)
-        return best[1] if best else None
-
-    for size in (122, 112, 102, 94, 86, 80, 74):        # 1~2줄을 먼저 (큰 글씨 2줄이 가장 읽힌다)
-        f = jp_font(font_path, size)
-        ls = fit(f, 1) or fit(f, 2)
-        if ls:
-            return ls, f
-    for size in (102, 94, 86, 78, 70, 62):
-        f = jp_font(font_path, size)
-        ls = fit(f, 3)
-        if ls:
-            return ls, f
-    from src.scenestory import phrase_wrap
-    f = jp_font(font_path, 62)
-    return phrase_wrap(d, text, f, maxw)[:3], f
+            bal = abs(len(ls[0]) - len(ls[1]))
+            if w <= maxw and (best is None or bal < best[0]):
+                best = (bal, ls)
+        if best:
+            return best[1], f
+    f = jp_font(font_path, 50)
+    return [text], f
 
 
-def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
+def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = "A",
+              label: str = "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것") -> dict:
     """대사형 본편 섬네일 (1280x720): 오른쪽에 주인공 얼굴 크게, 왼쪽에 상대의 대사를 노란 특대 글씨로.
     2026-11-12: 클릭률 2.6% → 시니어 낭독 상위 채널들처럼 '대사 + 얼굴'로. 실패하면 None (예비 섬네일 사용)."""
     from PIL import Image, ImageDraw
@@ -2822,8 +2809,8 @@ def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
             f"Warm light on her face. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_base.jpg")
-    best = None
-    for attempt in range(2):
+    best = base_img if base_img and hz.usable(base_img) else None
+    for attempt in range(0 if best else 2):
         cand = base.replace(".jpg", f"_try{attempt + 1}.jpg")
         paint(keys, prompt, "16:9", cand, state, cover=True)
         rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
@@ -2838,8 +2825,8 @@ def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
     im = im.crop((l, t, l + W, t + H)).convert("RGBA")
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(over)
-    for x in range(0, 800):                      # 왼쪽을 어둡게 (글씨가 읽히도록), 오른쪽 얼굴은 그대로
-        a = 175 if x < 520 else int(175 * (1 - (x - 520) / 280))
+    for x in range(0, 900):                      # 왼쪽을 어둡게 (글씨가 읽히도록), 오른쪽 얼굴은 그대로
+        a = 175 if x < 600 else int(175 * (1 - (x - 600) / 300))
         d.line([(x, 0), (x, H)], fill=(12, 8, 6, a))
     ink = (10, 6, 4, 255)
     y = 56
@@ -2850,7 +2837,7 @@ def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
         d.text((62, y), sub, font=fs, fill=(255, 246, 236, 255))
         y += 96
     # 대사: 왼쪽 600px 안에 들어가는 가장 큰 글씨, 3줄까지
-    lines, fq = _quote_lines(d, quote, JP_SANS_BOLD, jp_font, 610)
+    lines, fq = _quote_lines(d, quote, JP_SANS_BOLD, jp_font, 700)
     lh = int(fq.size * 1.18)
     y = max(y + 10, (H - lh * len(lines[:3])) // 2 + 10)
     for ln in lines[:3]:
@@ -2858,10 +2845,10 @@ def _thumb_v2(state, keys, quote: str, sub: str) -> dict:
         y += lh
     d.text((52, H - 70), "SceneStory 朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 34), fill=(232, 190, 170, 255),
            stroke_width=3, stroke_fill=ink)
-    dst = pf(state, "thumbnail_A.jpg")
+    dst = pf(state, f"thumbnail_{tag}.jpg")
     Image.alpha_composite(im, over).convert("RGB").save(dst, quality=93)
-    return {"tag": "A", "label": "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것", "local": dst,
-            "r2_key": keep(keys, state, dst, "thumbnail_A.jpg", "image/jpeg")}
+    return {"tag": tag, "label": label, "local": dst, "base": best,
+            "r2_key": keep(keys, state, dst, f"thumbnail_{tag}.jpg", "image/jpeg")}
 
 
 def _pack(state, keys):
@@ -2936,8 +2923,14 @@ def _pack(state, keys):
     try:
         a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "")
         if a:
-            thumbs = [a] + [t for t in state.get("thumbnails") or [] if t.get("tag") != "A"]
-            state["thumbnails"] = thumbs
+            # B·C 도 같은 얼굴 그림에 문구만 바꾼 새 형식 (그림 추가 비용 없음). 예전 형식은 쓰지 않는다 (2026-11-13)
+            b = _thumb_v2(state, keys, pack.get("thumb_reply") or "", pack.get("thumb_sub") or "", a["base"], "B",
+                          "예비 — 주인공의 한마디 + 얼굴")
+            c = _thumb_v2(state, keys, f"『{plan.get('title_ja', '')}』", pack.get("thumb_sub") or "", a["base"], "C",
+                          "예비 — 작품 제목 + 얼굴")
+            old = {t.get("tag"): t for t in state.get("thumbnails") or []}
+            state["thumbnails"] = [a, b or old.get("B"), c or old.get("C")]
+            state["thumbnails"] = [t for t in state["thumbnails"] if t]
             state["thumbnail"] = a
     except Exception as e:
         print(f"[rodoku] 대사형 섬네일 실패 → 예비 섬네일 사용: {e}", flush=True)
