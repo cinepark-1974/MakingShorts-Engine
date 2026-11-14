@@ -2301,6 +2301,71 @@ def _face_opener(image: str, rest: str, out: str, sec_rest: float) -> str:
         return rest
 
 
+def _quiet_points(au: str) -> list:
+    """낭독 사이 숨 쉬는 자리(0.3초 이상 조용한 곳)의 가운데 시각들. 장면을 바꿀 자리로 쓴다."""
+    try:
+        r = subprocess.run(["ffmpeg", "-v", "info", "-i", au, "-af", "silencedetect=n=-35dB:d=0.3", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=120)
+        st = [float(x) for x in re.findall(r"silence_start: ([0-9.]+)", r.stderr)]
+        en = [float(x) for x in re.findall(r"silence_end: ([0-9.]+)", r.stderr)]
+        return [(a + b) / 2 for a, b in zip(st, en)]
+    except Exception:
+        return []
+
+
+def _teaser_recut(vloop: str, still: str, face: str, au: str, sec: float, out: str) -> str:
+    """예고 쇼츠가 한 장면으로 30초 넘게 이어지지 않게 (2026-11-14 『A-17の里芋』: 37초 동안 같은 그림).
+    움직임 장면 → 같은 장 그림을 인물 쪽으로 다가가며 → 첫 장면 얼굴로 천천히 물러나며 (끝이 처음과 이어져 반복 재생에도 자연스럽다).
+    바꾸는 자리는 낭독이 숨 쉬는 곳. 실패하면 원래 영상 그대로."""
+    try:
+        body = sec - HOOK_FACE_SEC
+        if body < 18 or not still:
+            return vloop
+        qs = [q - HOOK_FACE_SEC for q in _quiet_points(au)]
+        def near(t):
+            ok = [q for q in qs if 5 < q < body - 4]
+            return min(ok, key=lambda q: abs(q - t)) if ok else t
+        c1 = near(body * 0.42)
+        c2 = near(body * 0.75) if face else body
+        if c2 - c1 < 4:
+            c2 = body if not face else min(body - 4, c1 + 6)
+        tmp = os.path.dirname(out)
+        n2 = max(int((c2 - c1 + 0.5) * hz.FPS), 2)
+        s2 = os.path.join(tmp, "cut_still.mp4")
+        # 가로 그림 전체를 가운데 크게(인물이 한쪽에 있어도 잘리지 않게) + 뒤는 같은 그림을 흐리게 채움, 천천히 다가감
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(hz.FPS), "-i", still, "-filter_complex",
+                        f"[0:v]split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                        f"boxblur=28:2,eq=brightness=-0.10[bg];"
+                        f"[b]scale=2880:-2,zoompan=z='1.0+0.08*on/{n2}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                        f"d=1:s=1440x810:fps={hz.FPS},crop=1180:810[fg];"
+                        f"[bg]fps={hz.FPS}[bg2];[bg2][fg]overlay=(W-w)/2:470:shortest=1,setsar=1,format=yuv420p[v]",
+                        "-map", "[v]", "-frames:v", str(n2), *X264_FAST, "-crf", "20", "-an", s2], check=True, timeout=300)
+        parts = [(vloop, c1), (s2, c2 - c1)]
+        if face and body - c2 > 2:
+            n3 = max(int((body - c2 + 1) * hz.FPS), 2)
+            s3 = os.path.join(tmp, "cut_face.mp4")
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(hz.FPS), "-i", face, "-vf",
+                            f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=2160:3840,"
+                            f"zoompan=z='1.16-0.10*on/{n3}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps={hz.FPS},"
+                            f"setsar=1,format=yuv420p", "-frames:v", str(n3), *X264_FAST, "-crf", "20", "-an", s3],
+                           check=True, timeout=300)
+            parts.append((s3, body - c2 + 1))
+        ins, fc = [], ""
+        for i, (v, ln) in enumerate(parts):
+            ins += ["-t", f"{ln:.2f}", "-i", v]
+            fc += f"[{i}:v]fps={hz.FPS},scale=1080:1920,setsar=1,format=yuv420p[v{i}];"
+        fc += "".join(f"[v{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=1:a=0[v]"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", *ins, "-filter_complex", fc, "-map", "[v]", *X264_FAST,
+                        "-crf", "20", "-an", out], check=True, timeout=600)
+        if hz.usable(out):
+            print(f"[rodoku] 예고 쇼츠 장면 나눔: {c1:.1f}s / {c2:.1f}s 에서 바꿈", flush=True)
+            return out
+        return vloop
+    except Exception as e:
+        print(f"[rodoku] 예고 쇼츠 장면 나누기 실패 → 한 장면 그대로: {e}", flush=True)
+        return vloop
+
+
 COMPLETE_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者です。本編の全文から、短い3か所をそのまま抜き出し、つなげて一話完結の60秒にします。
 2026-11-12: 続きが気になるだけの予告ショートは、見た人の反応（高評価・コメント）が0.4%しかなかった。見下された主人公が最後に品よく報われる流れを60秒で完結させる。
 ① blow: 主人公が受ける一撃。見下す台詞・突き放す宣告。ショートの最初の1秒になるので、いちばん強い一文から始める。
@@ -2472,6 +2537,10 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
     if state.get("hook_face_on", True):
         job["msg"] = f"쇼츠 {slot + 1} 첫 장면 얼굴 그리는 중"
         face_img = _hook_face(state, keys, folder, pick, c)
+    if kind == "teaser":
+        vloop = _teaser_recut(vloop, (c.get("image") or {}).get("local", ""), face_img, au, sec,
+                              os.path.join(tmp, "vloop_cuts.mp4"))
+    if state.get("hook_face_on", True):
         if face_img:
             vloop = _face_opener(face_img, vloop, os.path.join(tmp, "vloop_face.mp4"), sec - HOOK_FACE_SEC + 1)
     top = os.path.join(tmp, "top.png")
