@@ -1008,8 +1008,12 @@ TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です�
 【最初の一文が勝負】ショートは最初の1秒で指が止まるかで決まる（2026-11-11: 見ずにスワイプ57%）。抜き出しの最初の一文は、その一節でいちばん強い一言にする。
 できれば人物の台詞「」（見下す言葉、隠していた本音、取り返しのつかない宣告、金額や年数の入った一言）。挨拶・説明・天気・丁寧な前置きから始めない。
 hook_line は、最初の一文が台詞ならその台詞を「」付きで14字以内に縮めたもの。台詞でなければ8〜14字の問いかけ。
+hook_line はそれだけ読んで意味が一つに決まる言葉にする（2026-11-14『A-17の里芋』の「里芋って地味じゃない」は見下しか褒め言葉か読めない）。見下す台詞なら語尾の棘を残す（〜じゃない？／〜でしょ／〜のくせに）。
+【最後の一文も勝負】抜き出しは「次に何が起きるか」が宙づりになる文で終える: 答えの出ていない問い、明かされる直前の物・名前・金額、取り返しのつかない宣告。
+動作の描写（手を伸ばした／立ち上がった／そこに立っていた）や情景で終えない（2026-11-14『A-17の里芋』は「里芋に手を伸ばした。」で終わり、続きが気にならなかった）。
+end_tease は、最後に画面に2秒出す問い（12〜20字、日本語、「」なし、？で終える）。抜き出しの続きで視聴者がいちばん知りたいことを問う。結末は明かさない（例: その区画の名義は、誰のものだったのか？）。
 face_en は、その最初の一文を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定して書く（例: her eyes wide and lips slightly parted in stunned silence / her jaw set and eyes cold with quiet resolve）。
-JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す文言", "face_en": "English", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる（年数・年齢・時刻・金額・回数。例：38年後、26年目、毎朝4時、2万円、67歳）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『38年後の再会に節子が取り出したもの』『毎朝4時に消える夫、ポケットの鍵』。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ。#朗読 と題材に合うハッシュタグ1個を含む"}"""
+JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す文言", "face_en": "English", "end_tease": "最後に出す問い", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる（年数・年齢・時刻・金額・回数。例：38年後、26年目、毎朝4時、2万円、67歳）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『38年後の再会に節子が取り出したもの』『毎朝4時に消える夫、ポケットの鍵』。『〜年ぶり』『〜年越し』は本当に年月の隔たりが物語の核のときだけ。#朗読 と題材に合うハッシュタグ1個を含む"}"""
 
 
 def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
@@ -2301,6 +2305,38 @@ def _face_opener(image: str, rest: str, out: str, sec_rest: float) -> str:
         return rest
 
 
+def _end_tease(video: str, text: str, sec: float, out: str) -> str:
+    """예고 쇼츠 마지막 2.2초에 '다음이 궁금한 질문'을 화면 가운데 띄운다 (2026-11-14). 실패하면 원래 영상."""
+    try:
+        from PIL import Image, ImageDraw
+        from src.scenestory import jp_font, JP_SANS_BOLD
+        png = out.replace(".mp4", ".png")
+        im = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        d.rectangle((0, 1110, 1080, 1410), fill=(14, 10, 9, 210))       # 얼굴(위쪽)을 가리지 않게 아래쪽 띠
+        f = jp_font(JP_SANS_BOLD, 72)
+        lines = [text]
+        if d.textlength(text, font=f) > 980:
+            marks = [i for i, ch in enumerate(text) if ch in "、，" and 3 < i < len(text) - 3]
+            if not marks:
+                marks = [i for i, ch in enumerate(text) if ch in "はがをにでともの" and 3 < i < len(text) - 3]
+            cut = min(marks, key=lambda i: abs(i - len(text) / 2)) if marks else len(text) // 2
+            lines = [text[:cut + 1], text[cut + 1:]]
+        y0 = 1260 - 50 * len(lines)
+        for i, ln in enumerate(lines):
+            d.text((540, y0 + i * 100), ln, font=f, fill=(255, 226, 120, 255), anchor="mt", stroke_width=6,
+                   stroke_fill=(20, 14, 12, 255))
+        im.save(png)
+        st = max(sec - 2.2, 0)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-loop", "1", "-i", png, "-filter_complex",
+                        f"[1:v]format=rgba,fade=t=in:st={st:.2f}:d=0.25:alpha=1[t];[0:v][t]overlay=0:0:shortest=1:enable='gte(t,{st:.2f})',format=yuv420p[v]",
+                        "-map", "[v]", "-t", f"{sec:.2f}", *X264_FAST, "-crf", "20", "-an", out], check=True, timeout=600)
+        return out if hz.usable(out) else video
+    except Exception as e:
+        print(f"[rodoku] 끝 질문 붙이기 실패 → 그대로: {e}", flush=True)
+        return video
+
+
 def _quiet_points(au: str) -> list:
     """낭독 사이 숨 쉬는 자리(0.3초 이상 조용한 곳)의 가운데 시각들. 장면을 바꿀 자리로 쓴다."""
     try:
@@ -2531,7 +2567,8 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
     from src.assembler import render_scene_clip
     excerpt = pick.get("excerpt", "")
     no = c["no"]
-    sec = min(hz.duration(au) + 1.5, 62.0)
+    tease = (pick.get("end_tease") or "").strip() if kind == "teaser" else ""
+    sec = min(hz.duration(au) + (2.6 if tease else 1.5), 62.0)
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     face_img = ""
     if state.get("hook_face_on", True):
@@ -2559,6 +2596,8 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
     caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
     silent = os.path.join(tmp, "v.mp4")
     render_scene_clip(vloop, top, sec, silent, instant=True, captions=caps, punch_in=False)
+    if tease:
+        silent = _end_tease(silent, tease, sec, os.path.join(tmp, "v_tease.mp4"))
     out = pf(state, folder, "trailer.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", silent, "-i", au, "-map", "0:v:0", "-map", "1:a:0",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-t", f"{sec:.2f}",
