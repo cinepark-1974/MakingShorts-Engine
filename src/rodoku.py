@@ -1008,7 +1008,8 @@ TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です�
 【最初の一文が勝負】ショートは最初の1秒で指が止まるかで決まる（2026-11-11: 見ずにスワイプ57%）。抜き出しの最初の一文は、その一節でいちばん強い一言にする。
 できれば人物の台詞「」（見下す言葉、隠していた本音、取り返しのつかない宣告、金額や年数の入った一言）。挨拶・説明・天気・丁寧な前置きから始めない。
 hook_line は、最初の一文が台詞ならその台詞を「」付きで14字以内に縮めたもの。台詞でなければ8〜14字の問いかけ。
-hook_line はそれだけ読んで意味が一つに決まる言葉にする（2026-11-14『A-17の里芋』の「里芋って地味じゃない」は見下しか褒め言葉か読めない）。見下す台詞なら語尾の棘を残す（〜じゃない？／〜でしょ／〜のくせに）。
+hook_line はそれだけ読んで意味が一つに決まる言葉にする（2026-11-14『A-17の里芋』の「里芋って地味じゃない」は見下しか褒め言葉か読めない）。見下す台詞なら語尾の棘を残す（〜でしょ／〜のくせに／〜なさいよ）。
+【語尾】画面に出す台詞を「〜ない」「〜じゃない」「〜なかった」で終えない（2026-11-14: 直近6本の文言がすべて「〜ない」で終わり、一覧で同じに見えた）。問い（〜の？／〜ですか）、命令（〜なさい）、言い切り（〜よ／〜です）、数字や名前で終える台詞を選ぶ。
 【最後の一文も勝負】抜き出しは「次に何が起きるか」が宙づりになる文で終える: 答えの出ていない問い、明かされる直前の物・名前・金額、取り返しのつかない宣告。
 動作の描写（手を伸ばした／立ち上がった／そこに立っていた）や情景で終えない（2026-11-14『A-17の里芋』は「里芋に手を伸ばした。」で終わり、続きが気にならなかった）。
 end_tease は、最後に画面に2秒出す問い（12〜20字、日本語、「」なし、？で終える）。抜き出しの続きで視聴者がいちばん知りたいことを問う。結末は明かさない（例: その区画の名義は、誰のものだったのか？）。
@@ -1053,10 +1054,10 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            並びは毎回同じにしない（同じ型の題が並ぶと量産チャンネルに見え、YouTube の収益審査で不利）。ユーザー文の「並び」に従う:
            A=①状況→②台詞→③返し→④予告 / B=②台詞から始め→①状況→④予告（③は省いてよい）/ C=数字の事実から始める（「30年分の通帳を…」「年金月6万の母に…」）→②台詞→④予告。
            作品タイトルは入れない。結末・真実は書かない",
- "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの）",
+ "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの。「〜ない」「〜じゃない」で終えない）",
  "title_order": "使った並び（A/B/C）",
  "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時）",
- "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの）",
+ "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの。「〜ない」で終えない）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
  "tags": ["検索語・ジャンル語 12〜15個"],
@@ -2278,7 +2279,16 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
                 except Exception:
                     pass
                 return dest
-            print(f"[rodoku] 쇼츠 얼굴 그림 검수 탈락 {attempt + 1}/2: {(rv.get('problems') or [''])[0][:120]}", flush=True)
+            prob = " ".join(rv.get("problems") or [])
+            print(f"[rodoku] 쇼츠 얼굴 그림 검수 탈락 {attempt + 1}/2: {prob[:120]}", flush=True)
+            if attempt == 1 and prob and not _motion_breakage(prob):
+                # 2026-11-14 『百円のペンチ』: 두 번 다 떨어져 얼굴 없는 표지(손만 보임)가 됨. 얼굴이 망가진 게 아니면 쓴다
+                print("[rodoku] 얼굴이 망가진 문제는 아니라서 이 그림을 그대로 씀", flush=True)
+                try:
+                    keep(keys, state, dest, f"{folder}_face.jpg", "image/jpeg")
+                except Exception:
+                    pass
+                return dest
         except Exception as e:
             print(f"[rodoku] 쇼츠 얼굴 그림 실패: {e}", flush=True)
             return ""
@@ -2414,7 +2424,7 @@ COMPLETE_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者
 ③ last: 結末で主人公が言う品のある一言、またはそれを受けた相手の沈黙。勝ち誇らない。
 各か所は本文から一字も変えずに1〜3文。3か所の合計は空白を除いて220〜330字（60秒以内）。設計に short_lines があればそれを含む文を優先する。
 JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "turn", ...}, {"role": "last", ...}],
-"hook_line": "①の台詞を「」付きで14字以内に縮めたもの", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
+"hook_line": "①の台詞を「」付きで14字以内に縮めたもの（「〜ない」で終えない。問い・命令・言い切り・数字で終える）", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
 "shorts_title": "台詞「」を先頭に、年数か金額を入れた30字以内の題"}"""
 
 
@@ -2516,7 +2526,7 @@ def _trailer(job, state, keys, slot: int = 0):
     if is_sukatto((state.get("plan") or {}).get("kind", "")) and slot in (0, 1):
         # 통쾌편: 무시하는 한마디가 가장 강한 미끼 → 첫 1초에 그 대사, 화면 위 문구도 그 대사
         full = ("今回はスカッと系。相手が主人公を見下す決定的な台詞（「」）を含む文から抜き出しを始める（最初の一文がその台詞）。"
-                "hook_line はその台詞そのものを「」付きで14字以内に縮めたもの（例：「家にいるだけで楽でいいな」）。"
+                "hook_line はその台詞そのものを「」付きで14字以内に縮めたもの（例：「家にいるだけで楽でいいな」）。「〜ない」で終えない。"
                 "shorts_title も台詞を「」で先頭に置き、年数などの数字を入れる。\n\n" + full)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), TRAILER_SYSTEM, full, max_tokens=1500)
     excerpt = (pick.get("excerpt") or "").strip()
@@ -2735,7 +2745,7 @@ def _shorts_cover(state, keys, slot: int = 0):
         d.text((W // 2, y), ln, font=f_hook, fill=cream, anchor="ma", stroke_width=5, stroke_fill=ink)
         y += lh
     y += 24
-    d.text((W // 2, y), f"『{plan.get('title_ja', '')}』", font=jp_font(JP_SERIF_BOLD, 54), fill=rose, anchor="ma",
+    d.text((W // 2, y), plan.get('title_ja', ''), font=jp_font(JP_SERIF_BOLD, 54), fill=rose, anchor="ma",
            stroke_width=3, stroke_fill=ink)
     d.text((W // 2, H - 150), "SceneStory", font=jp_font(JP_SERIF_BOLD, 40), fill=rose, anchor="ma",
            stroke_width=3, stroke_fill=ink)
@@ -2919,6 +2929,10 @@ def _thumb_layout(state, keys) -> tuple:
     return lay
 
 
+_NO_HEAD = "ずゃゅょぁぃぅぇぉっーん」』）、。！？"     # 줄 첫 글자로 올 수 없는 글자
+_NO_SPLIT = {"でも", "では", "には", "のに", "のだ", "のよ", "のね", "がら", "もう", "もの"}  # 이 두 글자 사이는 끊지 않는다
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -2926,7 +2940,11 @@ def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56)
         f = jp_font(font_path, size)
         if d.textlength(text, font=f) <= maxw:
             return [text], f
-    cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "、。！？はがをにでもへの…" and 3 <= i + 1 <= len(text) - 3]
+    cuts = [i + 1 for i, ch in enumerate(text[:-1]) if ch in "、。！？はがをにでもへの…" and 3 <= i + 1 <= len(text) - 3
+            and text[i + 1] not in _NO_HEAD and text[i:i + 2] not in _NO_SPLIT]
+    # 「はず・わけ・こと…」 같은 말은 앞에서 끊는다 (2026-11-14 「根拠を持っていないは / ずがない」 → 「…いない / はずがない」)
+    cuts += [m.start() for m in re.finditer("はず|わけ|ところ|こと|もの|ばかり|でしょ|なんて", text) if 3 <= m.start() <= len(text) - 3]
+    cuts = sorted(set(cuts))
     for size in range(110, 50, -4):
         f = jp_font(font_path, size)
         best = None
