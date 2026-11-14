@@ -2313,18 +2313,23 @@ def _end_tease(video: str, text: str, sec: float, out: str) -> str:
         png = out.replace(".mp4", ".png")
         im = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        d.rectangle((0, 1110, 1080, 1410), fill=(14, 10, 9, 210))       # 얼굴(위쪽)을 가리지 않게 아래쪽 띠
-        f = jp_font(JP_SANS_BOLD, 72)
+        # 마지막 자막 자리(아래쪽)를 덮어 질문만 보이게 (2026-11-14 『千本鳥居』: 질문과 마지막 자막이 위아래로 겹쳐 읽힘)
+        d.rectangle((0, 1330, 1080, 1730), fill=(14, 10, 9, 240))
+        f = jp_font(JP_SANS_BOLD, 84)
         lines = [text]
-        if d.textlength(text, font=f) > 980:
+        if d.textlength(text, font=f) > 1000:
             marks = [i for i, ch in enumerate(text) if ch in "、，" and 3 < i < len(text) - 3]
             if not marks:
-                marks = [i for i, ch in enumerate(text) if ch in "はがをにでともの" and 3 < i < len(text) - 3]
+                marks = [i for i, ch in enumerate(text) if ch in "はがをにでとも" and 3 < i < len(text) - 3]
+            if not marks:
+                marks = [i for i, ch in enumerate(text) if ch == "の" and 3 < i < len(text) - 3]
             cut = min(marks, key=lambda i: abs(i - len(text) / 2)) if marks else len(text) // 2
             lines = [text[:cut + 1], text[cut + 1:]]
-        y0 = 1260 - 50 * len(lines)
+            while max(d.textlength(x, font=f) for x in lines) > 1020 and f.size > 60:
+                f = jp_font(JP_SANS_BOLD, f.size - 4)
+        y0 = 1530 - int(f.size * 0.6 * len(lines))
         for i, ln in enumerate(lines):
-            d.text((540, y0 + i * 100), ln, font=f, fill=(255, 226, 120, 255), anchor="mt", stroke_width=6,
+            d.text((540, y0 + i * int(f.size * 1.2)), ln, font=f, fill=(255, 226, 120, 255), anchor="mt", stroke_width=7,
                    stroke_fill=(20, 14, 12, 255))
         im.save(png)
         st = max(sec - 2.2, 0)
@@ -2898,6 +2903,22 @@ def _variant(state, n: int, salt: str = "") -> int:
     return int(h[:8], 16) % n
 
 
+def _thumb_layout(state, keys) -> tuple:
+    """섬네일 배치(얼굴 좌우·색·글씨 높이)를 편 순서대로 돌려, 바로 앞 편과 늘 다르게 (2026-11-14: 무작위로 골랐더니
+    『A-17の里芋』『千本鳥居の案内人』이 같은 배치로 나란히 나옴). 한 번 정하면 그 편에 저장해 다시 만들기에도 같게."""
+    got = state.get("thumb_layout")
+    if isinstance(got, list) and len(got) == 3:
+        return tuple(got)
+    try:
+        pid = str(state.get("project_id", ""))
+        k = sum(1 for p in cloud_index(keys) if str(p) < pid)
+        lay = (k % 2, k % 3, (k // 2) % 3)
+    except Exception:
+        lay = (_variant(state, 2, "side"), _variant(state, 3, "pal"), _variant(state, 3, "pos"))
+    state["thumb_layout"] = list(lay)
+    return lay
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -2937,9 +2958,10 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
             else "her eyes glistening with held-back tears, lips pressed together, looking straight at the viewer")
     place = ((plan.get("setting") or {}).get("place") or "a quiet Japanese living room").strip()
     # 편마다 배치·색·글씨 높이를 바꾼다 (같은 틀의 섬네일이 줄지어 있으면 '템플릿 대량 생산'으로 보임. 2026-11-13)
-    right = _variant(state, 2, "side") == 0
-    pal = [((255, 226, 84), (196, 48, 40)), ((255, 250, 242), (34, 58, 104)), ((255, 205, 178), (38, 92, 70))][_variant(state, 3, "pal")]
-    vpos = ["mid", "high", "low"][_variant(state, 3, "pos")]
+    side_i, pal_i, pos_i = _thumb_layout(state, keys)
+    right = side_i == 0
+    pal = [((255, 226, 84), (196, 48, 40)), ((255, 250, 242), (34, 58, 104)), ((255, 205, 178), (38, 92, 70))][pal_i]
+    vpos = ["mid", "high", "low"][pos_i]
     me, other = ("right", "left") if right else ("left", "right")
     body = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}"
             f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame, framed from the chest up, "
