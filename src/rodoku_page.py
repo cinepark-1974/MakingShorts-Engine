@@ -475,6 +475,12 @@ def render_project(st, manager, api_keys, show_banner):
                         out_name(state, "thumbnail" if t.get("tag", "A") == "A" else f"thumbnail-{t.get('tag')}", "jpg"))
                 elif t.get("error"):
                     st.caption(f"{t.get('tag', '')} 실패: {t['error'][:100]}")
+                else:
+                    st.caption(f"섬네일 {t.get('tag', '')} 파일을 불러오지 못했습니다 (서버 재시작으로 지워졌고 클라우드에도 없음) "
+                               "— '🔁 제목·설명·섬네일만 새 형식으로 다시 만들기'로 다시 만들 수 있습니다.")
+            if state.get("thumb_v2_error") and not any(t.get("tag") == "A" for t in thumbs):
+                st.warning(f"기본 섬네일 A(대사 + 얼굴)를 만들지 못해 예비 섬네일만 있습니다: {state['thumb_v2_error'][:150]} "
+                           "— 아래 '🔁 제목·설명·섬네일만 새 형식으로 다시 만들기'로 A를 다시 만들 수 있습니다.")
             if thumbs:
                 _thumb(thumbs[0])
                 if len(thumbs) > 1:

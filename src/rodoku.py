@@ -2968,9 +2968,9 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     from src.scenestory import jp_font, JP_SANS_BOLD, JP_SERIF_BOLD
     plan = state.get("plan") or {}
     hr = plan.get("heroine") or {}
-    quote = (quote or "").strip()
-    if not quote or not hr.get("look_en"):
-        return None
+    quote = (quote or "").strip() or f"「{plan.get('title_ja', '')}」"
+    if not hr.get("look_en"):
+        raise RuntimeError("주인공 외모 설명(look_en)이 없음")
     suka = is_sukatto(plan.get("kind", ""))
     face = ("calm and dignified, a faint knowing smile, her eyes looking straight at the viewer" if suka
             else "her eyes glistening with held-back tears, lips pressed together, looking straight at the viewer")
@@ -2988,13 +2988,21 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_base.jpg")
     best = base_img if base_img and hz.usable(base_img) else None
-    for attempt in range(0 if best else 2):
+    for attempt in range(0 if best else 3):
         cand = base.replace(".jpg", f"_try{attempt + 1}.jpg")
-        paint(keys, prompt, "16:9", cand, state, cover=True)
-        rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
+        try:
+            paint(keys, prompt, "16:9", cand, state, cover=True)
+        except Exception as e:      # 그림 한 번 실패로 A 섬네일 전체가 빠지지 않게 (2026-11-14: A 없이 B·C만 나옴)
+            print(f"[rodoku] 섬네일 얼굴 그림 실패 {attempt + 1}/3: {e}", flush=True)
+            continue
+        if not hz.usable(cand):
+            continue
         best = cand
+        rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
         if rv.get("ok"):
             break
+    if not best:
+        raise RuntimeError("섬네일 얼굴 그림을 세 번 모두 그리지 못함")
     W, H = 1280, 720
     im = Image.open(best).convert("RGB")
     sc = max(W / im.width, H / im.height)
@@ -3116,8 +3124,10 @@ def _pack(state, keys):
             state["thumbnails"] = [a, b or old.get("B"), c or old.get("C")]
             state["thumbnails"] = [t for t in state["thumbnails"] if t]
             state["thumbnail"] = a
+        state.pop("thumb_v2_error", None)
     except Exception as e:
         print(f"[rodoku] 대사형 섬네일 실패 → 예비 섬네일 사용: {e}", flush=True)
+        state["thumb_v2_error"] = str(e)[:200]
     tag = PLAYLIST_TAG[_playlist_key(plan)]
     if pack.get("title") and tag not in pack["title"]:
         tb = re.sub(r"^【[^】]*】", "", pack["title"].strip()).strip()
