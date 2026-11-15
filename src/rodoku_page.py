@@ -513,6 +513,18 @@ def render_project(st, manager, api_keys, show_banner):
             if loc:
                 st.video(loc)
             st.caption(f"{it.get('seconds', 0)}초 · 第{it.get('chapter', '')}章에서")
+            if (state.get("final") or {}).get("seconds") and not running:
+                if st.button(f"🔁 예고 쇼츠 {k + 1} 다시 만들기 (새 규칙으로 · 이 쇼츠만)", key=f"rd_redo_short{k}",
+                             use_container_width=True):
+                    keep_day = it.get("post_day")
+                    it.clear()                              # 이 자리를 비우면 '쇼츠 하나 더'가 이 자리를 다시 채운다
+                    if keep_day:
+                        it["post_day"] = keep_day
+                    import shutil
+                    shutil.rmtree(os.path.dirname(R.pf(state, folder, "x")), ignore_errors=True)
+                    manager.save_state(state)
+                    R.start_extra_short(state, api_keys, manager.save_state)
+                    st.rerun()
             _dl(st, api_keys, it, f"⬇ 예고 쇼츠 {k + 1} 내려받기", f"rd_tr{k}", "video/mp4", out_name(state, f"trailer{suf}", "mp4"))
             cv = it.get("cover") or {}
             cvl = hz.ensure_local(api_keys, cv, R.pf(state, folder, "cover_1080x1920.jpg")) if (cv.get("local") or cv.get("r2_key")) else ""
