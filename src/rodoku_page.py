@@ -452,7 +452,10 @@ def render_project(st, manager, api_keys, show_banner):
                     st.warning(f"{lab} 곡을 만들지 못했습니다 (이 곡 없이 합성): {it['error']}")
 
     fin = state.get("final") or {}
-    if state.get("flux_used") or state.get("gpt_image_fail_count"):
+    if state.get("gpt_no_credit") or "no credits" in (state.get("gpt_image_error") or ""):
+        st.error("OpenAI 잔액이 없어 GPT 그림을 못 그렸습니다. 장면 그림은 flux(주인공이 젊게 나옴)로 대신 그렸습니다. "
+                 "platform.openai.com → Settings → Billing 에서 충전한 뒤 새로 만들어 주세요.")
+    elif state.get("flux_used") or state.get("gpt_image_fail_count"):
         st.warning(f"GPT 그림이 {state.get('gpt_image_fail_count') or 0}번 실패해 장면 그림 {state.get('flux_used') or 0}장을 "
                    f"예비 모델(flux)로 그렸습니다. flux 는 주인공을 젊게 그리는 경향이 있습니다. "
                    f"실패 이유: {(state.get('gpt_image_error') or '')[:200]} — 'insufficient/quota/billing'이면 OpenAI 결제 잔액을 확인해 주세요.")

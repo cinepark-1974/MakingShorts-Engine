@@ -1554,8 +1554,8 @@ def _gpt_image(key: str, prompt: str, aspect: str, dest: str, quality: str = "me
     for attempt in range(3):                       # 429(요청 과다)만 쉬었다 다시
         r = requests.post("https://api.openai.com/v1/images/generations", json=body, timeout=300,
                           headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-        if r.status_code != 429:
-            break
+        if r.status_code != 429 or any(w in r.text.lower() for w in ("credits", "quota", "billing")):
+            break                                   # 잔액 없음(429지만 기다려도 소용없음)은 바로 실패
         time.sleep(20 * (attempt + 1))
     if r.status_code != 200:
         try:
@@ -1580,6 +1580,9 @@ def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, c
     (2026-11-15 『あぜ道の七年』: GPT 실패 → flux 대체 → 섬네일·쇼츠 표지가 젊은 여성으로 바뀜)."""
     ok = keys.get("OPENAI_API_KEY", "")
     err = None
+    if state is not None and state.get("gpt_no_credit"):
+        ok = ""                                     # 이번 편에서 이미 잔액 없음 확인 → 매번 다시 묻지 않음
+        err = "OpenAI 잔액 없음"
     if ok:
         q = (keys.get("OPENAI_COVER_QUALITY") or "high") if cover else (keys.get("OPENAI_IMAGE_QUALITY") or "medium")
         for attempt in range(2):
@@ -1593,7 +1596,9 @@ def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, c
                 if state is not None:
                     state["gpt_image_error"] = str(e)[:300]
                     state["gpt_image_fail_count"] = int(state.get("gpt_image_fail_count") or 0) + 1
-                if any(w in msg for w in ("billing", "quota", "insufficient", "limit", "safety", "moderation", "rejected")):
+                if state is not None and any(w in msg for w in ("credits", "quota", "billing", "insufficient")):
+                    state["gpt_no_credit"] = True
+                if any(w in msg for w in ("credits", "billing", "quota", "insufficient", "limit", "safety", "moderation", "rejected")):
                     break          # 돈·한도·검열 문제는 다시 해도 같다
                 time.sleep(25)
     if not allow_flux:
