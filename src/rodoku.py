@@ -2729,7 +2729,8 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-t", f"{sec:.2f}",
                     "-movflags", "+faststart", out], check=True, timeout=600)
     item = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
-                        "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
+                        "hook_line": pick.get("hook_line", ""),
+                        "shorts_title": _fix_title_years(keys, pick.get("shorts_title", ""), "ショートのタイトル"),
                         "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no], "end_tease": tease,
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
@@ -3097,6 +3098,23 @@ def _fix_years(keys: dict, line: str, context: str, what: str) -> str:
     return line
 
 
+def _fix_title_years(keys: dict, title: str, what: str) -> str:
+    """제목에 연수(29年·四十年 등)가 있으면 연수만 다른 숫자 표현으로 바꿔 다시 쓰게 한다 (2026-11-16 「台所に入るな」29年守…)."""
+    if not _has_years(title):
+        return title
+    try:
+        r = _json_call(keys.get("ANTHROPIC_API_KEY", ""),
+                       f"YouTube の{what}を一か所だけ直す。「年」の付く年数（29年、四十年、22年間など）を消し、"
+                       "金額・回数・日数・年齢・時刻のどれか、または数字なしの言い方に置き換える。ほかの言葉・「」の台詞・#タグ・長さはそのまま。"
+                       '日本語。JSONだけ: {"title": "…"}', title, 400).get("title", "").strip()
+        if r and not _has_years(r):
+            print(f"[rodoku] 제목 연수 교체: {title} → {r}", flush=True)
+            return r
+    except Exception as e:
+        print(f"[rodoku] 제목 연수 교체 실패: {e}", flush=True)
+    return title
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -3309,6 +3327,8 @@ def _pack(state, keys):
     except Exception as e:
         print(f"[rodoku] 대사형 섬네일 실패 → 예비 섬네일 사용: {e}", flush=True)
         state["thumb_v2_error"] = str(e)[:200]
+    if pack.get("title"):
+        pack["title"] = _fix_title_years(keys, pack["title"], "本編のタイトル")
     tag = PLAYLIST_TAG[_playlist_key(plan)]
     if pack.get("title") and tag not in pack["title"]:
         tb = re.sub(r"^【[^】]*】", "", pack["title"].strip()).strip()
