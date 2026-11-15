@@ -274,7 +274,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a chic hairstyle of an elegant woman in her mid-fifties with a few silver strands (e.g. a short layered bob with soft waves / shoulder-length soft waves tucked behind one ear / an elegant low chignon — never long girlish hair), a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, a tasteful outfit of her generation and its colors (e.g. fine-knit cardigan over a blouse, camel coat, wide slacks or a long pleated skirt, no red), one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a chic hairstyle of an elegant woman in her mid-fifties with a few silver strands (e.g. a short layered bob with soft waves / shoulder-length soft waves tucked behind one ear / an elegant low chignon — never long girlish hair), a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, a tasteful outfit of her generation, one of these kinds and different every episode (a camel wool coat over a navy turtleneck / a dusty-blue shirt with a long grey skirt / a charcoal knit dress with a small brooch / a beige trench coat over a striped top / a soft lavender twinset with wide navy slacks / an indigo denim shirt-jacket over a white tee; never a green cardigan over a cream blouse — used too often; no red), one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -2934,6 +2934,20 @@ def _variant(state, n: int, salt: str = "") -> int:
     return int(h[:8], 16) % n
 
 
+THUMB_POSES = [
+    "Framed from the chest up, her body turned three-quarters toward the empty side, her eyes to the viewer.",
+    "A tight close-up of her face and neck, facing the viewer straight on, chin lowered.",
+    "Framed from the waist up, in profile facing the empty side, her eyes on something in the distance.",
+    "Framed from the chest up, she looks down at the story's key object held in both hands at chest height.",
+    "Framed from the chest up, her back half turned, she looks back over her shoulder at the viewer.",
+    "Framed from the chest up, one hand resting at her collarbone, her head tilted, her eyes to the viewer.",
+]
+THUMB_FACE_SUKA = ["a cool composed gaze with no smile", "a faint knowing smile at one corner of her mouth",
+                   "eyebrows raised in quiet surprise, lips parted", "lips pressed firm, a resolute stare"]
+THUMB_FACE_MOVE = ["eyes glistening with held-back tears, lips pressed together", "a soft tired smile with wet eyes",
+                   "eyes wide in shock, one hand at her mouth", "a gentle relieved smile, eyes shining"]
+
+
 def _thumb_layout(state, keys) -> tuple:
     """섬네일 배치(얼굴 좌우·색·글씨 높이)를 편 순서대로 돌려, 바로 앞 편과 늘 다르게 (2026-11-14: 무작위로 골랐더니
     『A-17の里芋』『千本鳥居の案内人』이 같은 배치로 나란히 나옴). 한 번 정하면 그 편에 저장해 다시 만들기에도 같게."""
@@ -2943,6 +2957,7 @@ def _thumb_layout(state, keys) -> tuple:
     try:
         pid = str(state.get("project_id", ""))
         k = sum(1 for p in cloud_index(keys) if str(p) < pid)
+        state["thumb_k"] = k
         lay = (k % 2, k % 3, (k // 2) % 3)
     except Exception:
         lay = (_variant(state, 2, "side"), _variant(state, 3, "pal"), _variant(state, 3, "pos"))
@@ -2993,18 +3008,20 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     if not hr.get("look_en"):
         raise RuntimeError("주인공 외모 설명(look_en)이 없음")
     suka = is_sukatto(plan.get("kind", ""))
-    face = ("calm and dignified, a faint knowing smile, her eyes looking straight at the viewer" if suka
-            else "her eyes glistening with held-back tears, lips pressed together, looking straight at the viewer")
     place = ((plan.get("setting") or {}).get("place") or "a quiet Japanese living room").strip()
     # 편마다 배치·색·글씨 높이를 바꾼다 (같은 틀의 섬네일이 줄지어 있으면 '템플릿 대량 생산'으로 보임. 2026-11-13)
     side_i, pal_i, pos_i = _thumb_layout(state, keys)
+    # 자세·거리·표정도 편 순서대로 돌린다 (2026-11-15: 『A-17』『あぜ道』 둘 다 왼쪽 3/4 얼굴, 같은 미소, 같은 초록 카디건)
+    k = int(state.get("thumb_k") or _variant(state, 6, "pose"))
+    pose = THUMB_POSES[k % len(THUMB_POSES)]
+    face = (THUMB_FACE_SUKA if suka else THUMB_FACE_MOVE)[(k // 2) % 4]
     right = side_i == 0
     pal = [((255, 226, 84), (196, 48, 40)), ((255, 250, 242), (34, 58, 104)), ((255, 205, 178), (38, 92, 70))][pal_i]
     vpos = ["mid", "high", "low"][pos_i]
     me, other = ("right", "left") if right else ("left", "right")
     body = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}"
-            f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame, framed from the chest up, "
-            f"her face large and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
+            f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame. {pose} "
+            f"Her face is large and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
             f"Warm light on her face. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_base.jpg")
