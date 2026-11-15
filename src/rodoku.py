@@ -287,6 +287,10 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "plants": [{"what": "伏線（物・台詞・習慣。具体的に）", "plant_ch": 1, "payoff_ch": 5, "meaning": "回収で変わる意味"}],
   "ally": "クライマックスで主人公の側に立つ人物と、その場にいる理由（前の章で用意しておく。偶然にしない）",
   "settlement": "結末で、お金・名義・家・関係がどう決着したか（具体的に。スカッと以外は空でよい）",
+  "hidden_card": {"kind": "ユーザー文で指定された隠し玉の種類", "truth": "主人公の隠し玉（周りが知らない主人公の経歴・資格・持ち分・人とのつながり。日本の暮らしで本当にありうる大きさ。例: 見下されているパートの主人公が実はこの店の土地の地主／元・家庭裁判所の調停委員／その会社の創業メンバーで株を3%持つ）",
+                  "plant_ch": 1, "plant": "第1章でさりげなく見せる手がかり（手の癖・本棚の一冊・誰かの呼び方。聴き手が後で「あれか」と思える具体的な一つ）",
+                  "reveal_ch": 5, "reveal": "隠し玉が明かされる場面（誰の口から・どの物で。相手の顔色が変わる一行まで）"},
+  "mid_counter": {"ch": 3, "what": "中盤の小さな反撃（主人公が一度だけ相手の小さな嘘・数字の誤りを静かに正し、その場を切り抜ける。相手はもっと大きな手で来る）"},
   "short_lines": [{"role": "blow", "ch": 1, "line": "主人公が受ける一撃の台詞（「」付き25字以内）。初めて聞く人がこの一言だけで、誰が・誰に・何を奪おう／見下そうとしているか分かること: 呼び方で関係が分かり（お義母さん・母さん・おまえ・パートさん）、具体的な物（年金・家・通帳・名義・店・金額）が入る。良い例:「お義母さんの年金、今月から私が預かりますね」「この家は売る。母さんは施設な」「パートのおばさんは黙っててください」。悪い例:「経営は無理でしょ」「後で戻す」（誰の何の話か分からない）。頭の中で5つ作り、いちばん指が止まる一つを書く。この台詞は第1章の最初の一文になる"},
                   {"role": "turn", "ch": 4, "line": "形勢が変わる瞬間の一文（隠していた物・事実が出る。できれば主人公か味方の台詞で、物か金額を声に出す。例:「この通帳、名義は私です」。40字以内）"},
                   {"role": "last", "ch": 6, "line": "最後に主人公が言う品のある一言（「」付き25字以内。勝ち誇らない）"}],
@@ -335,6 +339,11 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
      聴き手は自分の暮らしで知っているので、現実とずれると冷める。金額は日本の常識の範囲で具体的に（結婚祝いに百万円は非常識、など）。
   ⑦ 結末では settlement（お金・家・関係がどう決着したか）を一場面で示し、相手のその後を短く添える。勝ったあとの主人公の品のよい小さな親切を一つ入れる（相手を見捨てない・やるべきことはする）。
   ⑧ 第1章の冒頭の出来事や無礼な人物は、最終章で回収する（首尾呼応）。
+  ⑩ 隠し玉（hidden_card）: 主人公には周りが知らない経歴・資格・持ち分・人脈が一つある。第1章で手がかりを一つだけ見せ、反転の章で明かす。
+     明かすのは主人公の口から静かに、または ally・第三者の口から（「…あなた、もしかして〇〇の」）。偶然ではなく、手がかりから「そういえば」と思える形に（2026-11-16: 書類や録音だけで静かに勝つ回が続き、驚きが弱かった。スカッと作品でいちばん反応が大きいのは「正体」が明かされる瞬間）。
+     大きさは現実的に（社長・会長・大富豪にしない。地主、元調停委員、元税務署員、創業メンバー、株主、元銀行の融資担当、法廷通訳など）。
+  ⑪ 中盤に小さな反撃（mid_counter）を一度入れる。そこで相手は引かず、もっと大きな手（親族を巻き込む、書類を作る）で来る。最後の大きな逆転まで、聴き手の期待を二段で上げる。
+  ⑫ 相手は幼稚にしない（大声でわめくだけの悪人は冷める）。相手にも筋の通った言い分を一つ持たせ、皮肉の効いた一言（主人公の静かな切り返し）で形勢が変わる場面を一つ入れる。
   ⑨ 第1章は blow の台詞から始める（最初の一文がその台詞。情景描写・朝の支度・匂いから入らない）。2文目で主人公の静かな反応、3文目までに失うかもしれない物と金額が分かる
      （2026-11-15: 冒頭が「食パンが焼けるにおいが…」のような情景から始まる回が多く、ショートも本編も最初の数秒で離脱していた）。
 - SceneStory らしさ（よくあるスカッと朗読との違い。2026-11-13 視聴者の不満の調査から）:
@@ -608,6 +617,20 @@ OUTFITS = [
 ]
 
 
+HIDDEN_KINDS = ["元の職業（元・税務署員、元・銀行の融資担当、元・家庭裁判所の調停委員、元・看護師長など）",
+                "持ち分（土地・建物の名義、会社の株、店の権利）",
+                "資格・技能（法廷通訳、宅建士、簿記一級、古文書が読める、筆跡が分かる）",
+                "人とのつながり（相手の取引先・上司・恩人と昔から縁がある）",
+                "長年の記録（家計簿・日誌・領収書を何年も正確につけてきた）",
+                "過去の善行（昔、誰かを助けたことが巡り巡って戻ってくる）"]
+
+
+def pick_hidden(recent: list) -> str:
+    import random
+    used = {r.get("hidden", "") for r in (recent or [])[:3]}
+    return random.choice([h for h in HIDDEN_KINDS if h not in used] or HIDDEN_KINDS)
+
+
 def pick_look(recent: list) -> tuple:
     import random
     used = {r.get("hair", "") for r in (recent or [])[:3]}
@@ -630,6 +653,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     era, era_things = random.choice(ERA_PAST)
     pw = pick_place_weather([r.get("region", "") for r in (recent or [])])
     hair, outfit = pick_look(recent)
+    hidden = pick_hidden(recent)
     hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
@@ -642,7 +666,8 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
             f"主人公の髪型（必須・look_en にこの通り英語で書く）: {hair[1]}\n"
-            f"主人公の服（必須・look_en にこの通り英語で書く）: {outfit}\n\n"
+            f"主人公の服（必須・look_en にこの通り英語で書く）: {outfit}\n"
+            f"主人公の隠し玉の種類（hidden_card.kind・スカットのとき必須）: {hidden}\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
             f"\n\n章の数: ちょうど {n_chapters} 章\n"
@@ -662,6 +687,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan.update({k: pw[k] for k in ("region", "region_en", "month", "season", "weather", "weather_en")})
     plan["era"] = era
     plan["hair"], plan["outfit"] = hair[0], outfit
+    plan["hidden"] = hidden
     return plan
 
 
@@ -688,7 +714,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
                     "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
-                    "hair": pl.get("hair", ""), "outfit": pl.get("outfit", ""),
+                    "hair": pl.get("hair", ""), "outfit": pl.get("outfit", ""), "hidden": pl.get("hidden", ""),
                     "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
 
@@ -769,11 +795,12 @@ EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者で
  reality（お金・相続・年金・名義・離婚・病院などの手続きと金額が日本の現実と常識に合っているか）
  dialogue（台詞が自然な日本語か。世代・関係・土地で話し方が分かれているか。説明台詞・同じ言い回しの繰り返し・感情の説明がないか）
  opening（第1章の最初の一文が人物の台詞で、3文目までに誰が・何を失いそうか分かるか。情景描写から始まったら4点以下）
+ surprise（隠し玉が第1章の手がかりから「そういえば」と思える形で明かされ、相手の顔色が変わる場面があるか。中盤に小さな反撃があるか。書類だけで静かに勝つなら4点以下）
  consistency（章をまたいで人物の職業・年齢・年数・関係・「いつ知ったか」が食い違わないか。冒頭の語り（narrator_intro）に出る人物や物が本編とつながっているか。   例（2026-11-15『登記簿の女』）: 第2章で高校の英語教師の女が第6章で「大学で教えていた」、数日前に名前を知った相手を「十一年間、名前だけを知っていた」、冒頭の語りの「伯母」が本編に一度も出ない → 3点以下）
 直すべき章を最大3つ選び、具体的な直し方を書く（「もっと良く」ではなく「第5章で、相手が序盤に言った〇〇を主人公が自分で突きつける場面にする」のように）。
-reality・consistency が6点以下なら、その問題がある章は必ず直す対象に入れる（食い違いはどの章のどの言葉をどう直すかまで書く）。
+reality・consistency（スカットでは surprise も）が6点以下なら、その問題がある章は必ず直す対象に入れる（食い違いはどの章のどの言葉をどう直すかまで書く）。
 直し方の説明に「第1章の」「第5章で」と書くのはよいが、それは本文に書く言葉ではない。
-JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "scores": {"agency": 0, "payoff": 0, "temperature": 0, "promise": 0, "questions": 0, "reality": 0, "dialogue": 0, "opening": 0, "consistency": 0},
+JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "scores": {"agency": 0, "payoff": 0, "temperature": 0, "promise": 0, "questions": 0, "reality": 0, "dialogue": 0, "opening": 0, "consistency": 0, "surprise": 0},
  "fix": [{"no": 章番号, "note": "具体的な直し方"}]}"""
 
 
@@ -817,6 +844,17 @@ def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_cha
             + [f"この章で回収する伏線: {p.get('what', '')} → {p.get('meaning', '')}" for p in pl if _int0(p.get("payoff_ch")) == ch["no"]])
     here += [f"この章に必ずそのまま入れる一文（60秒ショートで切り出すため、一字も変えない）: {x.get('line', '')}"
              for x in (plan.get("short_lines") or []) if isinstance(x, dict) and _int0(x.get("ch")) == ch["no"] and x.get("line")]
+    hc = plan.get("hidden_card") if isinstance(plan.get("hidden_card"), dict) else {}
+    if hc.get("truth"):
+        if _int0(hc.get("plant_ch")) == ch["no"] and hc.get("plant"):
+            here.append(f"隠し玉の手がかりを一つだけ、さりげなく見せる（正体はまだ明かさない）: {hc['plant']}")
+        if _int0(hc.get("reveal_ch")) == ch["no"]:
+            here.append(f"この章で主人公の隠し玉が明かされる: {hc['truth']} ／ 場面: {hc.get('reveal', '')}。相手の顔色が変わる一行を書く")
+        elif _int0(hc.get("reveal_ch")) > ch["no"]:
+            here.append("主人公の隠し玉（経歴・持ち分など）はこの章ではまだ明かさない")
+    mc = plan.get("mid_counter") if isinstance(plan.get("mid_counter"), dict) else {}
+    if mc.get("what") and _int0(mc.get("ch")) == ch["no"]:
+        here.append(f"この章で中盤の小さな反撃: {mc['what']}")
     blow = next((x.get("line", "") for x in (plan.get("short_lines") or []) if isinstance(x, dict) and x.get("role") == "blow"), "")
     if ch["no"] == 1 and blow:
         here.append(f"この章の最初の一文は、この台詞そのもの（情景・匂い・朝の支度から始めない）: {blow}")
