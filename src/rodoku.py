@@ -1056,6 +1056,7 @@ TRAILER_SYSTEM = """あなたはYouTubeショートの予告編編集者です�
 【最初の一文が勝負】ショートは最初の1秒で指が止まるかで決まる（2026-11-11: 見ずにスワイプ57%）。抜き出しの最初の一文は、その一節でいちばん強い一言にする。
 できれば人物の台詞「」（見下す言葉、隠していた本音、取り返しのつかない宣告、金額や年数の入った一言）。挨拶・説明・天気・丁寧な前置きから始めない。
 hook_line は、最初の一文が台詞ならその台詞を「」付きで14字以内に縮めたもの。台詞でなければ8〜14字の問いかけ。
+hook_line・画面の台詞は、人物が実際に口にした話し言葉に限る。通知・書類・口座・看板・メモの文面や数字の羅列は台詞ではない（2026-11-15『六〇五号室の湯呑み』:「毎月5千円・22年間継続」という振込記録の文面が台詞として画面に出た）。抜き出しの最初の一文が書類の文面なら、その直後に人が言う台詞を hook_line にする。
 hook_line はそれだけ読んで意味が一つに決まる言葉にする（2026-11-14『A-17の里芋』の「里芋って地味じゃない」は見下しか褒め言葉か読めない）。見下す台詞なら語尾の棘を残す（〜でしょ／〜のくせに／〜なさいよ）。
 【語尾】画面に出す台詞を「〜ない」「〜じゃない」「〜なかった」で終えない（2026-11-14: 直近6本の文言がすべて「〜ない」で終わり、一覧で同じに見えた）。問い（〜の？／〜ですか）、命令（〜なさい）、言い切り（〜よ／〜です）、数字や名前で終える台詞を選ぶ。
 【最後の一文も勝負】抜き出しは「次に何が起きるか」が宙づりになる文で終える: 答えの出ていない問い、明かされる直前の物・名前・金額、取り返しのつかない宣告。
@@ -1102,7 +1103,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            並びは毎回同じにしない（同じ型の題が並ぶと量産チャンネルに見え、YouTube の収益審査で不利）。ユーザー文の「並び」に従う:
            A=①状況→②台詞→③返し→④予告 / B=②台詞から始め→①状況→④予告（③は省いてよい）/ C=数字の事実から始める（「年金月6万の母に…」「毎朝4時に家を出る夫が…」）→②台詞→④予告。
            作品タイトルは入れない。結末・真実は書かない",
- "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの。「〜ない」「〜じゃない」で終えない）",
+ "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの。人が口にした話し言葉だけ。書類・記録・通知の文面や数字の羅列は不可。年数を入れない。「〜ない」「〜じゃない」で終えない）",
  "title_order": "使った並び（A/B/C）",
  "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時／通帳残高3187円。「〜年前／〜年後／〜年分」の年数は使わない）",
  "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの。「〜ない」で終えない）",
@@ -2672,7 +2673,19 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
                                 300).get("end_tease") or "").strip()
         except Exception as e:
             print(f"[rodoku] 끝 질문 다시 받기 실패: {e}", flush=True)
-    sec = min(hz.duration(au) + (2.6 if tease else 1.5), 62.0)
+    tail = 2.6 if tease else 1.5
+    if hz.duration(au) + tail > 62.0:
+        # 낭독이 길면 62초 직전 숨자리에서 끊는다 (2026-11-15『六〇五号室』: 「廊下の向こう、」 문장 중간에 잘리고 끝 질문이 자막을 덮음)
+        cut = max([q for q in _quiet_points(au) if q < 62.0 - tail - 0.2] or [62.0 - tail])
+        au2 = os.path.join(os.path.dirname(au), "short_trim.mp3")
+        try:
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", au, "-t", f"{cut:.2f}", "-af",
+                            f"afade=t=out:st={max(cut - 0.3, 0):.2f}:d=0.3", au2], check=True, timeout=120)
+            au = au2
+            print(f"[rodoku] 쇼츠 낭독이 길어 {cut:.1f}초 숨자리에서 끊음", flush=True)
+        except Exception as e:
+            print(f"[rodoku] 쇼츠 낭독 자르기 실패: {e}", flush=True)
+    sec = min(hz.duration(au) + tail, 62.0)
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     face_img = ""
     if state.get("hook_face_on", True):
@@ -3233,12 +3246,19 @@ def _pack(state, keys):
         a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "")
         if a:
             # B·C 도 같은 얼굴 그림에 문구만 바꾼 새 형식 (그림 추가 비용 없음). 예전 형식은 쓰지 않는다 (2026-11-13)
-            b = _thumb_v2(state, keys, pack.get("thumb_reply") or "", pack.get("thumb_sub") or "", a["base"], "B",
-                          "예비 — 주인공의 한마디 + 얼굴")
-            c = _thumb_v2(state, keys, f"『{plan.get('title_ja', '')}』", pack.get("thumb_sub") or "", a["base"], "C",
-                          "예비 — 작품 제목 + 얼굴")
+            b = c = None
+            try:     # B·C 하나가 실패해도 A 는 남긴다 (2026-11-15『六〇五号室』: B 가 예전 형식으로 나옴)
+                b = _thumb_v2(state, keys, pack.get("thumb_reply") or "", pack.get("thumb_sub") or "", a["base"], "B",
+                              "예비 — 주인공의 한마디 + 얼굴")
+            except Exception as e:
+                print(f"[rodoku] 섬네일 B 실패: {e}", flush=True)
+            try:
+                c = _thumb_v2(state, keys, f"『{plan.get('title_ja', '')}』", pack.get("thumb_sub") or "", a["base"], "C",
+                              "예비 — 작품 제목 + 얼굴")
+            except Exception as e:
+                print(f"[rodoku] 섬네일 C 실패: {e}", flush=True)
             old = {t.get("tag"): t for t in state.get("thumbnails") or []}
-            state["thumbnails"] = [a, b or old.get("B"), c or old.get("C")]
+            state["thumbnails"] = [a, b, c]       # 예전 형식(B·C)은 섞지 않는다
             state["thumbnails"] = [t for t in state["thumbnails"] if t]
             state["thumbnail"] = a
         state.pop("thumb_v2_error", None)
