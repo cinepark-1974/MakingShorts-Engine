@@ -452,6 +452,10 @@ def render_project(st, manager, api_keys, show_banner):
                     st.warning(f"{lab} 곡을 만들지 못했습니다 (이 곡 없이 합성): {it['error']}")
 
     fin = state.get("final") or {}
+    if state.get("flux_used") or state.get("gpt_image_fail_count"):
+        st.warning(f"GPT 그림이 {state.get('gpt_image_fail_count') or 0}번 실패해 장면 그림 {state.get('flux_used') or 0}장을 "
+                   f"예비 모델(flux)로 그렸습니다. flux 는 주인공을 젊게 그리는 경향이 있습니다. "
+                   f"실패 이유: {(state.get('gpt_image_error') or '')[:200]} — 'insufficient/quota/billing'이면 OpenAI 결제 잔액을 확인해 주세요.")
     if fin.get("seconds"):
         with st.container(border=True):
             st.markdown(f"**본편 (16:9)** · {hz.fmt_time(fin['seconds'], True)} · {fin.get('bytes', 0) / 1e6:.0f}MB · {fin.get('made_at', '')}")
