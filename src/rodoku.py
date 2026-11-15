@@ -2522,6 +2522,8 @@ def _complete_short(job, state, keys, folder: str):
     full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in chs)
     hint = json.dumps(plan.get("short_lines") or [], ensure_ascii=False)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), COMPLETE_SYSTEM, f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
+    if pick.get("hook_line"):
+        pick["hook_line"] = _fix_years(keys, pick["hook_line"], full, "ショート画面上部の台詞")
     parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:3]
     if len(parts) < 3:
         return None
@@ -2616,6 +2618,8 @@ def _trailer(job, state, keys, slot: int = 0):
                 "hook_line はその台詞そのものを「」付きで14字以内に縮めたもの（例：「家にいるだけで楽でいいな」）。「〜ない」で終えない。"
                 "shorts_title も台詞を「」で先頭に置き、金額・時刻・回数・日数・年齢のどれかの数字を入れる（「〜年前／〜年後／〜年間／〜年分」の年数は使わない）。\n\n" + full)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), TRAILER_SYSTEM, full, max_tokens=1500)
+    if pick.get("hook_line"):
+        pick["hook_line"] = _fix_years(keys, pick["hook_line"], pick.get("excerpt", "") + "\n\n" + full, "ショート画面上部の台詞")
     excerpt = (pick.get("excerpt") or "").strip()
     if not excerpt:
         raise ValueError("예고 대목을 고르지 못했습니다.")
@@ -3066,6 +3070,33 @@ _NO_HEAD = "ずゃゅょぁぃぅぇぉっーん」』）、。！？"     # 줄
 _NO_SPLIT = {"でも", "では", "には", "のに", "のだ", "のよ", "のね", "がら", "もう", "もの"}  # 이 두 글자 사이는 끊지 않는다
 
 
+_YEARS = re.compile(r"[0-9０-９一二三四五六七八九十百]+\s*年(前|後|間|目|分|ぶり|越し|遅|早|も|が|の|を|に|、|。|」|$)?")
+
+
+def _has_years(text: str) -> bool:
+    """「四十年遅かった」「22年間」 같은 연수 표현이 있는지 (나이 '歳'·연도 없는 금액은 통과)."""
+    return bool(_YEARS.search(text or ""))
+
+
+def _fix_years(keys: dict, line: str, context: str, what: str) -> str:
+    """화면 문구·섬네일 대사에 연수가 들어가면 같은 이야기에서 연수 없는 다른 대사로 바꾼다
+    (2026-11-15『四十七枚の厨房』: 규칙을 어기고 「四十年遅かった」가 섬네일·쇼츠에 나옴 → 지시만으로는 안 막혀 코드로 막음)."""
+    if not _has_years(line):
+        return line
+    try:
+        r = _json_call(keys.get("ANTHROPIC_API_KEY", ""),
+                       f"朗読ドラマの{what}を作り直す。下の本文で人物が実際に口にした台詞から一つ選び、「」付き16字以内に縮める。"
+                       "年数（〜年、四十年、22年など「年」の付く数）を絶対に入れない。金額・名前・物・命令・問いの台詞を優先。「〜ない」で終えない。"
+                       '台詞の一字も作らない（本文にある言葉だけ）。JSONだけ: {"line": "「…」"}',
+                       f"使えない例: {line}\n\n本文:\n{context[:6000]}", 400).get("line", "").strip()
+        if r and not _has_years(r):
+            print(f"[rodoku] 연수 들어간 {what} 교체: {line} → {r}", flush=True)
+            return r
+    except Exception as e:
+        print(f"[rodoku] {what} 교체 실패: {e}", flush=True)
+    return line
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -3248,6 +3279,14 @@ def _pack(state, keys):
     pack.setdefault("shorts_comment", f"本編『{plan.get('title_ja', '')}』は画面下のリンクからどうぞ。")
     pack["playlist"] = playlist_for(plan)
     try:
+        _story = "\n".join(c.get("text", "") for c in state.get("chapters", []))
+        for _k, _w in (("thumb_quote", "サムネイルの相手の台詞"), ("thumb_reply", "サムネイルの主人公の台詞")):
+            if pack.get(_k):
+                pack[_k] = _fix_years(keys, pack[_k], _story, _w)
+        if _has_years(pack.get("thumb_sub", "")):
+            pack["thumb_sub"] = re.sub(r"[、・\s]*" + _YEARS.pattern, "", pack["thumb_sub"]).strip("、・ ") or plan.get("title_ja", "")
+        if _has_years(hook):
+            hook = _fix_years(keys, hook, _story, "サムネイルの台詞")
         a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "")
         if a:
             # B·C 도 같은 얼굴 그림에 문구만 바꾼 새 형식 (그림 추가 비용 없음). 예전 형식은 쓰지 않는다 (2026-11-13)
