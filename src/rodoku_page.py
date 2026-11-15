@@ -358,7 +358,8 @@ def render_project(st, manager, api_keys, show_banner):
                     c["motion"] = {}
                     for sc in c.get("extra") or []:
                         sc["image"], sc["motion"] = {}, {}
-                for k in ("final", "trailer", "trailers", "thumbnail", "upload_pack"):
+                for k in ("final", "trailer", "trailers", "thumbnail", "thumbnails", "upload_pack", "thumb_v2_error",
+                          "gpt_no_credit", "gpt_image_error", "gpt_image_fail_count", "flux_used"):   # 잔액 없음 기록도 지움
                     state.pop(k, None)
                 state["stage"] = "images"
                 import shutil
