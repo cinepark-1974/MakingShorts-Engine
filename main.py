@@ -24,9 +24,9 @@ LOGO_B64 = _load_logo_b64()
 
 # ── 채널 ─────────────────────────────────────────────────────────────────────
 # 프로젝트 state["channel"] 에 저장된다. 예전 프로젝트(값 없음)는 커피로 본다.
-CHANNELS = {
-    "coffee":     "너도나도아는커피",
+CHANNELS = {                       # 2026-11-15: SceneStory 에 집중 → 맨 앞·처음 열면 SceneStory
     "scenestory": "SceneStory",
+    "coffee":     "너도나도아는커피",
     "hasira":     "HASIRA_yo!",
 }
 CHANNEL_KEYS = list(CHANNELS.keys())
@@ -39,7 +39,7 @@ def project_channel(state: dict) -> str:
 
 def current_channel() -> str:
     ch = st.session_state.get("channel_pick")
-    return ch if ch in CHANNELS else st.session_state.get("_last_channel", "coffee")
+    return ch if ch in CHANNELS else st.session_state.get("_last_channel", "scenestory")
 
 
 # ── 구글 드라이브 레퍼런스 이미지 목록 로드 ──────────────────────────────────
@@ -801,7 +801,7 @@ with st.sidebar:
 def _on_channel_change():
     ch = st.session_state.get("channel_pick")
     if ch not in CHANNELS:          # 선택된 것을 다시 눌러 해제한 경우 → 이전 채널 유지
-        st.session_state["channel_pick"] = st.session_state.get("_last_channel", "coffee")
+        st.session_state["channel_pick"] = st.session_state.get("_last_channel", "scenestory")
         return
     st.session_state["_last_channel"] = ch
     cur = st.session_state.get("current_project")
@@ -810,7 +810,7 @@ def _on_channel_change():
 
 
 if st.session_state.get("channel_pick") not in CHANNELS:
-    st.session_state["channel_pick"] = st.session_state.get("_last_channel", "coffee")
+    st.session_state["channel_pick"] = st.session_state.get("_last_channel", "scenestory")
 st.segmented_control(
     "채널", CHANNEL_KEYS, format_func=lambda k: CHANNELS[k],
     key="channel_pick", on_change=_on_channel_change, label_visibility="collapsed",
