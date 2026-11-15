@@ -767,16 +767,21 @@ EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者で
  reality（お金・相続・年金・名義・離婚・病院などの手続きと金額が日本の現実と常識に合っているか）
  dialogue（台詞が自然な日本語か。世代・関係・土地で話し方が分かれているか。説明台詞・同じ言い回しの繰り返し・感情の説明がないか）
  opening（第1章の冒頭3文で出来事が始まるか）
+ consistency（章をまたいで人物の職業・年齢・年数・関係・「いつ知ったか」が食い違わないか。冒頭の語り（narrator_intro）に出る人物や物が本編とつながっているか。   例（2026-11-15『登記簿の女』）: 第2章で高校の英語教師の女が第6章で「大学で教えていた」、数日前に名前を知った相手を「十一年間、名前だけを知っていた」、冒頭の語りの「伯母」が本編に一度も出ない → 3点以下）
 直すべき章を最大3つ選び、具体的な直し方を書く（「もっと良く」ではなく「第5章で、相手が序盤に言った〇〇を主人公が自分で突きつける場面にする」のように）。
-reality が6点以下なら、その問題がある章は必ず直す対象に入れる。
-JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "scores": {"agency": 0, "payoff": 0, "temperature": 0, "promise": 0, "questions": 0, "reality": 0, "dialogue": 0, "opening": 0},
+reality・consistency が6点以下なら、その問題がある章は必ず直す対象に入れる（食い違いはどの章のどの言葉をどう直すかまで書く）。
+直し方の説明に「第1章の」「第5章で」と書くのはよいが、それは本文に書く言葉ではない。
+JSONだけを出力: {"overall": "全体の講評（日本語2〜3文）", "scores": {"agency": 0, "payoff": 0, "temperature": 0, "promise": 0, "questions": 0, "reality": 0, "dialogue": 0, "opening": 0, "consistency": 0},
  "fix": [{"no": 章番号, "note": "具体的な直し方"}]}"""
 
 
 def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
     """완성도 게이트: 원고 전체를 설계도와 대조해 8항목 채점 → 약한 장 최대 3개에 고칠 점."""
     full = "\n\n".join(f"第{c['no']}章「{c.get('title_ja', '')}」\n{c.get('text', '')}" for c in chs)
-    design = {k: plan.get(k) for k in ("kind", "logline_ja", "turn", "core", "plants", "ally", "settlement", "ending_ja") if plan.get(k)}
+    design = {k: plan.get(k) for k in ("kind", "logline_ja", "turn", "core", "plants", "ally", "settlement", "ending_ja",
+                                       "characters") if plan.get(k)}
+    if plan.get("narrator_intro"):
+        full = f"【冒頭の語り（本編の前に読まれる）】\n{plan['narrator_intro']}\n\n" + full
     try:
         gb = genre_build(plan.get("kind", ""))
         rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
@@ -825,7 +830,9 @@ def write_chapter(api_key: str, plan: dict, ch: dict, prev_text: str, target_cha
     if n < target_chars * 0.75 or n > target_chars * 1.3:
         fix = (user + f"\n\n[前回の原稿 — {n}字。分量が範囲外です。物語はそのままに {target_chars}字前後に整えてください]\n" + text)
         text = _text_call(api_key, system, fix, max_tokens=4000)
-    return re.sub(r"^#.*\n", "", text).strip()
+    text = re.sub(r"^#.*\n", "", text).strip()
+    # 편집자 지시의 '第一章の朝' 같은 말이 본문에 새어 들어가지 않게 (2026-11-15『登記簿の女』 第4章: 「第一章の朝、啓一が…」)
+    return re.sub(r"第[一二三四五六七八九十〇0-9０-９]+章(の|で|に|から)?", lambda m: "あの" if m.group(1) == "の" else "", text)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1093,7 +1100,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            スカッと以外の型（感動・恋・懐かしい）も同じ形で、②を相手の忘れられない一言、④を「その理由に…」「3日後に届いた答えは…」にする。
            予告ショートの台詞が渡されたときは、それを②の最初の台詞として一字も変えずに使う（ショートを見た人が同じ話だと気づくため）。
            並びは毎回同じにしない（同じ型の題が並ぶと量産チャンネルに見え、YouTube の収益審査で不利）。ユーザー文の「並び」に従う:
-           A=①状況→②台詞→③返し→④予告 / B=②台詞から始め→①状況→④予告（③は省いてよい）/ C=数字の事実から始める（「通帳残高3187円の母に…」「年金月6万の母に…」）→②台詞→④予告。
+           A=①状況→②台詞→③返し→④予告 / B=②台詞から始め→①状況→④予告（③は省いてよい）/ C=数字の事実から始める（「年金月6万の母に…」「毎朝4時に家を出る夫が…」）→②台詞→④予告。
            作品タイトルは入れない。結末・真実は書かない",
  "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの。「〜ない」「〜じゃない」で終えない）",
  "title_order": "使った並び（A/B/C）",
@@ -2657,6 +2664,14 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
     excerpt = pick.get("excerpt", "")
     no = c["no"]
     tease = (pick.get("end_tease") or "").strip() if kind == "teaser" else ""
+    if kind == "teaser" and not tease:      # 2026-11-15『登記簿の女』: 끝 질문이 빠진 채 나옴 → 따로 한 번 더 받는다
+        try:
+            tease = (_json_call(keys.get("ANTHROPIC_API_KEY", ""), "朗読ドラマの60秒ショートの最後に2秒出す問いを一つ作る。"
+                                "12〜20字、日本語、「」なし、？で終える。抜き出しの続きで視聴者がいちばん知りたいことを問う。結末は明かさない。"
+                                "JSONだけ: {\"end_tease\": \"…？\"}", f"作品: {(state.get('plan') or {}).get('title_ja', '')}\n抜き出し:\n{excerpt}",
+                                300).get("end_tease") or "").strip()
+        except Exception as e:
+            print(f"[rodoku] 끝 질문 다시 받기 실패: {e}", flush=True)
     sec = min(hz.duration(au) + (2.6 if tease else 1.5), 62.0)
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     face_img = ""
@@ -2693,7 +2708,7 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
                     "-movflags", "+faststart", out], check=True, timeout=600)
     item = {"local": out, "seconds": round(sec, 1), "chapter": no, "excerpt": excerpt,
                         "hook_line": pick.get("hook_line", ""), "shorts_title": pick.get("shorts_title", ""),
-                        "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no],
+                        "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no], "end_tease": tease,
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
         state["trailer"] = item
