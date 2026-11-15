@@ -274,7 +274,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: a chic hairstyle of an elegant woman in her mid-fifties with a few silver strands (e.g. a short layered bob with soft waves / shoulder-length soft waves tucked behind one ear / an elegant low chignon — never long girlish hair), a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, a tasteful outfit of her generation, one of these kinds and different every episode (a camel wool coat over a navy turtleneck / a dusty-blue shirt with a long grey skirt / a charcoal knit dress with a small brooch / a beige trench coat over a striped top / a soft lavender twinset with wide navy slacks / an indigo denim shirt-jacket over a white tee; never a green cardigan over a cream blouse — used too often; no red), one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: the hairstyle given in the request (主人公の髪型), written exactly, with a few silver strands — never long girlish hair, a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, the outfit given in the request (主人公の服), written exactly, no red, one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -580,6 +580,41 @@ def seed_prompt(seed: dict) -> str:
             + (f"\n  補強すること: {seed['weak']}" if seed.get("weak") else "") + "\n")
 
 
+# 주인공 머리 모양 — 일본 50·60대 여성에게 인기 있는 대인 헤어 (ozmall·YouCam 2026 헤어 카탈로그: 쇼트보브·레이어·
+# 쿠비레·원컬·셰기·그레이헤어가 중심). 편마다 무작위, 최근 3편과 겹치지 않게 (2026-11-15: 쇼츠 세 편 연속 같은 단발)
+HAIRSTYLES = [
+    ("ショートボブ", "a classic chin-length short bob with a rounded silhouette and soft inward ends"),
+    ("前下がりボブ", "a sleek A-line bob, shorter at the nape and longer toward the jaw, tucked behind one ear"),
+    ("ハンサムショート", "a crisp layered short cut with the ears showing and side-swept bangs, neat at the nape"),
+    ("くびれミディアム", "shoulder-length hair with a soft waist-like curve at the cheeks and ends curled outward in one loose curl"),
+    ("ゆるふわパーマ", "collarbone-length hair in a soft loose perm, airy waves framing the face"),
+    ("グレイヘアショート", "an elegant salt-and-pepper short cut, silver blended through dark hair, softly tousled on top"),
+    ("まとめ髪", "hair gathered into a low chignon at the nape, a few loose strands framing the face"),
+    ("シャギーボブ", "a shaggy layered bob with light feathered ends flipping outward"),
+    ("丸みショート", "a rounded short cut with soft see-through bangs and volume on top"),
+]
+OUTFITS = [
+    "a camel wool coat over a navy turtleneck",
+    "a dusty-blue shirt with a long grey pleated skirt",
+    "a charcoal knit dress with a small silver brooch",
+    "a beige trench coat over a navy-and-white striped top",
+    "a soft lavender twinset with wide navy slacks",
+    "an indigo denim shirt-jacket over a white tee and beige slacks",
+    "a mustard-yellow knit sweater with dark brown wide trousers",
+    "a light grey tweed jacket over an ivory blouse",
+    "a deep teal pullover with a long charcoal skirt",
+]
+
+
+def pick_look(recent: list) -> tuple:
+    import random
+    used = {r.get("hair", "") for r in (recent or [])[:3]}
+    hair = random.choice([h for h in HAIRSTYLES if h[0] not in used] or HAIRSTYLES)
+    used_o = {r.get("outfit", "") for r in (recent or [])[:3]}
+    outfit = random.choice([o for o in OUTFITS if o not in used_o] or OUTFITS)
+    return hair, outfit
+
+
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
               recent: list = None, viral: str = "", seed: dict = None, archive: str = "") -> dict:
     import random
@@ -592,6 +627,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
     era, era_things = random.choice(ERA_PAST)
     pw = pick_place_weather([r.get("region", "") for r in (recent or [])])
+    hair, outfit = pick_look(recent)
     hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
@@ -602,7 +638,9 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             + ("この作品の組み立て（必須）:\n" + genre_build(kind) + "\n" if genre_build(kind) else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
-            f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n\n"
+            f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
+            f"主人公の髪型（必須・look_en にこの通り英語で書く）: {hair[1]}\n"
+            f"主人公の服（必須・look_en にこの通り英語で書く）: {outfit}\n\n"
             f"検索語リスト（日本・YouTube自動補完、実際に検索されている言葉）:\n" +
             "\n".join(f"- {q}" for q in queries) +
             f"\n\n章の数: ちょうど {n_chapters} 章\n"
@@ -621,6 +659,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan["intro_form"] = intro_form
     plan.update({k: pw[k] for k in ("region", "region_en", "month", "season", "weather", "weather_en")})
     plan["era"] = era
+    plan["hair"], plan["outfit"] = hair[0], outfit
     return plan
 
 
@@ -647,6 +686,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
                     "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
+                    "hair": pl.get("hair", ""), "outfit": pl.get("outfit", ""),
                     "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
 
@@ -1015,7 +1055,7 @@ hook_line はそれだけ読んで意味が一つに決まる言葉にする（2
 動作の描写（手を伸ばした／立ち上がった／そこに立っていた）や情景で終えない（2026-11-14『A-17の里芋』は「里芋に手を伸ばした。」で終わり、続きが気にならなかった）。
 end_tease は、最後に画面に2秒出す問い（12〜20字、日本語、「」なし、？で終える）。抜き出しの続きで視聴者がいちばん知りたいことを問う。結末は明かさない（例: その区画の名義は、誰のものだったのか？）。
 face_en は、その最初の一文を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定して書く（例: her eyes wide and lips slightly parted in stunned silence / her jaw set and eyes cold with quiet resolve）。
-JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す文言", "face_en": "English", "end_tease": "最後に出す問い", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる。金額・時刻・回数・日数・年齢から選ぶ（例：2万円、毎朝4時、7回目、3日後、67歳）。「〜年前／〜年後／〜年間／〜年目／〜年ぶり」の年数は使わない（2026-11-15: 直近の題が「35年後」「20年間」「31年前」「28年後」「31年目」と年数ばかりで、一覧で同じに見えた）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『毎朝4時に消える夫、ポケットの鍵』『月2万円を払い続けた嫁が開いた封筒』。#朗読 と題材に合うハッシュタグ1個を含む"}"""
+JSONだけを出力: {"chapter": 章番号, "excerpt": "抜き出した本文", "hook_line": "画面上部に出す文言", "face_en": "English", "end_tease": "最後に出す問い", "shorts_title": "ショートのタイトル（30字以内）。物語の中の具体的な数字を一つ必ず入れる。金額・時刻・回数・日数・年齢から選ぶ（例：2万円、毎朝4時、7回目、3日後、67歳）。「〜年前／〜年後／〜年間／〜年目／〜年分／〜年ぶり」の年数は使わない（2026-11-15: 直近の題が「35年後」「20年間」「31年前」「28年後」「31年目」と年数ばかりで、一覧で同じに見えた）＋誰の話か＋謎の物か言葉。算用数字で書く。例：『毎朝4時に消える夫、ポケットの鍵』『月2万円を払い続けた嫁が開いた封筒』。#朗読 と題材に合うハッシュタグ1個を含む"}"""
 
 
 def _vertical_anime(raw: str, out: str, sec: int = 12) -> str:
@@ -1047,7 +1087,7 @@ def _vertical_loop(image: str, out: str, sec: int = 12) -> str:
 PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代の女性向けオリジナル朗読ドラマ）のアップロード担当です。JSONだけを出力:
 {"title": "本文だけ（前後の【】はあとで付ける）。60〜85字。人気のシニア朗読チャンネルの型で組む（2026-11-12 調査: 再生上位の題はすべてこの形）:
            ①具体的な時と状況を数字で（離婚2日後の早朝6時／定年退職の翌朝／結婚30年目の誕生日）→ ②相手の台詞を話者付きで（義母「…」夫「…」息子の嫁「…」。見下す・欲深い・突き放す言葉）→
-           ③主人公の静かな返し 私「…」→ ④「直後、」「3日後、」「→結果」など、形勢が変わる予告で「…」と終える。時刻・金額・回数は算用数字。題・サムネイルの数字に「〜年前／〜年後／〜年間／〜年目／〜年ぶり」の年数を使わない（2026-11-15: 直近の題が「35年後」「20年間」「31年前」「28年後」「31年目」と年数ばかりで、一覧で同じに見えた）。金額・時刻・回数・日数・年齢を使う。
+           ③主人公の静かな返し 私「…」→ ④「直後、」「3日後、」「→結果」など、形勢が変わる予告で「…」と終える。時刻・金額・回数は算用数字。題・サムネイルの数字に「〜年前／〜年後／〜年間／〜年目／〜年分／〜年ぶり」の年数を使わない（2026-11-15: 直近の題が「35年後」「20年間」「31年前」「28年後」「31年目」と年数ばかりで、一覧で同じに見えた）。金額・時刻・回数・日数・年齢を使う。
            例：定年退職の翌朝、夫「これからは俺の年金で食わせてやる」私「では、私の通帳はお返ししますね」3日後、夫の顔が真っ青に…
            例：父の葬儀の翌日、兄「家も土地も長男の俺が継ぐ」兄嫁「あなたは他人でしょ」私「ええ、では遺言書を読みますね」直後…
            スカッと以外の型（感動・恋・懐かしい）も同じ形で、②を相手の忘れられない一言、④を「その理由に…」「3日後に届いた答えは…」にする。
@@ -1057,7 +1097,7 @@ PACK_SYSTEM = """あなたはYouTubeチャンネル「SceneStory」（50〜70代
            作品タイトルは入れない。結末・真実は書かない",
  "thumb_quote": "サムネイルに特大で入れる相手の台詞（「」付き、16字以内、②の台詞を縮めたもの。「〜ない」「〜じゃない」で終えない）",
  "title_order": "使った並び（A/B/C）",
- "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時／通帳残高3187円。「〜年前／〜年後」の年数は使わない）",
+ "thumb_sub": "サムネイル上部の小さな一行（12字以内、①の数字入りの状況。例：離婚2日後の朝6時／通帳残高3187円。「〜年前／〜年後／〜年分」の年数は使わない）",
  "thumb_reply": "予備サムネイル用、主人公の静かな返しの台詞（「」付き、14字以内、③を縮めたもの。「〜ない」で終えない）",
  "description": "1行目は物語の最初の場面を一文で（例：午前4時。となりの布団は、もう空っぽだった。）。2〜3行目で謎と疑いを重ねる（算用数字可）。結末は書かない。
                  最後に、作家オリジナル作品であること、寝る前やお茶の時間にどうぞ、の一言。全体5〜7行",
@@ -2276,6 +2316,16 @@ def excerpt_from_main(keys: dict, c: dict, excerpt: str, dest: str) -> float:
 HOOK_FACE_SEC = 1.6   # 쇼츠 첫 장면: 주인공 얼굴 클로즈업 (2026-11-11: 뒷모습으로 시작한 쇼츠 6시간 28회 vs 평소 1천 회)
 
 
+SHORT_FACE_POSES = [
+    "Her face and shoulders fill the lower two thirds of the frame, facing the viewer straight on.",
+    "Her face in three-quarter view turned to the left, her eyes cutting back to the viewer, shoulders angled away.",
+    "Her face in three-quarter view turned to the right, chin raised, eyes on the viewer.",
+    "She turns her head back over her shoulder toward the viewer, hair moving with the turn.",
+    "Her face in profile facing right, eyes lowered to something just out of frame.",
+    "One hand raised to her cheek, her face tilted, eyes on the viewer.",
+]
+
+
 def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
     """쇼츠 첫 1.6초용 세로 얼굴 클로즈업 그림. 검수 2번까지, 실패하면 ''(기존처럼 장면 영상으로 시작)."""
     plan = state.get("plan") or {}
@@ -2284,8 +2334,11 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
         return ""
     face = (pick.get("face_en") or "her eyes wide and lips slightly parted in stunned silence").strip().rstrip(".")
     place = ((plan.get("setting") or {}).get("place") or "").strip()
-    body = (f"Vertical close-up portrait. Her face and shoulders fill the lower two thirds of the frame, the top of her head "
-            f"at about one third from the top; the top third of the frame is soft out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
+    # 자세를 편마다 돌린다 (2026-11-15: 쇼츠 세 편 연속 '정면 아래를 보는 단발 얼굴'로 비슷)
+    slot = int(re.sub(r"\D", "", folder) or 0)
+    pose = SHORT_FACE_POSES[(_ep_k(state, keys) * 2 + slot) % len(SHORT_FACE_POSES)]
+    body = (f"Vertical portrait. {pose} The top of her head is at one third from the top; the top third of the frame is soft "
+            f"out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
             f"(not a girl, not a young woman). {HEROINE_AGE}{_slim_look(hr['look_en'])}. {face}. "
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
@@ -2548,7 +2601,7 @@ def _trailer(job, state, keys, slot: int = 0):
         # 통쾌편: 무시하는 한마디가 가장 강한 미끼 → 첫 1초에 그 대사, 화면 위 문구도 그 대사
         full = ("今回はスカッと系。相手が主人公を見下す決定的な台詞（「」）を含む文から抜き出しを始める（最初の一文がその台詞）。"
                 "hook_line はその台詞そのものを「」付きで14字以内に縮めたもの（例：「家にいるだけで楽でいいな」）。「〜ない」で終えない。"
-                "shorts_title も台詞を「」で先頭に置き、金額・時刻・回数・日数・年齢のどれかの数字を入れる（「〜年前／〜年後／〜年間」の年数は使わない）。\n\n" + full)
+                "shorts_title も台詞を「」で先頭に置き、金額・時刻・回数・日数・年齢のどれかの数字を入れる（「〜年前／〜年後／〜年間／〜年分」の年数は使わない）。\n\n" + full)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), TRAILER_SYSTEM, full, max_tokens=1500)
     excerpt = (pick.get("excerpt") or "").strip()
     if not excerpt:
@@ -2948,6 +3001,19 @@ THUMB_FACE_MOVE = ["eyes glistening with held-back tears, lips pressed together"
                    "eyes wide in shock, one hand at her mouth", "a gentle relieved smile, eyes shining"]
 
 
+def _ep_k(state, keys) -> int:
+    """이 편이 몇 번째 편인지 (클라우드에 먼저 저장된 편 수). 섬네일·쇼츠 얼굴 자세를 순서대로 돌리는 데 쓴다."""
+    if state.get("thumb_k") is not None:
+        return int(state["thumb_k"])
+    try:
+        pid = str(state.get("project_id", ""))
+        k = sum(1 for p in cloud_index(keys) if str(p) < pid)
+    except Exception:
+        k = _variant(state, 12, "ep")
+    state["thumb_k"] = k
+    return k
+
+
 def _thumb_layout(state, keys) -> tuple:
     """섬네일 배치(얼굴 좌우·색·글씨 높이)를 편 순서대로 돌려, 바로 앞 편과 늘 다르게 (2026-11-14: 무작위로 골랐더니
     『A-17の里芋』『千本鳥居の案内人』이 같은 배치로 나란히 나옴). 한 번 정하면 그 편에 저장해 다시 만들기에도 같게."""
@@ -2955,9 +3021,7 @@ def _thumb_layout(state, keys) -> tuple:
     if isinstance(got, list) and len(got) == 3:
         return tuple(got)
     try:
-        pid = str(state.get("project_id", ""))
-        k = sum(1 for p in cloud_index(keys) if str(p) < pid)
-        state["thumb_k"] = k
+        k = _ep_k(state, keys)
         lay = (k % 2, k % 3, (k // 2) % 3)
     except Exception:
         lay = (_variant(state, 2, "side"), _variant(state, 3, "pal"), _variant(state, 3, "pos"))
