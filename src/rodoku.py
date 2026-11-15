@@ -1573,18 +1573,33 @@ def _gpt_image(key: str, prompt: str, aspect: str, dest: str, quality: str = "me
     Image.open(io.BytesIO(raw)).convert("RGB").save(dest, "JPEG", quality=94)
 
 
-def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, cover: bool = False) -> str:
-    """그림 한 장. OPENAI_API_KEY 가 있으면 GPT Image 2, 없거나 실패하면 flux-dev. 쓴 모델 이름을 돌려준다."""
+def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, cover: bool = False,
+          allow_flux: bool = True) -> str:
+    """그림 한 장. OPENAI_API_KEY 가 있으면 GPT Image 2, 없거나 실패하면 flux-dev. 쓴 모델 이름을 돌려준다.
+    allow_flux=False(섬네일·쇼츠 얼굴)면 flux 로 대신 그리지 않고 실패를 알린다 — flux 는 50대 주인공을 20대 소녀로 그린다
+    (2026-11-15 『あぜ道の七年』: GPT 실패 → flux 대체 → 섬네일·쇼츠 표지가 젊은 여성으로 바뀜)."""
     ok = keys.get("OPENAI_API_KEY", "")
+    err = None
     if ok:
-        try:
-            q = (keys.get("OPENAI_COVER_QUALITY") or "high") if cover else (keys.get("OPENAI_IMAGE_QUALITY") or "medium")
-            _gpt_image(ok, prompt, aspect, dest, q.strip().lower())   # 표지는 클릭을 좌우해서 기본 high
-            return GPT_IMAGE_MODEL
-        except Exception as e:
-            print(f"[rodoku] GPT Image 실패 → flux-dev: {e}", flush=True)
-            if state is not None:
-                state["gpt_image_error"] = str(e)[:300]
+        q = (keys.get("OPENAI_COVER_QUALITY") or "high") if cover else (keys.get("OPENAI_IMAGE_QUALITY") or "medium")
+        for attempt in range(2):
+            try:
+                _gpt_image(ok, prompt, aspect, dest, q.strip().lower())   # 표지는 클릭을 좌우해서 기본 high
+                return GPT_IMAGE_MODEL
+            except Exception as e:
+                err = e
+                msg = str(e).lower()
+                print(f"[rodoku] GPT Image 실패 {attempt + 1}/2: {e}", flush=True)
+                if state is not None:
+                    state["gpt_image_error"] = str(e)[:300]
+                    state["gpt_image_fail_count"] = int(state.get("gpt_image_fail_count") or 0) + 1
+                if any(w in msg for w in ("billing", "quota", "insufficient", "limit", "safety", "moderation", "rejected")):
+                    break          # 돈·한도·검열 문제는 다시 해도 같다
+                time.sleep(25)
+    if not allow_flux:
+        raise RuntimeError(f"GPT 그림 실패, flux 대체 안 함: {err or 'OPENAI_API_KEY 없음'}")
+    if state is not None:
+        state["flux_used"] = int(state.get("flux_used") or 0) + 1
     hz._download(hz.generate_image(keys.get("REPLICATE_API_TOKEN", ""), prompt, aspect=aspect), dest)
     return "flux-dev"
 
@@ -2271,7 +2286,7 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
     dest = pf(state, folder, "hook_face.jpg")
     for attempt in range(2):
         try:
-            paint(keys, prompt, "9:16", dest, state)
+            paint(keys, prompt, "9:16", dest, state, allow_flux=False)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), dest, {"no": c.get("no", 0), "image_prompt": body}, plan)
             if rv.get("ok"):
                 try:   # 글자 없는 얼굴 그림도 R2 에 남겨 '클라우드 완성 파일 받기'에서 받을 수 있게 (표지 직접 교체용)
@@ -2686,7 +2701,7 @@ def _cover_image(state, keys, aspect: str, dest: str) -> str:
     try:
         for attempt in range(3):   # 표지는 클릭을 좌우해서 한 번 더 (50대가 젊게 그려지면 다시)
             cand = dest.replace(".jpg", f"_try{attempt + 1}.jpg")
-            paint(keys, prompt, aspect, cand, state, cover=True)
+            paint(keys, prompt, aspect, cand, state, cover=True, allow_flux=False)
             rv = inspect_image(keys.get("ANTHROPIC_API_KEY", ""), cand, {"no": 0, "image_prompt": body}, plan)
             tries.append((cand, rv))
             if rv.get("ok"):
@@ -2991,7 +3006,7 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     for attempt in range(0 if best else 3):
         cand = base.replace(".jpg", f"_try{attempt + 1}.jpg")
         try:
-            paint(keys, prompt, "16:9", cand, state, cover=True)
+            paint(keys, prompt, "16:9", cand, state, cover=True, allow_flux=False)
         except Exception as e:      # 그림 한 번 실패로 A 섬네일 전체가 빠지지 않게 (2026-11-14: A 없이 B·C만 나옴)
             print(f"[rodoku] 섬네일 얼굴 그림 실패 {attempt + 1}/3: {e}", flush=True)
             continue
