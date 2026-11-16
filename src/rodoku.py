@@ -604,6 +604,13 @@ HAIRSTYLES = [
     ("シャギーボブ", "a shaggy layered bob with light feathered ends flipping outward"),
     ("丸みショート", "a rounded short cut with soft see-through bangs and volume on top"),
 ]
+# 기모노는 제대로 (2026-11-16): 깃은 반드시 오른쪽 섶을 먼저 여미고 왼쪽 섶을 위로(右前 — 왼쪽이 아래로 오는 左前는 죽은 사람 차림),
+# 흰 半衿, 등 뒤 お太鼓結び 오비, 오비아게·오비지메, 흰 足袋와 草履, 머리는 단정히 올림
+KIMONO = ("a properly worn Japanese kimono (komon) in a muted seasonal color with a small pattern: the left front panel crosses over "
+          "the right (right side tucked underneath, migi-mae), a white han-eri collar showing at the neck, a nagoya obi tied in an "
+          "otaiko knot at the back with obiage and obijime, white tabi and zori, hair neatly up in a low bun")
+YUKATA = ("a properly worn summer yukata of indigo cotton with a white flower pattern: the left front panel crosses over the right "
+          "(migi-mae), a hanhaba obi tied in a neat bow at the back, geta sandals, hair neatly up with a simple kanzashi")
 OUTFITS = [
     "a camel wool coat over a navy turtleneck",
     "a dusty-blue shirt with a long grey pleated skirt",
@@ -614,6 +621,11 @@ OUTFITS = [
     "a mustard-yellow knit sweater with dark brown wide trousers",
     "a light grey tweed jacket over an ivory blouse",
     "a deep teal pullover with a long charcoal skirt",
+    # 2026-11-16: 남성 시청자(30%)도 좋아할 '품위 있는 미인' 차림 — 맵시는 드러나되 몸매 강조는 아님
+    "a fitted below-the-knee fine-knit dress in soft taupe under an open camel coat, a thin belt at the waist",
+    "a navy below-the-knee knit dress with a long cream cardigan coat and low heels",
+    KIMONO,
+    "a tailored charcoal skirt suit with a cream blouse and a small pearl brooch",
 ]
 
 
@@ -631,12 +643,13 @@ def pick_hidden(recent: list) -> str:
     return random.choice([h for h in HIDDEN_KINDS if h not in used] or HIDDEN_KINDS)
 
 
-def pick_look(recent: list) -> tuple:
+def pick_look(recent: list, month: int = 0) -> tuple:
     import random
     used = {r.get("hair", "") for r in (recent or [])[:3]}
     hair = random.choice([h for h in HAIRSTYLES if h[0] not in used] or HAIRSTYLES)
     used_o = {r.get("outfit", "") for r in (recent or [])[:3]}
-    outfit = random.choice([o for o in OUTFITS if o not in used_o] or OUTFITS)
+    pool = OUTFITS + ([YUKATA] if month in (6, 7, 8) else [])   # 유카타는 여름(6~8월)에만
+    outfit = random.choice([o for o in pool if o not in used_o] or pool)
     return hair, outfit
 
 
@@ -652,7 +665,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
     era, era_things = random.choice(ERA_PAST)
     pw = pick_place_weather([r.get("region", "") for r in (recent or [])])
-    hair, outfit = pick_look(recent)
+    hair, outfit = pick_look(recent, pw.get("month", 0))
     hidden = pick_hidden(recent)
     hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
@@ -3070,6 +3083,10 @@ THUMB_POSES = [
     "Framed from the chest up, she looks down at the story's key object held in both hands at chest height.",
     "Framed from the chest up, her back half turned, she looks back over her shoulder at the viewer.",
     "Framed from the chest up, one hand resting at her collarbone, her head tilted, her eyes to the viewer.",
+    "Framed from the knees up, she stands tall with a straight back and relaxed shoulders, a slender graceful silhouette in her outfit, "
+    "one hand holding her bag strap, her face turned to the viewer. Elegant and dignified, not sensual.",
+    "Framed from the knees up, she stands half-turned in a doorway with perfect posture, hands folded in front, chin level, "
+    "her eyes to the viewer. Refined and composed, not sensual.",
 ]
 THUMB_FACE_SUKA = ["a cool composed gaze with no smile", "a faint knowing smile at one corner of her mouth",
                    "eyebrows raised in quiet surprise, lips parted", "lips pressed firm, a resolute stare"]
@@ -3205,7 +3222,7 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
     me, other = ("right", "left") if right else ("left", "right")
     body = (f"Main character: a Japanese woman aged {hr.get('age') or 56} (not a girl, not a young woman). {HEROINE_AGE}"
             f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame. {pose} "
-            f"Her face is large and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
+            f"Her face is clear and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
             f"Warm light on her face. One person only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_base.jpg")
