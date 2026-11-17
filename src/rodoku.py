@@ -27,7 +27,7 @@ from src import hasira as hz
 
 JA_VOICE_ID = "wcs09USXSN5Bl7FXohVZ"     # SceneStory 일본어 낭독 (Mr. MOON 선택)
 JA_CPS = 4.13                            # 이 목소리 실측 초당 글자 수 (voice_test)
-OPEN_CARD_SEC = 6.0
+OPEN_CARD_SEC = 2.5   # 2026-11-17: 본편 시청자의 절반이 30초 안에 나감 — 소리 없는 제목 화면 6초 → 2.5초
 TITLE_CARD_SEC = 4.0
 CHAPTER_PAD_SEC = 1.2
 BGM_VOLUME = 0.10
@@ -1505,7 +1505,8 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ⑤-00 화자의 앞말 (30대 목소리가 옛이야기를 하는 이유 — 편마다 다르게)
     intro = state.setdefault("intro", {"text": (plan.get("narrator_intro") or "").strip()})
-    if intro.get("text") and not hz.ensure_local(keys, intro, pf(state, "intro.mp3")) and not intro.get("error"):
+    # 2026-11-17: 앞말은 기본으로 뺀다 — 콜드 오픈·제목·앞말을 지나 이야기가 25초쯤에야 시작했고, 시청자 절반이 30초 안에 나갔다
+    if state.get("intro_on", False) and intro.get("text") and not hz.ensure_local(keys, intro, pf(state, "intro.mp3")) and not intro.get("error"):
         _stage(job, state, save_fn, "voice", 5, "화자의 앞말 낭독")
         try:
             dest = pf(state, "intro.mp3")
@@ -2220,7 +2221,7 @@ def _render(job, state, keys, save_fn):
     audio_parts.append(("silence", OPEN_CARD_SEC))
     t += OPEN_CARD_SEC
     intro = state.get("intro") or {}
-    if hz.usable(intro.get("local", "")):   # 화자의 앞말: 1장 화면 + 자막 + 낭독 → 第一章
+    if state.get("intro_on", False) and hz.usable(intro.get("local", "")):   # 화자의 앞말: 1장 화면 + 자막 + 낭독 → 第一章
         isec = (intro.get("seconds") or hz.duration(intro["local"])) + 1.6
         segs.append(_caption_clip(loops[chs[0]["no"]], intro["text"], isec, 0.4, isec - 1.6, pf(state, "work", "seg_intro.mp4")))
         audio_parts += [("silence", 0.4), ("file", intro["local"]), ("silence", 1.2)]
