@@ -26,7 +26,7 @@ def render_new(st, manager, api_keys):
                    "비용: Claude 집필 + ElevenLabs 일본어 낭독(약 4천~5천 자) + Replicate 그림 5~6장 + "
                    "이 편 전용 배경음악 2곡(반전 전·후 각 3분, 음악 약 6분).")
     n_shorts = st.radio("예고 쇼츠 개수", [1, 3], index=[1, 3].index(R.DEFAULT_SHORTS), horizontal=True, key="rd_nshorts",
-                        format_func=lambda n: {1: "1개 (매일 본편+쇼츠 운영 · 기본)", 3: "3개 (시작·중간·반전 직전)"}[n])
+                        format_func=lambda n: {1: "1개 — 60초에 완결되는 한 편 (첫 한 방 → 몰아붙임 → 정체 공개 → 마지막 한마디 · 기본)", 3: "3개 (완결 60초 + 예고 2개)"}[n])
     n_scenes = st.radio("장마다 그림 수", [3, 1], index=[3, 1].index(R.DEFAULT_SCENES), horizontal=True, key="rd_nscenes",
                         format_func=lambda n: {3: "3장 (약 1분마다 장면이 바뀜 · 기본)", 1: "1장 (예전 방식 · 빠르고 싸게)"}[n])
     group = st.radio("이번 편 종류", ["", "naku", "koi", "suka", "natsu"], horizontal=True, key="rd_group",

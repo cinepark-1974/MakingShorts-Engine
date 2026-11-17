@@ -2325,7 +2325,7 @@ def _render(job, state, keys, save_fn):
 
 
 N_SHORTS = 3          # 최대
-DEFAULT_SHORTS = 3    # 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
+DEFAULT_SHORTS = 1    # 2026-11-17: 본편 하나에 쇼츠 하나(다 담는 60초). 이전 값 3 — 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
 DEFAULT_SCENES = 3    # 장마다 그림 수 (1~3)
 SHORT_ANGLES = [
     "",   # 1번: 자유 — 続きを聴きたくなる一節
@@ -2566,16 +2566,34 @@ JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt"
 "shorts_title": "台詞「」を先頭に、年数か金額を入れた30字以内の題"}"""
 
 
-def _complete_short(job, state, keys, folder: str):
+ALLIN_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者です。1本の本編につきショートは1本だけ。その1本が、それだけで一つの作品として完成していること（2026-11-17 作家の決定: ショート1本に完成度）。
+本編の全文から短い4か所をそのまま抜き出し、つなげて、60秒で始まりから終わりまで聴ける一話にします。
+① blow: 主人公が受ける一撃の台詞。最初の1秒。初めて聞く人が、誰が・誰に・何を奪おう／見下そうとしているか分かる一文から始める。
+② squeeze: 相手がさらに追い詰める場面。聴き手が「ひどい」と思う一番の所。
+③ reveal: 主人公の隠し玉（正体・持ち分・経歴）が明かされ、相手の顔色が変わる瞬間。
+④ last: 結末で主人公が言う品のある一言、またはその後の静かな一場面。勝ち誇らない。聴き終えて胸がすっとして、少し温かい。
+つないだときに、説明なしで話が通じること（誰が誰か、何を争っているかが①②で分かり、③④で決着が分かる）。途中で切れた文・前の文がないと分からない指示語で始まる文は選ばない。
+各か所は本文から一字も変えずに1〜2文。4か所の合計は空白を除いて240〜330字（60秒以内）。設計に short_lines・hidden_card があればそれを含む文を優先する。
+JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "squeeze", ...}, {"role": "reveal", ...}, {"role": "last", ...}],
+"hook_line": "①の台詞を「」付きで14字以内に縮めたもの（人が口にした言葉だけ。「〜ない」で終えない。年数を入れない）", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
+"shorts_title": "台詞「」を先頭に、金額・回数・年齢のどれかを入れた30字以内の題（年数は使わない）",
+"pin_comment": "投稿者が固定するコメント（日本語40字以内、50〜70代の視聴者が自分の経験を書きたくなる問いかけ。例: あなたなら、この印鑑を渡しますか？）"}"""
+
+
+def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
     """한 편 안에서 완결되는 60초 쇼츠의 재료: 본편 낭독 세 군데를 잘라 잇는다 (크레딧 0). 못 만들면 None."""
     chs = state["chapters"]
     plan = state.get("plan") or {}
     full = "\n\n".join(f"第{c['no']}章\n{c['text']}" for c in chs)
     hint = json.dumps(plan.get("short_lines") or [], ensure_ascii=False)
-    pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), COMPLETE_SYSTEM, f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
+    if mode == "allin":
+        hint += "\n[設計 hidden_card]\n" + json.dumps(plan.get("hidden_card") or {}, ensure_ascii=False)
+        hint += "\n[設計 mid_counter]\n" + json.dumps(plan.get("mid_counter") or {}, ensure_ascii=False)
+    pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM if mode == "allin" else COMPLETE_SYSTEM,
+                      f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
     if pick.get("hook_line"):
         pick["hook_line"] = _fix_years(keys, pick["hook_line"], full, "ショート画面上部の台詞")
-    parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:3]
+    parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:4 if mode == "allin" else 3]
     if len(parts) < 3:
         return None
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
@@ -2650,6 +2668,19 @@ def _trailer(job, state, keys, slot: int = 0):
     if slot:
         pool = [c for c in pool if c["no"] not in used] or pool
     done = None
+    if slot == 0 and state.get("allin_short_on", True):
+        # 2026-11-17 작가 결정: 본편 하나에 쇼츠 하나 — 그 하나가 완성된 한 편(첫 한 방→몰아붙임→정체 공개→마지막 한마디)
+        job["msg"] = "쇼츠: 한 편에 다 담는 60초 만드는 중"
+        for attempt in range(2):
+            try:
+                done = _complete_short(job, state, keys, folder, mode="allin")
+            except Exception as e:
+                print(f"[rodoku] 올인원 쇼츠 실패 {attempt + 1}/2: {e}", flush=True)
+                done = None
+            if done:
+                return _finish_short(job, state, keys, slot, folder, done["pick"], done["c"], done["audio"], done["vloop"],
+                                     kind="allin", chapters=done["chapters"])
+        print("[rodoku] 올인원 쇼츠를 못 만들어 예고형으로 만듭니다.", flush=True)
     if slot == 2 and state.get("complete_short_on", True):
         job["msg"] = "쇼츠 3: 60초 완결형 만드는 중"
         try:
@@ -2766,7 +2797,8 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
            stroke_width=3, stroke_fill=(20, 14, 12, 255))
     d.text((540, 230), pick.get("hook_line") or state["plan"].get("title_ja", ""), font=jp_font(JP_SANS_BOLD, 76),
            fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
-    d.text((540, 1780), "ここまでの物語は本編で ▼ 下のリンクから" if kind == "complete" else "続きは本編で ▼ 下のリンクから",
+    d.text((540, 1780), "ここまでの物語は本編で ▼ 下のリンクから" if kind == "complete" else
+           ("この物語の全編は本編で ▼ 下のリンクから" if kind == "allin" else "続きは本編で ▼ 下のリンクから"),
            font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=4, stroke_fill=(20, 14, 12, 255))
     im.save(top)
@@ -2783,6 +2815,7 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
                         "hook_line": pick.get("hook_line", ""),
                         "shorts_title": _fix_title_years(keys, pick.get("shorts_title", ""), "ショートのタイトル"),
                         "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no], "end_tease": tease,
+                        "pin_comment": (pick.get("pin_comment") or "").strip()[:60],
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
         state["trailer"] = item
@@ -3024,7 +3057,7 @@ def _short_texts(state, it: dict, k: int) -> None:
     plan, fin = state["plan"], state.get("final") or {}
     it["description"] = (f"{it.get('hook_line', '')}\n\n本編『{plan.get('title_ja', '')}』"
                          f"（{hz.fmt_time(fin.get('seconds', 0), True)}）は画面下のリンクから。\n\n#朗読 #朗読ドラマ #shorts")
-    it["comment"] = (f"{it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、画面下のリンクからお聴きいただけます。")
+    it["comment"] = (f"{it.get('pin_comment') or it.get('hook_line', '')}\n本編『{plan.get('title_ja', '')}』は、画面下のリンクからお聴きいただけます。")
     it["post_day"] = ["본편 공개 당일", "다른 날 (본편이 없는 날의 쇼츠로)", "다른 날 (본편이 없는 날의 쇼츠로)"][min(k, 2)]
 
 
