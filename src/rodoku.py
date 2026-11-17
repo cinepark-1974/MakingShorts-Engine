@@ -223,13 +223,16 @@ def pick_kind(recent_kinds: list, salt: float = 0.0, group: str = "") -> str:
     if not fresh:
         return recent[-1]
     sk = [k for k in fresh if is_sukatto(k)]
-    if sk and rnd.random() < SUKATTO_SHARE:     # 시니어 낭독에서 가장 큰 장르 — 10편 중 7편
+    # 2026-11-17: 28일 데이터 — 본편 평균 청취가 감동·그리움 편 5~6분, 스카ッ토 편 2~3분 → 번갈아 만들어 5:5
+    last = next((k for k in recent_kinds if k in KIND_NAMES), "")
+    want_suka = (not is_sukatto(last)) if last else rnd.random() < SUKATTO_SHARE
+    if sk and want_suka:
         return rnd.choice(sk)
     rest = [k for k in fresh if not is_sukatto(k)] or fresh
     return rnd.choice(rest)
 
 
-SUKATTO_SHARE = 0.7   # 2026-11-14: 돈·상속·역전 편의 클릭과 시청 유지가 높음 → 10편 중 7편
+SUKATTO_SHARE = 0.5   # 2026-11-17: 스카ッ토와 감동·그리움을 번갈아 (이전 0.7 — 쇼츠 클릭은 돈 이야기가 높았지만 본편 청취는 감동 편이 김)
 
 
 def is_sukatto(kind: str) -> bool:
