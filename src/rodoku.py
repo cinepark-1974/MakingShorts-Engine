@@ -209,6 +209,38 @@ def _n(t: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 # ① 트렌드
 # ─────────────────────────────────────────────────────────────────────────────
+PLAYLIST_GOAL = 30
+# 2026-11-18 아침 YouTube 재생목록의 실제 편 수 (작가 화면). 이 날짜 이후 만든 편은 R2 목록의 'pl' 로 더한다.
+PLAYLIST_BASE = {"naku": 9, "suka": 14, "natsu": 5, "koi": 5}
+PLAYLIST_BASE_DAY = "20261118"
+
+
+def playlist_counts(keys: dict, skip_pid: str = "") -> dict:
+    """재생목록(감동·통쾌·추억·사랑)별 편 수 = 기준일의 실제 수 + 그 뒤 만든 편."""
+    out = dict(PLAYLIST_BASE)
+    try:
+        for pid, row in cloud_index(keys).items():
+            if pid == skip_pid or str(pid)[:8] < PLAYLIST_BASE_DAY or row.get("purged"):
+                continue
+            if row.get("pl") in out:
+                out[row["pl"]] += 1
+    except Exception as e:
+        print(f"[rodoku] 재생목록 편 수 세기 실패 → 기준값 사용: {e}", flush=True)
+    return out
+
+
+def pick_group(counts: dict, last_group: str = "", salt: float = 0.0) -> str:
+    """네 재생목록이 각각 30편이 되도록, 모자란 만큼 비례해서 무작위로 고른다. 바로 앞 편과 같은 목록은 피한다
+    (2026-11-18 작가 결정: 재생목록마다 30편 — 연속 재생을 위해)."""
+    import random
+    rnd = random.Random(salt or time.time())
+    need = {g: max(PLAYLIST_GOAL - int(counts.get(g, 0)), 0) for g in PLAYLISTS}
+    if not any(need.values()):
+        need = {g: 1 for g in PLAYLISTS}                      # 다 찼으면 고르게
+    pool = {g: n for g, n in need.items() if n > 0 and g != last_group} or {g: n for g, n in need.items() if n > 0}
+    return rnd.choices(list(pool), weights=list(pool.values()), k=1)[0]
+
+
 def pick_kind(recent_kinds: list, salt: float = 0.0, group: str = "") -> str:
     """최근 6편에 안 쓴 종류 중 하나. 다 썼으면 가장 오래전에 쓴 것.
     group: 'naku'·'koi'·'natsu'·'suka' 를 주면 그 재생목록(감동·사랑·추억·통쾌편)의 종류 안에서만 고른다."""
@@ -1223,6 +1255,8 @@ def save_cloud(keys: dict, state: dict) -> None:
         idx = r2_store.get_json(keys, CLOUD_INDEX) or {}
         row = {"title": (state.get("plan") or {}).get("title_ja") or state.get("title", ""),
                "stage": state.get("stage", ""), "at": time.strftime("%Y-%m-%d %H:%M")}
+        if (state.get("plan") or {}).get("kind"):
+            row["pl"] = _playlist_key(state["plan"])          # 재생목록별 편 수를 세는 데 쓴다
         if (idx.get(pid) or {}).get("purged"):
             row["purged"] = idx[pid]["purged"]
         if idx.get(pid) != row:
@@ -1356,7 +1390,13 @@ def _worker(job, state, keys, save_fn, made_titles):
         _stage(job, state, save_fn, "trend", 0)
         recent = recent_plans(keys, state.get("project_id", ""))
         state["_recent"] = recent
-        kind = pick_kind([r.get("kind", "") for r in recent], group=state.get("group", ""))
+        grp = state.get("group", "")
+        if grp not in PLAYLISTS:      # 작가가 목록을 직접 고르지 않았으면, 모자란 재생목록부터 채운다
+            last = _playlist_key({"kind": recent[0].get("kind", "")}) if recent and recent[0].get("kind") else ""
+            cnt = playlist_counts(keys, state.get("project_id", ""))
+            grp = pick_group(cnt, last)
+            print(f"[rodoku] 재생목록 편 수 {cnt} → 이번 편: {grp}", flush=True)
+        kind = pick_kind([r.get("kind", "") for r in recent], group=grp)
         tr = collect_trends(kind=kind)
         if not tr["queries"]:
             tr["queries"] = next((sd for k, _, sd in STORY_KINDS if k == kind), ["シニア 朗読"])
@@ -3171,6 +3211,12 @@ def _has_years(text: str) -> bool:
     return bool(_YEARS.search(text or ""))
 
 
+def _strip_years(text: str) -> str:
+    """다시 받아도 연수가 남으면 그 부분만 지운다 (2026-11-17 「申込み日は3年前の十月」가 검사를 지나감 → 「申込み日は十月」)."""
+    out = re.sub(r"[0-9０-９一二三四五六七八九十百]+\s*年(前|後|間|目|分|ぶり|越し)?(の|に|も|、)?", "", text or "")
+    return out if _n(out.strip("「」『』 ")) >= 4 else text
+
+
 def _fix_years(keys: dict, line: str, context: str, what: str) -> str:
     """화면 문구·섬네일 대사에 연수가 들어가면 같은 이야기에서 연수 없는 다른 대사로 바꾼다
     (2026-11-15『四十七枚の厨房』: 규칙을 어기고 「四十年遅かった」가 섬네일·쇼츠에 나옴 → 지시만으로는 안 막혀 코드로 막음)."""
@@ -3187,7 +3233,7 @@ def _fix_years(keys: dict, line: str, context: str, what: str) -> str:
             return r
     except Exception as e:
         print(f"[rodoku] {what} 교체 실패: {e}", flush=True)
-    return line
+    return _strip_years(line)
 
 
 def _fix_title_years(keys: dict, title: str, what: str) -> str:
@@ -3204,7 +3250,7 @@ def _fix_title_years(keys: dict, title: str, what: str) -> str:
             return r
     except Exception as e:
         print(f"[rodoku] 제목 연수 교체 실패: {e}", flush=True)
-    return title
+    return _strip_years(title)
 
 
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
