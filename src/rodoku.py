@@ -2701,7 +2701,7 @@ ALLIN_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者で
 ③ reveal: 主人公の隠し玉（正体・持ち分・経歴）が明かされ、相手の顔色が変わる瞬間。
 ④ last: 結末で主人公が言う品のある一言、またはその後の静かな一場面。勝ち誇らない。聴き終えて胸がすっとして、少し温かい。
 つないだときに、説明なしで話が通じること（誰が誰か、何を争っているかが①②で分かり、③④で決着が分かる）。途中で切れた文・前の文がないと分からない指示語で始まる文は選ばない。
-各か所は本文から一字も変えずに1〜2文。4か所の合計は空白を除いて240〜330字（60秒以内）。設計に short_lines・hidden_card があればそれを含む文を優先する。
+各か所は本文から一字も変えずに1〜2文（台詞だけにせず、話し手と相手が分かる地の文を含める。年数〈〜年前・〜年間〉の入った文はなるべく避ける）。4か所の合計は空白を除いて240〜330字（60秒以内）。設計に short_lines・hidden_card があればそれを含む文を優先する。
 JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "squeeze", ...}, {"role": "reveal", ...}, {"role": "last", ...}],
 "hook_line": "①の台詞を「」付きで14字以内に縮めたもの（人が口にした言葉だけ。「〜ない」で終えない。年数を入れない）", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
 "shorts_title": "台詞「」を先頭に、金額・回数・年齢のどれかを入れた30字以内の題（年数は使わない）",
@@ -2719,8 +2719,25 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
         hint += "\n[設計 mid_counter]\n" + json.dumps(plan.get("mid_counter") or {}, ensure_ascii=False)
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM if mode == "allin" else COMPLETE_SYSTEM,
                       f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
+    def _plen(pk):
+        return sum(_n(x.get("excerpt") or "") for x in (pk.get("parts") or []) if isinstance(x, dict))
+    if mode == "allin" and 0 < _plen(pick) < 200:
+        # 2026-11-18『七日分の段ボール』: 네 군데가 대사 한 줄씩(합계 95자·33초)이라 누가 누구에게 하는 말인지 알기 어려웠다 → 한 번 더 받는다
+        try:
+            again = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM,
+                               f"[設計 short_lines]\n{hint}\n\n{full}\n\n[やり直し] 前回の抜き出しは合計{_plen(pick)}字で短すぎ、"
+                               "台詞だけが並んで誰が誰に言っているのか分からなかった。同じ4か所を軸に、各か所へその台詞の直前か直後の地の文を一文足し"
+                               "（話し手・相手・場の様子が分かる文）、合計240〜330字にする。前回: "
+                               + json.dumps(pick.get("parts"), ensure_ascii=False), max_tokens=2000)
+            if 200 <= _plen(again) <= 360:
+                pick = again
+        except Exception as e:
+            print(f"[rodoku] 올인원 쇼츠 길이 보강 실패: {e}", flush=True)
     if pick.get("hook_line"):
         pick["hook_line"] = _fix_years(keys, pick["hook_line"], full, "ショート画面上部の台詞")
+    for k in ("pin_comment", "shorts_title"):                # 고정 댓글·쇼츠 제목의 연수는 그 부분만 지운다 (「２２年間この登記のことを」)
+        if _has_years(pick.get(k) or ""):
+            pick[k] = _strip_years(pick[k])
     parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:4 if mode == "allin" else 3]
     if len(parts) < 3:
         return None
