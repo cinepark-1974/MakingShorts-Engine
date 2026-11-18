@@ -211,7 +211,7 @@ def _n(t: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 PLAYLIST_GOAL = 30
 # 2026-11-18 아침 YouTube 재생목록의 실제 편 수 (작가 화면). 이 날짜 이후 만든 편은 R2 목록의 'pl' 로 더한다.
-PLAYLIST_BASE = {"naku": 9, "suka": 14, "natsu": 5, "koi": 5}
+PLAYLIST_BASE = {"naku": 9, "suka": 15, "natsu": 5, "koi": 5}   # suka 는 07:56 화면의 14 + 그날 아침 올린 1편
 PLAYLIST_BASE_DAY = "20261118"
 
 
