@@ -551,6 +551,16 @@ def render_project(st, manager, api_keys, show_banner):
         st.caption("새 본편 없이 쇼츠만 올리는 날에 씁니다. 쇼츠 고정 댓글이 이 편 본편으로 안내합니다.")
 
     pack = state.get("upload_pack")
+    if pack and (state.get("final") or {}).get("seconds"):
+        try:
+            _au = R.self_audit(state)
+            _bad = [m for lv, m in _au if lv == "bad"]
+            with st.expander(f"🔎 자동 점검 — 확인 필요 {len(_bad)}건 / 통과 {len(_au) - len(_bad)}건", expanded=bool(_bad)):
+                for lv, m in _au:
+                    st.markdown(("🔴 " if lv == "bad" else "🟢 ") + m)
+                st.caption("글과 기록만 점검합니다. 그림과 소리는 직접 확인이 필요합니다.")
+        except Exception as e:
+            st.caption(f"자동 점검 실패: {e}")
     if pack and pack.get("fact_warn"):
         st.warning("제목·설명문에 원고와 맞지 않는 곳이 남아 있을 수 있습니다. 올리기 전에 확인해 주세요: " + " / ".join(pack["fact_warn"]))
     elif pack and pack.get("fact_fixed"):

@@ -3424,6 +3424,52 @@ def fix_pack_facts(keys: dict, pack: dict, story: str) -> dict:
     return pack
 
 
+def self_audit(state: dict) -> list:
+    """완성된 편을 요청사항 점검표와 대조한다 (2026-11-18: 작가가 매번 눈으로 확인하지 않도록 엔진이 스스로 점검해 화면에 보여 준다).
+    돌려주는 값: [("bad"|"ok", "한국어 한 줄")]. 그림·소리는 볼 수 없으므로 글과 기록만 본다."""
+    out, plan, pack = [], state.get("plan") or {}, state.get("upload_pack") or {}
+    story, recent = _story_text(state), state.get("_recent") or []
+    trl = state.get("trailer") or {}
+
+    def add(ok, good, bad):
+        out.append(("ok", good) if ok else ("bad", bad))
+    # ── 이야기
+    yrs = re.findall(r"[0-9０-９一二三四五六七八九十百]+年(?:前|間|ぶり|越し)", story)
+    add(len(yrs) <= 1, "원고에 긴 세월 표현이 거의 없음", f"원고에 「{'」「'.join(sorted(set(yrs))[:3])}」 등 세월 표현 {len(yrs)}곳 — 옛날 이야기 방식")
+    if plan.get("drive"):
+        add(plan["drive"] != "昔の一言", f"이야기의 원동력: {plan['drive']}", "이야기의 원동력: 昔の一言 (아홉 편에 한 편꼴로 나오는 옛날 방식)")
+    else:
+        out.append(("bad", "이야기의 원동력 기록 없음 — 새 규칙 이전에 설계된 편"))
+    # ── 제목·설명·섬네일 문구
+    facts = pack_fact_issues(pack, story) if pack else []
+    add(not facts, "제목·설명문이 원고와 맞음(이름·숫자·연수)", "제목·설명문 확인 필요: " + " / ".join(facts[:4]))
+    texts = {"본편 제목": pack.get("title", ""), "쇼츠 제목": trl.get("shorts_title", ""), "쇼츠 훅": trl.get("hook_line", ""),
+             "섬네일 대사": pack.get("thumb_quote", ""), "섬네일 작은 글씨": pack.get("thumb_sub", "")}
+    ybad = [k for k, v in texts.items() if _has_years(v)]
+    add(not ybad, "제목·훅·섬네일에 연수 표현 없음", "연수 표현이 남은 곳: " + ", ".join(ybad))
+    nai = [k for k in ("본편 제목", "쇼츠 제목", "쇼츠 훅") if re.search(r"ない[」』。…]*(?:\s*#\S+)*\s*$", re.sub(r"【[^】]*】", "", texts[k]))]
+    add(not nai, "제목·훅이 「〜ない」로 끝나지 않음", "「〜ない」로 끝나는 곳: " + ", ".join(nai))
+    # ── 겉모습
+    grp = {h[0]: h[2] for h in HAIRSTYLES}
+    g, prev = grp.get(plan.get("hair", ""), ""), [grp.get(r.get("hair", ""), "") for r in recent[:2]]
+    add(bool(g) and g not in prev, f"머리 모양: {plan.get('hair', '')} (직전 2편과 다른 길이)",
+        f"머리 모양: {plan.get('hair', '') or '기록 없음'} — 직전 2편과 같은 길이 묶음")
+    add(plan.get("outfit") not in [r.get("outfit") for r in recent[:3]], "옷이 최근 3편과 다름", "옷이 최근 3편과 겹침")
+    add(not (state.get("flux_used") or state.get("gpt_no_credit")), "그림이 정상 모델로 그려짐",
+        "그림 크레딧 문제 — 예비 모델이 쓰여 주인공이 젊게 나왔을 수 있음")
+    tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
+    add({"A", "B", "C"} <= tags, "섬네일 A·B·C 모두 있음", "섬네일 빠짐: " + ", ".join(sorted({"A", "B", "C"} - tags)))
+    # ── 쇼츠
+    if trl.get("local") or trl.get("r2_key"):
+        add(trl.get("kind") == "allin", "쇼츠가 완결형(한 편에 다 담음)", f"쇼츠가 완결형이 아님({trl.get('kind') or '기록 없음'}) — '예고 쇼츠 다시 만들기' 필요")
+        add(float(trl.get("seconds") or 0) <= 62.5, f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초", f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초 — 62초 초과")
+    # ── 재생목록
+    if recent and plan.get("kind"):
+        last = _playlist_key({"kind": recent[0].get("kind", "")})
+        add(_playlist_key(plan) != last, f"재생목록: {PLAYLISTS[_playlist_key(plan)].split('｜')[0]}", "직전 편과 같은 재생목록")
+    return out
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
