@@ -397,7 +397,7 @@ def render_project(st, manager, api_keys, show_banner):
             if sd.get("title_ja"):
                 st.caption(f"편집 회의 · 후보 3개 중 『{sd.get('title_ja', '')}』({sd.get('lane', '')}) 선택 · "
                            f"미끼 {sd.get('hook_score', 0)}/50 · 이야기 핵심 {sd.get('core_score', 0)}/50"
-                           + (f" · 보강: {sd['weak'][:80]}" if sd.get("weak") else ""))
+                           + (f" · 보강: {str(sd['weak'])[:80]}" if sd.get("weak") else ""))
             ed = state.get("edit") or {}
             if ed.get("scores"):
                 names = {"agency": "주인공 행동", "confront": "마주 보고 말하기", "use": "숨은 카드 쓰기", "start": "새 출발 한 걸음", "payoff": "복선 회수", "temperature": "감정 온도차", "promise": "장르 약속",

@@ -641,7 +641,12 @@ def pick_seed(api_key: str, kind: str, kdesc: str, queries: list, viral: str, re
             r = sc[i] if i < len(sc) and isinstance(sc[i], dict) else {}
             sd["hook_score"], sd["core_score"] = _sum(r.get("hook")), _sum(r.get("core"))
             sd["score_detail"] = {"hook": r.get("hook"), "core": r.get("core")}
-            sd["weak"] = r.get("weak", "")
+            w = r.get("weak", "")                  # 2026-11-18: 모델이 글 대신 {축: 보강안} 묶음으로 돌려줘 화면이 멈췄다 → 글로 풀어 둔다
+            if isinstance(w, dict):
+                w = " / ".join(f"{k}: {v}" for k, v in w.items() if v)
+            elif isinstance(w, list):
+                w = " / ".join(str(x) for x in w if x)
+            sd["weak"] = str(w or "")
         tries.append({"seeds": [dict(x) for x in seeds],
                       "best": max(seeds, key=lambda x: x["hook_score"] + x["core_score"]).get("title_ja", "")})
         # 복사본에만 tries 를 붙인다 — 원본(seeds 안의 dict)에 붙이면 자기 자신을 품는 순환 참조가 되어 상태 저장이 실패한다 (2026-11-08 무한 반복 원인)
