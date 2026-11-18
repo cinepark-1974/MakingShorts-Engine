@@ -725,8 +725,11 @@ def add_uploaded_track(keys: dict, state: dict, filename: str, data: bytes, no: 
 # ─────────────────────────────────────────────────────────────────────────────
 # 백그라운드 작업
 # ─────────────────────────────────────────────────────────────────────────────
-_JOBS: dict = {}
-_LOCK = threading.Lock()
+# 2026-11-18: 코드를 올리면 Streamlit 이 이 모듈을 다시 읽어 _JOBS 가 비었다 → 돌던 작업을 못 보고 같은 편을 하나 더 시작,
+# 두 합성이 동시에 돌다 메모리가 넘쳐 앱이 죽었다. 작업 목록을 모듈 밖(builtins)에 두어 다시 읽어도 남게 한다.
+import builtins as _bi
+_JOBS: dict = _bi.__dict__.setdefault("_MSE_HASIRA_JOBS", {})
+_LOCK = _bi.__dict__.setdefault("_MSE_HASIRA_LOCK", threading.Lock())
 
 
 def get_job(project_id: str):

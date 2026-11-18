@@ -1390,7 +1390,8 @@ def _rss_mb() -> int:
 # ── 서버 재시작 뒤 자동으로 이어 만들기 ──
 AUTO_RESUME_MAX = 3            # 같은 편을 자동으로 다시 시작하는 최대 횟수 (매번 같은 오류로 비용만 쓰는 것 방지)
 AUTO_RESUME_HOURS = 12         # 마지막 저장 후 이 시간이 지난 편은 건드리지 않는다
-_AUTO_DONE = {"checked": False}
+import builtins as _bi
+_AUTO_DONE = _bi.__dict__.setdefault("_MSE_RODOKU_AUTO", {"checked": False})   # 코드를 다시 읽어도 한 번만
 
 
 def auto_resume(manager, keys: dict) -> list:

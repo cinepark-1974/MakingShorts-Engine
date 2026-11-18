@@ -17,8 +17,9 @@ import time
 
 from src import media_store
 
-_JOBS: dict = {}            # project_id → job dict (서버 프로세스가 살아있는 동안 유지)
-_LOCK = threading.Lock()
+import builtins as _bi      # 코드를 다시 읽어도 작업 목록이 남게 (2026-11-18, hasira._JOBS 와 같은 이유)
+_JOBS: dict = _bi.__dict__.setdefault("_MSE_VIDEO_JOBS", {})   # project_id → job dict
+_LOCK = _bi.__dict__.setdefault("_MSE_VIDEO_LOCK", threading.Lock())
 
 INTER_SCENE_SEC = 5         # 컷 사이 간격 (rate limit 예방)
 STYLE_LOCK_TYPES = {"MACHINE", "EXTRACTION", "SCIENCE_DATA", "SKETCH"}   # 스케치 화풍 유지 씬
