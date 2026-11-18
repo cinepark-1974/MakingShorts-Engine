@@ -551,6 +551,10 @@ def render_project(st, manager, api_keys, show_banner):
         st.caption("새 본편 없이 쇼츠만 올리는 날에 씁니다. 쇼츠 고정 댓글이 이 편 본편으로 안내합니다.")
 
     pack = state.get("upload_pack")
+    if pack and pack.get("fact_warn"):
+        st.warning("제목·설명문에 원고와 맞지 않는 곳이 남아 있을 수 있습니다. 올리기 전에 확인해 주세요: " + " / ".join(pack["fact_warn"]))
+    elif pack and pack.get("fact_fixed"):
+        st.caption("제목·설명문을 원고와 대조해 고친 곳: " + " / ".join(pack["fact_fixed"]))
     if (state.get("final") or {}).get("seconds") and not running:
         if st.button("🔁 제목·설명·섬네일만 새 형식으로 다시 만들기", use_container_width=True, key="rd_repack"):
             R.start_repack(state, api_keys, manager.save_state)

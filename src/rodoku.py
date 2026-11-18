@@ -3317,6 +3317,102 @@ def _fix_title_years(keys: dict, title: str, what: str) -> str:
     return _strip_years(title)
 
 
+def _story_text(state: dict) -> str:
+    return "\n".join(c.get("text", "") or "" for c in state.get("chapters", []) or [])
+
+
+_KNUM = {"〇": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+
+
+def _num_norm(text: str) -> str:
+    """漢数字·全角 숫자를 아라비아 숫자로 맞춰 비교하기 쉽게 (十八→18, 三か月→3か月, ３→3)."""
+    t = (text or "").translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+
+    def conv(m):
+        w, total, cur = m.group(0), 0, 0
+        if not any(ch in "十百千" for ch in w):
+            return "".join(str(_KNUM[ch]) for ch in w)
+        for ch in w:
+            if ch in _KNUM:
+                cur = _KNUM[ch]
+            else:
+                total += (cur or 1) * {"十": 10, "百": 100, "千": 1000}[ch]
+                cur = 0
+        return str(total + cur)
+    return re.sub(r"[〇一二三四五六七八九十百千]+", conv, t)
+
+
+_NAME_SFX = re.compile(r"([一-龥ぁ-んァ-ヶー]{1,6}?)(さん|様|くん|君|ちゃん)")
+_NUM_UNIT = re.compile(r"(\d+)\s*(か月|ヶ月|カ月|日|円|万円|センチ|歳|回|枚|時|分|通|人|軒|部屋)")
+
+
+def pack_fact_issues(pack: dict, story: str) -> list:
+    """업로드 문구(제목·설명·섬네일·고정 댓글)에 원고에 없는 이름·숫자·연수가 있는지 (2026-11-18『十八センチの壁』:
+    제목에 원고에 없는 「春男さん」, 설명문에 「五十二年前」·사실과 다른 문장이 들어감 — 문구를 설계만 보고 썼기 때문)."""
+    out, sn = [], _num_norm(story)
+    for k in ("title", "description", "thumb_sub", "thumb_quote", "thumb_reply", "pinned_comment", "shorts_comment"):
+        v = str(pack.get(k) or "")
+        if not v:
+            continue
+        for m in _NAME_SFX.finditer(v):
+            cm = re.search(r"[一-龥ァ-ヶー]+$", m.group(1))          # 끝의 한자·가타카나 덩어리만 이름으로 본다 (「先に春男」→「春男」)
+            core = cm.group(0)[-4:] if cm else ""
+            if core and core not in story and core not in ("皆", "奥", "客", "娘", "息子", "母", "父", "旦那", "神", "皆々"):
+                out.append(f"{k}: 本文にない名前「{core}{m.group(2)}」")
+        if k != "description" and k != "pinned_comment":
+            for m in _NUM_UNIT.finditer(_num_norm(v)):
+                tok = m.group(1) + m.group(2).replace("ヶ月", "か月").replace("カ月", "か月")
+                if tok not in sn.replace("ヶ月", "か月").replace("カ月", "か月") and not (k == "title" and m.group(2) in ("分", "時")):
+                    out.append(f"{k}: 本文にない数字「{m.group(0)}」")
+        if k in ("description", "pinned_comment") and _has_years(v):
+            out.append(f"{k}: 年数「{_YEARS.search(v).group(0)}」")
+    return out
+
+
+def fix_pack_facts(keys: dict, pack: dict, story: str) -> dict:
+    """원고와 맞지 않는 업로드 문구를 고친다. ① 모델에게 원고를 주고 틀린 곳만 고쳐 받기 ② 그래도 남으면 그 부분을 지우거나 기본 문구로."""
+    issues = pack_fact_issues(pack, story)
+    fields = ("title", "description", "thumb_sub", "pinned_comment", "shorts_comment")
+    try:
+        cur = {k: pack.get(k, "") for k in fields if pack.get(k)}
+        r = _json_call(keys.get("ANTHROPIC_API_KEY", ""),
+                       "あなたは朗読ドラマの公開文言の校閲者。下の文言を『本文』と照らし、事実と違う所だけを直す。"
+                       "見る点: ①本文に出てこない人名 ②誰の台詞・誰の癖かの取り違え ③数字と単位が指す物の取り違え（例: 壁の厚みを穴の大きさと書く）"
+                       "④期間・時期の取り違え ⑤本文と逆の出来事 ⑥年数（〜年前・〜年間・〜年ぶり）— 年数は消すか数字なしで言い換える。"
+                       "事実が合っている文は一字も変えない。長さ・調子・「」の台詞・【】の札・改行はそのまま。結末は書き足さない。"
+                       'JSONだけ: {"title": "…", "description": "…", "thumb_sub": "…", "pinned_comment": "…", "shorts_comment": "…", "changed": ["直した点を短く"]}'
+                       "（渡されなかった項目は出さない）",
+                       "機械検査で見つかった点: " + ("／".join(issues) or "なし") + "\n\n文言:\n"
+                       + json.dumps(cur, ensure_ascii=False, indent=1) + f"\n\n本文:\n{story[:9000]}", 2500)
+        for k in fields:
+            v = r.get(k)
+            if isinstance(v, str) and v.strip() and pack.get(k) and 0.5 <= len(v) / max(len(pack[k]), 1) <= 1.6:
+                pack[k] = v.strip()
+        if r.get("changed"):
+            print(f"[rodoku] 업로드 문구 교정: {r.get('changed')}", flush=True)
+            pack["fact_fixed"] = [str(x)[:80] for x in r.get("changed")][:8]
+    except Exception as e:
+        print(f"[rodoku] 업로드 문구 교정 실패: {e}", flush=True)
+    for it in pack_fact_issues(pack, story):               # 그래도 남은 것은 코드로 지운다
+        k, _, what = it.partition(": ")
+        tok = re.search(r"「(.+)」$", what)
+        tok = tok.group(1) if tok else ""
+        if "年数" in what:
+            pack[k] = "\n".join(_strip_years(ln) for ln in str(pack[k]).split("\n"))
+        elif "名前" in what:
+            pass                                             # 이름은 코드로 바꾸지 않는다 (「職人さん」 같은 보통 말일 수 있다) → 화면에 경고만
+        elif "数字" in what and k == "thumb_sub":
+            pack[k] = ""
+        elif "数字" in what and tok:
+            pack[k] = re.sub(r"[、。]?[^、。「」【】]*" + re.escape(tok) + r"[^、。「」【】]*", "", str(pack[k]), count=1)
+    left = pack_fact_issues(pack, story)
+    if left:
+        pack["fact_warn"] = left[:6]
+    else:
+        pack.pop("fact_warn", None)
+    return pack
+
+
 def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56):
     """대사는 한 줄이 원칙 (2026-11-13 요청: 줄바꿈 없이 한 줄로). 글씨를 줄여 한 줄에 넣고,
     min_one 보다 작아져야 할 만큼 길 때만 조사·쉼표 뒤에서 2줄로 나눈다."""
@@ -3481,12 +3577,19 @@ def _pack(state, keys):
                 f"SEO語: {', '.join(plan.get('seo_keywords') or [])}\n長さ: {hz.fmt_time(fin['seconds'], True)}\n"
                 f"題材の型: {plan.get('kind', '')}\n"
                 f"第1章の冒頭（謎の入口）:\n{first}\n"
-                f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}"
+                f"真実・結末（タイトル・説明に書かない）: {plan.get('turn', '')}\n"
+                "事実の決まり（必須）: タイトル・説明・サムネイルの文言・固定コメントに書く人名・数字・誰が何を言ったか・何が何センチ／何か月かは、"
+                "下の『本文』に書いてあるとおりにする。あらすじや真実・結末にしか出てこない名前や出来事は使わない。年数（〜年前・〜年間）は書かない。\n"
+                f"本文（実際に朗読される原稿）:\n{_story_text(state)[:9000]}"
                 + (f"\n予告ショートの台詞（題の最初の台詞として一字も変えずに使う）: {hook}" if trl0.get("hook_line") else "")
                 + f"\n並び: {'ABC'[_variant(state, 3)]}")
         pack.update({k: v for k, v in _json_call(keys.get("ANTHROPIC_API_KEY", ""), PACK_SYSTEM, user, 1500).items() if v})
     except Exception as e:
         print(f"[rodoku] 업로드 정보 생성 실패 → 기본값: {e}", flush=True)
+    try:
+        fix_pack_facts(keys, pack, _story_text(state))        # 설명문을 원고와 대조한 뒤에 목차를 붙인다
+    except Exception as e:
+        print(f"[rodoku] 업로드 문구 검사 실패: {e}", flush=True)
     chs = [(0.0, "オープニング")] + [(a, b) for a, b in fin.get("chapters", [])]
     body = (pack.get("description") or "").strip()
     body += "\n\n― 目次 ―\n" + hz.chapter_text(chs, fin["seconds"])
