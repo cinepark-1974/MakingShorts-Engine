@@ -1544,6 +1544,29 @@ def _worker(job, state, keys, save_fn, made_titles):
                 f["done"] = True
             except Exception as e:
                 f["error"] = str(e)[:200]
+        # ③-3 자동 점검에서 빨강이 될 것을 음성·그림을 만들기 전에 고친다 (2026-11-18): 「五十二年前」 같은 세월 표현
+        if plan.get("drive") and plan.get("drive") != "昔の一言":
+            auto = []
+            for c in chs:
+                found = sorted(set(_LONG_YEARS.findall(c.get("text", ""))))
+                if not found or len(auto) >= 3:
+                    continue
+                _stage(job, state, save_fn, "write", 2, f"제{c['no']}장 다시 쓰는 중 (세월 표현 정리)")
+                prev_c = next((x for x in chs if x["no"] == c["no"] - 1), None)
+                rec = {"no": c["no"], "found": found}
+                try:
+                    new = write_chapter(ak, plan, c, (prev_c or {}).get("text", ""), per, draft=c["text"],
+                                        note="この章の出来事・台詞・順番・長さは変えない。直すのは一点だけ: 「" + "」「".join(found) +
+                                             "」のような長い年月の言い方を本文から消す。「子どものころ」「あのころ」「ずっと前」など年数のない言い方に置き換えるか、"
+                                             "その一文をいまの出来事の描写に書き換える。")
+                    if (len(_LONG_YEARS.findall(new)) < len(_LONG_YEARS.findall(c["text"]))
+                            and 0.7 <= _n(new) / max(_n(c["text"]), 1) <= 1.3):
+                        c["text"], c["chars"], rec["done"] = new, _n(new), True
+                except Exception as e:
+                    rec["error"] = str(e)[:200]
+                auto.append(rec)
+            if auto:
+                ed["auto_fix"] = auto
         state["edit"] = ed
         hz._save(save_fn, state)
     state["manuscript_chars"] = sum(c.get("chars", 0) for c in chs)
@@ -2776,13 +2799,17 @@ def _trailer(job, state, keys, slot: int = 0):
     if slot == 0 and state.get("allin_short_on", True):
         # 2026-11-17 작가 결정: 본편 하나에 쇼츠 하나 — 그 하나가 완성된 한 편(첫 한 방→몰아붙임→정체 공개→마지막 한마디)
         job["msg"] = "쇼츠: 한 편에 다 담는 60초 만드는 중"
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 done = _complete_short(job, state, keys, folder, mode="allin")
+                if not done:
+                    state["allin_error"] = "네 부분(첫 한 방·몰아붙임·정체 공개·마지막 한마디)을 원고에서 뽑지 못함"
             except Exception as e:
-                print(f"[rodoku] 올인원 쇼츠 실패 {attempt + 1}/2: {e}", flush=True)
+                print(f"[rodoku] 올인원 쇼츠 실패 {attempt + 1}/3: {e}", flush=True)
+                state["allin_error"] = f"{type(e).__name__}: {e}"[:200]
                 done = None
             if done:
+                state.pop("allin_error", None)
                 return _finish_short(job, state, keys, slot, folder, done["pick"], done["c"], done["audio"], done["vloop"],
                                      kind="allin", chapters=done["chapters"])
         print("[rodoku] 올인원 쇼츠를 못 만들어 예고형으로 만듭니다.", flush=True)
@@ -3328,6 +3355,9 @@ def _fix_title_years(keys: dict, title: str, what: str) -> str:
     return _strip_years(title)
 
 
+_LONG_YEARS = re.compile(r"[0-9０-９一二三四五六七八九十百]+年(?:前|間|ぶり|越し)")   # 원고 속 긴 세월 표현 (「三年」「二十五年、」 같은 단순 기간은 통과)
+
+
 def _story_text(state: dict) -> str:
     return "\n".join(c.get("text", "") or "" for c in state.get("chapters", []) or [])
 
@@ -3434,8 +3464,11 @@ def self_audit(state: dict) -> list:
     def add(ok, good, bad):
         out.append(("ok", good) if ok else ("bad", bad))
     # ── 이야기
-    yrs = re.findall(r"[0-9０-９一二三四五六七八九十百]+年(?:前|間|ぶり|越し)", story)
+    yrs = _LONG_YEARS.findall(story)
     add(len(yrs) <= 1, "원고에 긴 세월 표현이 거의 없음", f"원고에 「{'」「'.join(sorted(set(yrs))[:3])}」 등 세월 표현 {len(yrs)}곳 — 옛날 이야기 방식")
+    af = (state.get("edit") or {}).get("auto_fix") or []
+    if af:
+        out.append(("ok", "세월 표현 자동 정리: " + ", ".join(f"제{x['no']}장{'' if x.get('done') else '(실패)'}" for x in af)))
     if plan.get("drive"):
         add(plan["drive"] != "昔の一言", f"이야기의 원동력: {plan['drive']}", "이야기의 원동력: 昔の一言 (아홉 편에 한 편꼴로 나오는 옛날 방식)")
     else:
@@ -3461,7 +3494,8 @@ def self_audit(state: dict) -> list:
     add({"A", "B", "C"} <= tags, "섬네일 A·B·C 모두 있음", "섬네일 빠짐: " + ", ".join(sorted({"A", "B", "C"} - tags)))
     # ── 쇼츠
     if trl.get("local") or trl.get("r2_key"):
-        add(trl.get("kind") == "allin", "쇼츠가 완결형(한 편에 다 담음)", f"쇼츠가 완결형이 아님({trl.get('kind') or '기록 없음'}) — '예고 쇼츠 다시 만들기' 필요")
+        add(trl.get("kind") == "allin", "쇼츠가 완결형(한 편에 다 담음)", f"쇼츠가 완결형이 아님({trl.get('kind') or '기록 없음'}) — '예고 쇼츠 다시 만들기' 필요"
+            + (f" · 실패 이유: {state['allin_error']}" if state.get("allin_error") else ""))
         add(float(trl.get("seconds") or 0) <= 62.5, f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초", f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초 — 62초 초과")
     # ── 재생목록
     if recent and plan.get("kind"):
