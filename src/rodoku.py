@@ -916,11 +916,12 @@ EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者で
  temperature（感情のいちばん高い場面の前後で温度差が大きいか）
  promise（題材の型の約束を果たしたか。スカッとなら胸がすき、感動なら泣ける、恋なら距離が動く）
  questions（各章の終わりに次を聴きたくなる問いがあるか）
- reality（お金・相続・年金・名義・離婚・病院などの手続きと金額が日本の現実と常識に合っているか）
+ reality（お金・相続・年金・名義・離婚・病院などの手続きと金額が日本の現実と常識に合っているか。意思表示のできない人の手に手を添えて書類に署名させる場面は違法で、あれば3点以下）
  dialogue（台詞が自然な日本語か。世代・関係・土地で話し方が分かれているか。説明台詞・同じ言い回しの繰り返し・感情の説明がないか）
  opening（第1章の最初の一文が人物の台詞で、3文目までに誰が・何を失いそうか分かるか。情景描写から始まったら4点以下）
  surprise（隠し玉が第1章の手がかりから「そういえば」と思える形で明かされ、相手の顔色が変わる場面があるか。中盤に小さな反撃があるか。書類だけで静かに勝つなら4点以下）
  consistency（章をまたいで人物の職業・年齢・年数・関係・「いつ知ったか」が食い違わないか。冒頭の語り（narrator_intro）に出る人物や物が本編とつながっているか。   例（2026-11-15『登記簿の女』）: 第2章で高校の英語教師の女が第6章で「大学で教えていた」、数日前に名前を知った相手を「十一年間、名前だけを知っていた」、冒頭の語りの「伯母」が本編に一度も出ない → 3点以下）
+consistency では次の二つを必ず計算して確かめる: ①年齢と和暦（今年は令和八年＝二〇二六年。五十八歳なら二十歳は昭和六十三年。「昭和六十一年に二十歳」と書いてあれば食い違い）と、本文の「〜年」の数がその差と合うか ②地名の関係（舞台が谷中など東京の町なのに『東京へ出た』『東京から電話した』と書く、のように舞台の町とその外を取り違えていないか）。一つでも食い違えば consistency は4点以下にし、どの章のどの言葉をどう直すかを書く。
 直すべき章を最大3つ選び、具体的な直し方を書く（「もっと良く」ではなく「第5章で、相手が序盤に言った〇〇を主人公が自分で突きつける場面にする」のように）。
 reality・consistency（スカットでは surprise も）が6点以下なら、その問題がある章は必ず直す対象に入れる（食い違いはどの章のどの言葉をどう直すかまで書く）。
 agency・confront・use・start のどれかが6点以下なら、その章を必ず直す対象に入れ、小さな一文の追加ではなく場面の作り直しを指示する（誰が・どこで・何と言い・相手が何と返し・そのあと何が変わるか、まで書く）。直す章が3つを超えるときは confront → start → use → consistency の順に選ぶ。
@@ -2717,7 +2718,7 @@ ALLIN_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者で
 ③ reveal: 主人公の隠し玉（正体・持ち分・経歴）が明かされ、相手の顔色が変わる瞬間。
 ④ last: 結末で主人公が言う品のある一言、またはその後の静かな一場面。勝ち誇らない。聴き終えて胸がすっとして、少し温かい。
 つないだときに、説明なしで話が通じること（誰が誰か、何を争っているかが①②で分かり、③④で決着が分かる）。途中で切れた文・前の文がないと分からない指示語で始まる文は選ばない。
-各か所は本文から一字も変えずに1〜2文（台詞だけにせず、話し手と相手が分かる地の文を含める。年数〈〜年前・〜年間〉の入った文はなるべく避ける）。4か所の合計は空白を除いて240〜330字（60秒以内）。設計に short_lines・hidden_card があればそれを含む文を優先する。
+各か所は本文から一字も変えずに1〜2文（台詞だけにせず、話し手と相手が分かる地の文を含める。年数〈〜年前・〜年間〉の入った文はなるべく避ける）。4か所の合計は空白を除いて170〜230字（朗読は1秒に約4.6字なので、これで間を含めて60秒以内に収まる。240字を超えると60秒を超えて使えない）。設計に short_lines・hidden_card があればそれを含む文を優先する。
 JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "squeeze", ...}, {"role": "reveal", ...}, {"role": "last", ...}],
 "hook_line": "①の台詞を「」付きで14字以内に縮めたもの（人が口にした言葉だけ。「〜ない」で終えない。年数を入れない）", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
 "shorts_title": "台詞「」を先頭に、金額・回数・年齢のどれかを入れた30字以内の題（年数は使わない）",
@@ -2737,15 +2738,15 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
                       f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
     def _plen(pk):
         return sum(_n(x.get("excerpt") or "") for x in (pk.get("parts") or []) if isinstance(x, dict))
-    if mode == "allin" and 0 < _plen(pick) < 200:
+    if mode == "allin" and 0 < _plen(pick) < 130:
         # 2026-11-18『七日分の段ボール』: 네 군데가 대사 한 줄씩(합계 95자·33초)이라 누가 누구에게 하는 말인지 알기 어려웠다 → 한 번 더 받는다
         try:
             again = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM,
                                f"[設計 short_lines]\n{hint}\n\n{full}\n\n[やり直し] 前回の抜き出しは合計{_plen(pick)}字で短すぎ、"
                                "台詞だけが並んで誰が誰に言っているのか分からなかった。同じ4か所を軸に、各か所へその台詞の直前か直後の地の文を一文足し"
-                               "（話し手・相手・場の様子が分かる文）、合計240〜330字にする。前回: "
+                               "（話し手・相手・場の様子が分かる文）、合計170〜230字にする（240字を超えない）。前回: "
                                + json.dumps(pick.get("parts"), ensure_ascii=False), max_tokens=2000)
-            if 200 <= _plen(again) <= 360:
+            if 150 <= _plen(again) <= 250:
                 pick = again
         except Exception as e:
             print(f"[rodoku] 올인원 쇼츠 길이 보강 실패: {e}", flush=True)
@@ -2754,34 +2755,68 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
     for k in ("pin_comment", "shorts_title"):                # 고정 댓글·쇼츠 제목의 연수는 그 부분만 지운다 (「２２年間この登記のことを」)
         if _has_years(pick.get(k) or ""):
             pick[k] = _strip_years(pick[k])
-    parts = [x for x in (pick.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:4 if mode == "allin" else 3]
-    if len(parts) < 3:
-        return None
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
-    segs = []
-    for i, x in enumerate(parts):
-        ex = x["excerpt"].strip()
-        c = next((y for y in chs if y["no"] == _int0(x.get("chapter")) and ex[:12] in y.get("text", "")),
-                 next((y for y in chs if ex[:12] in y.get("text", "")), None))
-        if not c:
-            return None
-        a = os.path.join(tmp, f"part{i}.mp3")
-        if excerpt_from_main(keys, c, ex, a) <= 0:
-            return None
-        segs.append((c, ex, a, hz.duration(a)))
+    au = pf(state, folder, "voice.mp3")
     gap = os.path.join(tmp, "gap.mp3")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.45",
                     "-c:a", "libmp3lame", gap], check=True, timeout=60)
-    lst = os.path.join(tmp, "parts.txt")
-    with open(lst, "w") as f:
-        for i, sg in enumerate(segs):
-            # 2026-11-18: 목록 안의 상대 경로는 ffmpeg 가 목록 파일 위치 기준으로 읽어서 매번 실패했다 → 절대 경로로 쓴다
-            f.write(f"file '{os.path.abspath(sg[2])}'\n" + (f"file '{os.path.abspath(gap)}'\n" if i < len(segs) - 1 else ""))
-    au = pf(state, folder, "voice.mp3")
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c:a", "libmp3lame", "-b:a", "192k", au],
-                   check=True, timeout=120)
-    if hz.duration(au) > 62:
-        print(f"[rodoku] 완결형 쇼츠가 {hz.duration(au):.0f}초로 길어 예고형으로 만듭니다.", flush=True)
+
+    def _build(pk):
+        """대목들을 본편 낭독에서 잘라 잇는다. (segs, 오류 문구) — 2026-11-18: 실패 이유를 하나로 뭉뚱그리지 않고 따로 남긴다."""
+        parts = [x for x in (pk.get("parts") or []) if isinstance(x, dict) and (x.get("excerpt") or "").strip()][:4 if mode == "allin" else 3]
+        if len(parts) < 3:
+            return None, f"대목을 {len(parts)}곳만 받음(3곳 이상 필요)"
+        segs = []
+        for i, x in enumerate(parts):
+            ex = x["excerpt"].strip()
+            c = next((y for y in chs if y["no"] == _int0(x.get("chapter")) and ex[:12] in y.get("text", "")),
+                     next((y for y in chs if ex[:12] in y.get("text", "")), None))
+            if not c:
+                return None, f"{x.get('role', i + 1)} 대목이 원고에 그대로 없음: {ex[:20]}…"
+            a = os.path.join(tmp, f"part{i}.mp3")
+            if excerpt_from_main(keys, c, ex, a) <= 0:
+                return None, f"{x.get('role', i + 1)} 대목을 제{c['no']}장 낭독에서 찾지 못함: {ex[:20]}…"
+            segs.append((c, ex, a, hz.duration(a)))
+        lst = os.path.join(tmp, "parts.txt")
+        with open(lst, "w") as f:
+            for i, sg in enumerate(segs):
+                # 2026-11-18: 목록 안의 상대 경로는 ffmpeg 가 목록 파일 위치 기준으로 읽어서 매번 실패했다 → 절대 경로로 쓴다
+                f.write(f"file '{os.path.abspath(sg[2])}'\n" + (f"file '{os.path.abspath(gap)}'\n" if i < len(segs) - 1 else ""))
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c:a", "libmp3lame", "-b:a", "192k", au],
+                       check=True, timeout=120)
+        return segs, ""
+
+    segs, err = _build(pick)
+    for _ in range(2):                                   # 길거나 못 찾으면 줄여서 / 고쳐서 다시 받는다 (최대 2번)
+        if segs and hz.duration(au) <= 62:
+            break
+        dur = hz.duration(au) if segs else 0
+        if segs:
+            chars = max(_plen(pick), 1)
+            target = int(chars * 56 / dur)
+            err = f"이어 붙인 소리가 {dur:.0f}초로 62초를 넘음({chars}자)"
+            ask = (f"[やり直し] 前回の抜き出しは合計{chars}字で、つなぐと{dur:.0f}秒になり60秒を超えた。同じ4つの役割のまま、"
+                   f"各か所を本文の一文だけにするなどして合計{target}字以内に縮める（本文から一字も変えない）。前回: ")
+        else:
+            ask = f"[やり直し] 前回の抜き出しは使えなかった（{err}）。各か所は本文の文をそのまま、句読点まで一字も変えずに写す。前回: "
+        print(f"[rodoku] 올인원 쇼츠 다시 받기: {err}", flush=True)
+        try:
+            again = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM if mode == "allin" else COMPLETE_SYSTEM,
+                               f"[設計 short_lines]\n{hint}\n\n{full}\n\n{ask}" + json.dumps(pick.get("parts"), ensure_ascii=False),
+                               max_tokens=2000)
+        except Exception as e:
+            err = f"다시 받기 실패: {e}"[:200]
+            break
+        for k in ("hook_line", "face_en", "shorts_title", "pin_comment"):     # 제목·훅은 처음 것을 유지
+            if pick.get(k):
+                again[k] = pick[k]
+        pick = again
+        segs, err = _build(pick)
+    if not segs or hz.duration(au) > 62:
+        if segs:
+            err = f"줄여 다시 받아도 {hz.duration(au):.0f}초로 62초를 넘음"
+        state["allin_error"] = err
+        print(f"[rodoku] 완결형 쇼츠 실패 → 예고형: {err}", flush=True)
         return None
     # 그림: 세 대목 각자의 장 그림(움직임 우선)을 그 길이만큼 이어 붙인다
     clips = []
@@ -2833,10 +2868,11 @@ def _trailer(job, state, keys, slot: int = 0):
     if slot == 0 and state.get("allin_short_on", True):
         # 2026-11-17 작가 결정: 본편 하나에 쇼츠 하나 — 그 하나가 완성된 한 편(첫 한 방→몰아붙임→정체 공개→마지막 한마디)
         job["msg"] = "쇼츠: 한 편에 다 담는 60초 만드는 중"
+        state.pop("allin_error", None)
         for attempt in range(3):
             try:
                 done = _complete_short(job, state, keys, folder, mode="allin")
-                if not done:
+                if not done and not state.get("allin_error"):
                     state["allin_error"] = "네 부분(첫 한 방·몰아붙임·정체 공개·마지막 한마디)을 원고에서 뽑지 못함"
             except Exception as e:
                 print(f"[rodoku] 올인원 쇼츠 실패 {attempt + 1}/3: {e}", flush=True)
