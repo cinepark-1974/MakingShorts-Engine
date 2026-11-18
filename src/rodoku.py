@@ -63,9 +63,9 @@ STORY_KINDS = [
      ["閉店 最後の日", "商店街 昭和"]),
     ("旅先の出会い", "一人旅・湯治場・夜行バス・フェリーで出会った見知らぬ人と過ごす短い時間",
      ["一人旅 シニア", "湯治 旅"]),
-    ("海外の旅", "ソウル・釜山・済州など海外へ出た数日の旅（ひとり・女友達・娘と）。若い頃に海外旅行やブランド物を一通り経験した主人公が、"
+    ("海外の旅", "ソウル・ハワイ・台湾・パリなど海外へ出た数日の旅（ひとり・女友達・娘と）。若い頃に海外旅行やブランド物を一通り経験した主人公が、"
      "旅先で出会った人や出来事をきっかけに、帰国してから始めることを決める。観光案内にしない",
-     ["韓国旅行 50代", "ひとり旅 海外 60代"]),
+     ["海外旅行 50代 女性", "ひとり旅 海外 60代"]),
     ("熟年離婚・卒婚", "長い結婚生活の終わりを決めた夫婦の、最後の数日",
      ["熟年離婚 その後", "卒婚"]),
     ("介護の日々", "遠くに住む親や夫・妻を介護する日々の中で、相手の思いがけない言葉や行動に出会う",
@@ -396,7 +396,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - 実在の有名人・曲名・ドラマ名・商品名は使わない（時代の空気は「トレンディドラマの夜」「ポケベルの数字」のように一般名詞で出す）。
 - 題材は指定された「題材の型」に必ず従う。検索語はその型の中で視聴者が何を気にしているかを知る手がかりにする。
 - 【いま・これから】物語を動かすのは「昔言えなかったこと」ではなく、主人公が「いま始めること・これからしたいこと」（2026-11-18 作家の決定: 物語が似通い、主人公が古い女性像に閉じていた）。
-  主人公は、いまの50〜60代の女性: スマホとLINEを使い、働いた経験があり、韓流ドラマや推し活や一人旅も知っている世代。若い頃に海外旅行・語学留学・ブランド物を一通り経験し、いまも韓国や台湾へ気軽に出かける世代（世間知らずの奥さんとして描かない）。我慢を美徳にしない。自分の言葉を持ち、欲しいものを自分で選ぶ。
+  主人公は、いまの50〜60代の女性: スマホとLINEを使い、働いた経験があり、韓流ドラマや推し活や一人旅も知っている世代。若い頃に海外旅行・語学留学・ブランド物を一通り経験し、いまも韓国・台湾・ハワイへ気軽に出かける世代（世間知らずの奥さんとして描かない）。我慢を美徳にしない。自分の言葉を持ち、欲しいものを自分で選ぶ。
   恋は何歳でも始まる（60代・70代の新しい恋を、照れずに、品よく書く）。感動も「いまの選択」から生む（教室に通い始める・店を開く・家を出る・誰かに初めて頼る）。
   「何十年も胸にしまっていた一言」「◯十年前に渡せなかった物」を物語の芯にするのは、ユーザー文の「物語の原動力」が「昔の一言」のときだけ。
   種類が「初恋・再会」「昔の仲間」「故郷じまい」でも同じ: 再会や思い出は入口にすぎない。物語は、再会したあと二人がこれから何を始めるか（一緒に店を手伝う・旅に出る・毎週会う約束をする）で進める。年齢と年数の勘定を合わせる（61歳の「52年前」は9歳の出来事）。
@@ -486,7 +486,15 @@ OVERSEAS = [
     ("韓国・ソウル（明洞の裏通り）", "a back street near Myeongdong in Seoul, South Korea: small cafes and shop signs in Korean hangul, a church spire, Namsan tower on the hill", True),
     ("韓国・釜山", "Busan, South Korea: a hillside of small colorful houses above a blue harbor, a seaside walkway", False),
     ("韓国・済州", "Jeju island, South Korea: black volcanic stone walls, a canola field, the sea and a low green cone-shaped hill", False),
+    ("ハワイ・ホノルル", "Honolulu in Hawaii: a palm-lined beach walk, turquoise sea, the green ridge of Diamond Head in the distance", False),
+    ("ハワイ・オアフ島の北の町", "a small surf town on the north shore of Oahu in Hawaii: low wooden storefronts, palm trees, a long empty beach", False),
+    ("台湾・台北", "Taipei, Taiwan: a narrow lane of old brick shophouses with red lanterns and scooters, green hills behind the city", False),
+    ("台湾・九份", "Jiufen, Taiwan: a steep stone stairway street of teahouses with red lanterns on a mountainside above the sea", False),
+    ("フランス・パリ", "Paris, France: a quiet street of cream stone apartment buildings with iron balconies, a small corner cafe with a striped awning", True),
+    ("イタリア・フィレンツェ", "Florence, Italy: terracotta rooftops and a great cathedral dome seen from a stone bridge over the river", False),
+    ("ベトナム・ホイアン", "Hoi An, Vietnam: an old town street of yellow walls and silk lanterns beside a slow river with small boats", False),
 ]
+WARM = {"沖縄", "ハワイ・ホノルル", "ハワイ・オアフ島の北の町", "台湾・台北", "台湾・九份", "ベトナム・ホイアン"}   # 벚꽃·단풍·눈이 없는 곳
 OVERSEAS_KINDS = {"海外の旅": 1.0, "旅先の出会い": 0.34}      # 종류별 해외 무대 확률
 
 
@@ -510,15 +518,15 @@ def _weathers(month: int, snowy: bool, region: str) -> list:
         out += [("snow", "a bright snowy day, soft white snow falling, snow on roofs and branches, pale blue sky breaking through")] * 2
     elif month in (12, 1, 2):
         out += [("winter_sun", "a crisp bright winter day, low golden sunlight, clear cold air")]
-    if month == 4 and region != "沖縄":
+    if month == 4 and region not in WARM:
         out += [("sakura", "cherry blossoms in full bloom, petals drifting in bright spring light")] * 2
-    if month in (6, 7) or (month in (5,) and region == "沖縄"):
+    if month in (6, 7) or (month in (5,) and region in WARM):
         out += [("after_rain", "just after the rain, wet stone glistening, puddles reflecting a bright sky, hydrangeas")] * 2
-    if month in (10, 11) and region != "沖縄":
+    if month in (10, 11) and region not in WARM:
         out += [("autumn", "brilliant red and gold autumn leaves under a high clear autumn sky")] * 2
     if month in (3, 5, 9, 10, 11):
         out += [("soft_rain", "a soft drizzle under a pale pearl-gray overcast sky glowing with diffused silver light (no blue sky), she holds an open transparent umbrella above her head, glistening wet reflections on the ground")]
-    if month in (7, 8, 9) or region == "沖縄":
+    if month in (7, 8, 9) or region in WARM:
         out += [("summer", "a vivid summer day, towering white cumulus clouds in a deep blue sky")]
     out += [("golden", "late afternoon golden light, long soft shadows, warm glowing sky")]
     return out
@@ -750,7 +758,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             + ("この作品の組み立て（必須）:\n" + genre_build(kind) + "\n" if genre_build(kind) else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             + ("海外の舞台の決まり（必須）: 主人公は日本から来た旅行者。物語の大半をこの町で進め、最後の章で帰国後に始めることを一つ決める。"
-               "現地の人の台詞は日本語で書き、韓国語は短い挨拶だけをカタカナで（ハングルは書かない）。実在の店名・芸能人名は出さない。\n" if abroad else "") +
+               "現地の人の台詞は日本語で書き、現地の言葉は短い挨拶だけをカタカナで（ハングルやアルファベットは書かない）。実在の店名・芸能人名は出さない。\n" if abroad else "") +
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
             f"物語の原動力（必須）: 「{drive[0]}」— {drive[1]}\n"
