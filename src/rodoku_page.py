@@ -400,7 +400,7 @@ def render_project(st, manager, api_keys, show_banner):
                            + (f" · 보강: {sd['weak'][:80]}" if sd.get("weak") else ""))
             ed = state.get("edit") or {}
             if ed.get("scores"):
-                names = {"agency": "주인공 행동", "payoff": "복선 회수", "temperature": "감정 온도차", "promise": "장르 약속",
+                names = {"agency": "주인공 행동", "confront": "마주 보고 말하기", "use": "숨은 카드 쓰기", "start": "새 출발 한 걸음", "payoff": "복선 회수", "temperature": "감정 온도차", "promise": "장르 약속",
                          "questions": "장별 질문", "reality": "현실성", "dialogue": "대사", "opening": "첫 장면"}
                 st.caption("완성도 채점 · " + " · ".join(f"{names.get(k, k)} {v}" for k, v in ed["scores"].items()))
             if ed.get("overall") or ed.get("fix"):
