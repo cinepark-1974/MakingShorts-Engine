@@ -155,6 +155,7 @@ INTRO_FORMS = [
 GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "平成 思い出", "80年代 思い出", "老後 生き方"]
 
 # 주인공 1958~1974년생의 젊은 날 = 1975~2004년 (쇼와 50년대 ~ 헤이세이 10년대 초)
+NOW_YEAR = 2026        # 이야기의 '지금' (2026-11-18: 그림 지시에 Present day 2024 가 나오고, 나이와 회상 연도가 안 맞았다)
 ERA_PAST = [
     ("昭和50年代（1975〜1984）", "喫茶店、カセットテープ、ラジカセ、公衆電話、文通、国鉄の駅、団地の新築"),
     ("昭和の終わり（1985〜1989）", "ディスコ、肩パッドのスーツ、社員旅行、テレホンカード、深夜のタクシー、寿退社"),
@@ -767,7 +768,19 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
                     | {"手紙", "はがき", "置き手紙", "日記", "ノート", "遺書"})   # 2026-11-14: 편지 이야기 그만
     used_forms = {r.get("intro_form") for r in (recent or [])[:10]}
     intro_form = random.choice([f for f in INTRO_FORMS if f not in used_forms] or INTRO_FORMS)
-    era, era_things = random.choice(ERA_PAST)
+    # 주인공 나이를 코드에서 정하고, 그 나이로 스무~서른다섯 살이 되는 시대만 회상 시대로 고른다
+    # (2026-11-18『晩秋の採寸台』: 57세 주인공이 昭和58年에 「はたちを過ぎたばかり」 — 실제로는 열네 살. 시대와 나이를 따로 뽑아서 생긴 모순)
+    hero_age = random.randint(52, 62)
+    birth = NOW_YEAR - hero_age
+    def _yrs(e):
+        m = re.search(r"（(\d{4})〜(\d{4})）", e[0])
+        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    fit = [e for e in ERA_PAST if _yrs(e)[1] - birth >= 20 and _yrs(e)[0] - birth <= 35]
+    era, era_things = random.choice(fit or ERA_PAST)
+    y1, y2 = _yrs((era, era_things))
+    age_line = (f"主人公の年齢（必須）: {hero_age}歳（{birth}年生まれ）。いまは{NOW_YEAR}年（令和八年）。"
+                f"回想の時代 {y1}〜{y2}年に主人公は{max(0, y1 - birth)}〜{y2 - birth}歳。本文の和暦・年数・年齢はすべてこの勘定に合わせる"
+                f"（昭和N年＝1925＋N年、平成N年＝1988＋N年。例: {birth + 20}年＝主人公二十歳）。image_prompt の現在は Present day {NOW_YEAR}。\n")
     abroad = random.random() < OVERSEAS_KINDS.get(kind, 0.0)
     pw = pick_place_weather([r.get("region", "") for r in (recent or [])], overseas=abroad)
     hair, outfit = pick_look(recent, pw.get("month", 0))
@@ -785,7 +798,8 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             + ("海外の舞台の決まり（必須）: 主人公は日本から来た旅行者。物語の大半をこの町で進め、最後の章で帰国後に始めることを一つ決める。"
                "出会う相手は現地で暮らすその国の人（日本人の駐在員や旅行者にしない）。50〜70代の男性なら、茶房の主人・タクシー運転手・市場の店主・宿の主人・元教師など、土地に根のある仕事を持つ。言葉が半分しか通じないことを物語に使う（片言の日本語・翻訳アプリ・身ぶり・書いて見せる文字）。相手を理想の王子にせず、暮らしと事情のある一人の人として書く。現地の人の台詞は日本語で書き（片言は短く区切った日本語で表す）、現地の言葉は短い挨拶だけをカタカナで（ハングルやアルファベットは書かない）。実在の店名・芸能人名は出さない。\n" if abroad else "") +
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
-            f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
+            f"主人公（視点人物）: {hero_age}歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
+            + age_line +
             f"物語の原動力（必須）: 「{drive[0]}」— {drive[1]}\n"
             f"主人公の髪型（必須・look_en にこの通り英語で書く）: {hair[1]}\n"
             f"主人公の服（必須・look_en にこの通り英語で書く）: {outfit}\n"
@@ -811,6 +825,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan["hair"], plan["outfit"] = hair[0], outfit
     plan["hidden"] = hidden
     plan["drive"] = drive[0]
+    plan["hero_age"], plan["hero_birth"] = hero_age, birth
     return plan
 
 
@@ -944,7 +959,10 @@ def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
         full = f"【冒頭の語り（本編の前に読まれる）】\n{plan['narrator_intro']}\n\n" + full
     try:
         gb = genre_build(plan.get("kind", ""))
+        ay = age_year_issues(plan, "\n".join(c.get("text", "") for c in chs))
         rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
+                        + (f"機械計算で見つかった年齢と和暦の食い違い（必ず consistency を4点以下にし、その章を直す対象に入れ、正しい和暦・年数を書く。"
+                           f"主人公は{NOW_YEAR - _int0(plan.get('hero_age') or 0) if plan.get('hero_age') else '?'}年生まれ）: " + " / ".join(ay) + "\n" if ay else "")
                         + (f"この型の組み立て（promise はこれを満たしたかで採点）:\n{gb}\n" if gb else "")
                         + (f"{dialect_rule(plan.get('region', ''))}→ 舞台と違う地方の方言が一言でも混ざっていたら dialogue を下げ、その章を fix に入れる。\n"
                            if dialect_rule(plan.get("region", "")) else "") + f"\n{full}", 2500)
@@ -3434,6 +3452,37 @@ def _fix_title_years(keys: dict, title: str, what: str) -> str:
 _LONG_YEARS = re.compile(r"[0-9０-９一二三四五六七八九十百]+年(?:前|間|ぶり|越し)")   # 원고 속 긴 세월 표현 (「三年」「二十五年、」 같은 단순 기간은 통과)
 
 
+_KANJI_NUM_RE = r"[0-9０-９〇一二三四五六七八九十]+"
+
+
+def age_year_issues(plan: dict, story: str) -> list:
+    """본문의 昭和/平成 연도를 주인공 나이로 계산해 모순을 찾는다 (2026-11-18: 편집자가 계산을 놓쳐 57세가 昭和58年에 '스무 살').
+    돌려주는 값: ["昭和五十八年 → 주인공 14세인데 본문은 はたち", ...]"""
+    hero = next((c for c in plan.get("characters") or [] if isinstance(c, dict) and "主人公" in str(c.get("role", ""))), {})
+    age = _int0(plan.get("hero_age") or hero.get("age"))
+    if not (40 <= age <= 80):
+        return []
+    birth = NOW_YEAR - age
+    out = []
+    for m in re.finditer(r"(昭和|平成)(" + _KANJI_NUM_RE + r"|元)年(?!代)", story):
+        n = 1 if m.group(2) == "元" else _int0(_num_norm(m.group(2)))
+        y = (1925 if m.group(1) == "昭和" else 1988) + n
+        a = y - birth
+        near = story[max(0, m.start() - 40): m.end() + 60]
+        said = re.search(r"はたち|二十歳|(" + _KANJI_NUM_RE + r")歳", near)
+        if a < 15:
+            out.append(f"{m.group(0)}({y}년) → 주인공은 {a}세")
+        elif said:
+            s_age = 20 if said.group(0) in ("はたち", "二十歳") else _int0(_num_norm(said.group(1) or ""))
+            if 15 <= s_age <= 45 and abs(s_age - a) >= 3:
+                out.append(f"{m.group(0)}({y}년) → 주인공은 {a}세인데 본문은 {said.group(0)}")
+    for m in re.finditer(r"(" + _KANJI_NUM_RE + r")年(前|間)", story):   # 「四十一年前」 같은 연수가 나이보다 길면
+        n = _int0(_num_norm(m.group(1)))
+        if n and age - n < 15 and m.group(2) == "前":
+            out.append(f"{m.group(0)} → 주인공 {age - n}세 때")
+    return list(dict.fromkeys(out))[:5]
+
+
 def _story_text(state: dict) -> str:
     return "\n".join(c.get("text", "") or "" for c in state.get("chapters", []) or [])
 
@@ -3542,6 +3591,8 @@ def self_audit(state: dict) -> list:
     # ── 이야기
     yrs = _LONG_YEARS.findall(story)
     add(len(yrs) <= 1, "원고에 긴 세월 표현이 거의 없음", f"원고에 「{'」「'.join(sorted(set(yrs))[:3])}」 등 세월 표현 {len(yrs)}곳 — 옛날 이야기 방식")
+    ay = age_year_issues(plan, story)
+    add(not ay, "나이와 연호 계산이 맞음", "나이·연호 계산 안 맞음: " + " / ".join(ay[:3]))
     af = (state.get("edit") or {}).get("auto_fix") or []
     if af:
         out.append(("ok", "세월 표현 자동 정리: " + ", ".join(f"제{x['no']}장{'' if x.get('done') else '(실패)'}" for x in af)))
