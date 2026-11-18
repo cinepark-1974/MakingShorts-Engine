@@ -392,6 +392,11 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - 「バブル」という言葉はタイトル・本文・画面の言葉に使わない（派手さや崩壊の苦い記憶を連想させるため）。時代は「昭和の終わり」「平成のはじめ」と呼ぶ。
 - 実在の有名人・曲名・ドラマ名・商品名は使わない（時代の空気は「トレンディドラマの夜」「ポケベルの数字」のように一般名詞で出す）。
 - 題材は指定された「題材の型」に必ず従う。検索語はその型の中で視聴者が何を気にしているかを知る手がかりにする。
+- 【いま・これから】物語を動かすのは「昔言えなかったこと」ではなく、主人公が「いま始めること・これからしたいこと」（2026-11-18 作家の決定: 物語が似通い、主人公が古い女性像に閉じていた）。
+  主人公は、いまの50〜60代の女性: スマホとLINEを使い、働いた経験があり、韓流ドラマや推し活や一人旅も知っている世代。我慢を美徳にしない。自分の言葉を持ち、欲しいものを自分で選ぶ。
+  恋は何歳でも始まる（60代・70代の新しい恋を、照れずに、品よく書く）。感動も「いまの選択」から生む（教室に通い始める・店を開く・家を出る・誰かに初めて頼る）。
+  「何十年も胸にしまっていた一言」「◯十年前に渡せなかった物」を物語の芯にするのは、ユーザー文の「物語の原動力」が「昔の一言」のときだけ。
+  種類が「初恋・再会」「昔の仲間」「故郷じまい」でも同じ: 再会や思い出は入口にすぎない。物語は、再会したあと二人がこれから何を始めるか（一緒に店を手伝う・旅に出る・毎週会う約束をする）で進める。年齢と年数の勘定を合わせる（61歳の「52年前」は9歳の出来事）。
 - 『〜年ぶり』『〜年越し』『〜年後』のような長い年月の隔たりを売りにするのは「初恋・再会」の型のときだけ。
 - 物語の芯を「何十年も前の出来事・秘密」にしない。事件はいま（この一週間〜数か月）起きていることで回す。過去は理由づけに一場面だけ（2026-11-15: 直近の題が「35年後」「20年間」「31年前」「28年後」「31年目」と年数ばかりで、一覧で同じに見えた）。
   それ以外の型では物語の大半を「いま」の数日間で起こし、過去は回想として少しだけにする。
@@ -678,6 +683,22 @@ def pick_hidden(recent: list) -> str:
     return random.choice([h for h in HIDDEN_KINDS if h not in used] or HIDDEN_KINDS)
 
 
+DRIVES = [
+    ("これから", "主人公がいま始めること・これからしたいこと（新しい恋・学び・仕事・旅・住み替え・誰かと暮らす／ひとりで暮らす決断）。過去の秘密や言えなかった言葉に頼らない"),
+    ("最近", "この一年以内に起きた出来事が発端（退職・引っ越し・誰かの来訪・届いた知らせ）。数十年前にはさかのぼらない"),
+    ("昔の一言", "昔言えなかった一言・渡せなかった物が、いまの出来事で動き出す。ただし決着は主人公のいまの行動でつける"),
+]
+DRIVE_WEIGHTS = [5, 3, 1]
+
+
+def pick_drive(recent: list) -> tuple:
+    """이야기의 원동력 — '이제 하고 싶은 것' 중심. '옛날 못 한 말'은 드물게, 최근 4편에 있었으면 고르지 않는다."""
+    import random
+    used = [r.get("drive", "") for r in (recent or [])[:4]]
+    pool = [(d, w) for d, w in zip(DRIVES, DRIVE_WEIGHTS) if not (d[0] == "昔の一言" and "昔の一言" in used)]
+    return random.choices([d for d, _ in pool], weights=[w for _, w in pool], k=1)[0]
+
+
 def pick_look(recent: list, month: int = 0) -> tuple:
     import random
     used = {r.get("hair", "") for r in (recent or [])[:3]}
@@ -702,6 +723,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     pw = pick_place_weather([r.get("region", "") for r in (recent or [])])
     hair, outfit = pick_look(recent, pw.get("month", 0))
     hidden = pick_hidden(recent)
+    drive = pick_drive(recent)
     hero = "女性"   # 시청자 65% 가 여성·55세 이상 89% (YouTube 분석, 2026-11) — 작가 결정: 주인공은 여성으로 고정
     user = (f"今回の題材の型（必須）: {kind or '自由'}" + (f" — {kdesc}" if kdesc else "") + "\n"
             f"前置き（narrator_intro）の型（必須）: {intro_form}\n"
@@ -713,6 +735,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: 50〜60歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
+            f"物語の原動力（必須）: 「{drive[0]}」— {drive[1]}\n"
             f"主人公の髪型（必須・look_en にこの通り英語で書く）: {hair[1]}\n"
             f"主人公の服（必須・look_en にこの通り英語で書く）: {outfit}\n"
             f"主人公の隠し玉の種類（hidden_card.kind・スカットのとき必須）: {hidden}\n\n"
@@ -736,6 +759,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan["era"] = era
     plan["hair"], plan["outfit"] = hair[0], outfit
     plan["hidden"] = hidden
+    plan["drive"] = drive[0]
     return plan
 
 
@@ -762,7 +786,7 @@ def recent_plans(keys: dict, skip_pid: str = "") -> list:
                     "young": (pl.get("young_woman") or {}).get("role", ""),
                     "young_look": (pl.get("young_woman") or {}).get("look_en", "")[:90],
                     "hero_look": (pl.get("heroine") or {}).get("look_en", "")[:90],
-                    "hair": pl.get("hair", ""), "outfit": pl.get("outfit", ""), "hidden": pl.get("hidden", ""),
+                    "hair": pl.get("hair", ""), "outfit": pl.get("outfit", ""), "hidden": pl.get("hidden", ""), "drive": pl.get("drive", ""),
                     "intro": pl.get("narrator_intro", "")[:60], "intro_form": pl.get("intro_form", "")})
     return out
 
