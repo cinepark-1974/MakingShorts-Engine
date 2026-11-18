@@ -2742,7 +2742,8 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
     lst = os.path.join(tmp, "parts.txt")
     with open(lst, "w") as f:
         for i, sg in enumerate(segs):
-            f.write(f"file '{sg[2]}'\n" + (f"file '{gap}'\n" if i < len(segs) - 1 else ""))
+            # 2026-11-18: 목록 안의 상대 경로는 ffmpeg 가 목록 파일 위치 기준으로 읽어서 매번 실패했다 → 절대 경로로 쓴다
+            f.write(f"file '{os.path.abspath(sg[2])}'\n" + (f"file '{os.path.abspath(gap)}'\n" if i < len(segs) - 1 else ""))
     au = pf(state, folder, "voice.mp3")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c:a", "libmp3lame", "-b:a", "192k", au],
                    check=True, timeout=120)
