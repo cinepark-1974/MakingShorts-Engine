@@ -490,7 +490,7 @@ OVERSEAS = [
     ("ハワイ・オアフ島の北の町", "a small surf town on the north shore of Oahu in Hawaii: low wooden storefronts, palm trees, a long empty beach", False),
     ("台湾・台北", "Taipei, Taiwan: a narrow lane of old brick shophouses with red lanterns and scooters, green hills behind the city", False),
     ("台湾・九份", "Jiufen, Taiwan: a steep stone stairway street of teahouses with red lanterns on a mountainside above the sea", False),
-    ("フランス・パリ", "Paris, France: a quiet street of cream stone apartment buildings with iron balconies, a small corner cafe with a striped awning", True),
+    ("フランス・パリ", "Paris, France: a quiet street of cream stone apartment buildings with iron balconies, a small corner cafe with a striped awning", False),
     ("イタリア・フィレンツェ", "Florence, Italy: terracotta rooftops and a great cathedral dome seen from a stone bridge over the river", False),
     ("ベトナム・ホイアン", "Hoi An, Vietnam: an old town street of yellow walls and silk lanterns beside a slow river with small boats", False),
 ]
@@ -516,9 +516,9 @@ def _weathers(month: int, snowy: bool, region: str) -> list:
     out = [("clear", "bright clear daytime sky")]
     if month in (12, 1, 2) and snowy:
         out += [("snow", "a bright snowy day, soft white snow falling, snow on roofs and branches, pale blue sky breaking through")] * 2
-    elif month in (12, 1, 2):
+    elif month in (12, 1, 2) and region not in WARM:
         out += [("winter_sun", "a crisp bright winter day, low golden sunlight, clear cold air")]
-    if month == 4 and region not in WARM:
+    if month == 4 and region not in WARM and not region.startswith(("フランス", "イタリア")):
         out += [("sakura", "cherry blossoms in full bloom, petals drifting in bright spring light")] * 2
     if month in (6, 7) or (month in (5,) and region in WARM):
         out += [("after_rain", "just after the rain, wet stone glistening, puddles reflecting a bright sky, hydrangeas")] * 2
