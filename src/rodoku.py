@@ -2889,8 +2889,21 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
     d = ImageDraw.Draw(im)
     d.text((540, 150), "SceneStory 朗読ドラマ", font=jp_font(JP_SERIF_BOLD, 40), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=3, stroke_fill=(20, 14, 12, 255))
-    d.text((540, 230), pick.get("hook_line") or state["plan"].get("title_ja", ""), font=jp_font(JP_SANS_BOLD, 76),
-           fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
+    # 2026-11-18: 훅이 길면 화면 양옆이 잘렸다 (「…必ず『えー、』とおっしゃいます…」) → 글씨를 줄이고, 그래도 넘치면 2줄
+    hk = (pick.get("hook_line") or state["plan"].get("title_ja", "")).strip()
+    hsize, hlines = 76, [hk]
+    while hsize > 56 and d.textlength(hk, font=jp_font(JP_SANS_BOLD, hsize)) > 980:
+        hsize -= 4
+    if d.textlength(hk, font=jp_font(JP_SANS_BOLD, hsize)) > 980:
+        hsize = 64
+        cut = next((i + 1 for i in sorted(range(len(hk) - 1), key=lambda i: abs(i + 1 - len(hk) / 2))
+                    if hk[i] in "、。」』はがをにでもと" and hk[i + 1] not in "、。」』ー"), (len(hk) + 1) // 2)
+        hlines = [hk[:cut], hk[cut:]]
+        while hsize > 44 and max(d.textlength(x, font=jp_font(JP_SANS_BOLD, hsize)) for x in hlines) > 980:
+            hsize -= 4
+    for li, hx in enumerate(hlines):
+        d.text((540, 230 + li * (hsize + 14)), hx, font=jp_font(JP_SANS_BOLD, hsize),
+               fill=(255, 244, 234, 255), anchor="ma", stroke_width=6, stroke_fill=(20, 14, 12, 255))
     d.text((540, 1780), "ここまでの物語は本編で ▼ 下のリンクから" if kind == "complete" else
            ("この物語の全編は本編で ▼ 下のリンクから" if kind == "allin" else "続きは本編で ▼ 下のリンクから"),
            font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
