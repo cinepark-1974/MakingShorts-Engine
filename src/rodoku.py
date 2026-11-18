@@ -312,7 +312,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
   "setting": {"place": "具体的な地名・場所", "time": "季節・年代・時刻", "object": "物語を貫く小道具ひとつ"},
-  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: the hairstyle given in the request (主人公の髪型), written exactly, with a few silver strands — never long girlish hair, a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, the outfit given in the request (主人公の服), written exactly, no red, one small everyday item"},
+  "heroine": {"name": "主人公の名前（読み仮名）", "age": 56, "look_en": "English. 主人公（50代の女性）のアニメ風の外見を確定的に一文で: the hairstyle given in the request (主人公の髪型), written exactly, with a few silver strands (styled as a mature woman in her fifties, never a girlish style), a slender refined face (clear bright eyes, faint laugh lines at the eye corners), a slim graceful figure, the outfit given in the request (主人公の服), written exactly, no red, one small everyday item"},
   "characters": [{"name": "名前（読み仮名）", "age": 58, "role": "主人公/相手/家族など", "secret": "その人が隠していること"}],
   "young_woman": {"name": "名前（読み仮名）", "age": 24, "role": "孫娘 / 娘 / 若い日の主人公（回想） / 近所の大学生 / 店のアルバイト など、この物語での立場",
                   "look_en": "English. この作品だけの外見を確定的に一文で: hairstyle, one hair accessory, outfit and its colors, one small habit or item she always has"},
@@ -656,16 +656,24 @@ def seed_prompt(seed: dict) -> str:
 
 # 주인공 머리 모양 — 일본 50·60대 여성에게 인기 있는 대인 헤어 (ozmall·YouCam 2026 헤어 카탈로그: 쇼트보브·레이어·
 # 쿠비레·원컬·셰기·그레이헤어가 중심). 편마다 무작위, 최근 3편과 겹치지 않게 (2026-11-15: 쇼츠 세 편 연속 같은 단발)
+# (이름, 영어 묘사, 길이 묶음) — 2026-11-18: 9개 중 6개가 쇼트·보브라 최근 9편 중 8편이 짧은 머리로 보였다 → 길이 묶음을 번갈아 고른다
 HAIRSTYLES = [
-    ("ショートボブ", "a classic chin-length short bob with a rounded silhouette and soft inward ends"),
-    ("前下がりボブ", "a sleek A-line bob, shorter at the nape and longer toward the jaw, tucked behind one ear"),
-    ("ハンサムショート", "a crisp layered short cut with the ears showing and side-swept bangs, neat at the nape"),
-    ("くびれミディアム", "shoulder-length hair with a soft waist-like curve at the cheeks and ends curled outward in one loose curl"),
-    ("ゆるふわパーマ", "collarbone-length hair in a soft loose perm, airy waves framing the face"),
-    ("グレイヘアショート", "an elegant salt-and-pepper short cut, silver blended through dark hair, softly tousled on top"),
-    ("まとめ髪", "hair gathered into a low chignon at the nape, a few loose strands framing the face"),
-    ("シャギーボブ", "a shaggy layered bob with light feathered ends flipping outward"),
-    ("丸みショート", "a rounded short cut with soft see-through bangs and volume on top"),
+    ("ショートボブ", "a classic chin-length short bob with a rounded silhouette and soft inward ends", "bob"),
+    ("前下がりボブ", "a sleek A-line bob, shorter at the nape and longer toward the jaw, tucked behind one ear", "bob"),
+    ("シャギーボブ", "a shaggy layered bob with light feathered ends flipping outward", "bob"),
+    ("ハンサムショート", "a crisp layered short cut with the ears showing and side-swept bangs, neat at the nape", "short"),
+    ("グレイヘアショート", "an elegant salt-and-pepper short cut, silver blended through dark hair, softly tousled on top", "short"),
+    ("丸みショート", "a rounded short cut with soft see-through bangs and volume on top", "short"),
+    ("くびれミディアム", "shoulder-length hair with a soft waist-like curve at the cheeks and ends curled outward in one loose curl", "medium"),
+    ("ゆるふわパーマ", "collarbone-length hair in a soft loose perm, airy waves framing the face", "medium"),
+    ("センターパートのミディアム", "straight glossy shoulder-length hair parted in the center, the ends resting on the shoulders, no bangs", "medium"),
+    ("外ハネミディアム", "shoulder-length layered hair with long side-swept bangs and the ends flipped outward", "medium"),
+    ("大人のセミロング", "smooth dark hair falling to just below the collarbone in one long gentle wave, swept to one side over the shoulder", "long"),
+    ("ハーフアップ", "below-the-shoulder hair worn half-up, the top section clipped at the back with a tortoiseshell barrette, soft waves falling over the shoulders", "long"),
+    ("ゆるい巻き髪のロング", "chest-length hair in large loose mature curls, a deep side part, worn down over one shoulder", "long"),
+    ("まとめ髪", "hair gathered into a low chignon at the nape, a few loose strands framing the face", "up"),
+    ("夜会巻き", "hair swept up into a smooth French twist at the back of the head, the forehead clear, small pearl earrings visible", "up"),
+    ("低めのひとつ結び", "long hair tied in one low ponytail at the nape with a dark ribbon, the tail resting over one shoulder", "up"),
 ]
 # 기모노는 제대로 (2026-11-16): 깃은 반드시 오른쪽 섶을 먼저 여미고 왼쪽 섶을 위로(右前 — 왼쪽이 아래로 오는 左前는 죽은 사람 차림),
 # 흰 半衿, 등 뒤 お太鼓結び 오비, 오비아게·오비지메, 흰 足袋와 草履, 머리는 단정히 올림
@@ -724,8 +732,11 @@ def pick_drive(recent: list) -> tuple:
 
 def pick_look(recent: list, month: int = 0) -> tuple:
     import random
-    used = {r.get("hair", "") for r in (recent or [])[:3]}
-    hair = random.choice([h for h in HAIRSTYLES if h[0] not in used] or HAIRSTYLES)
+    used = {r.get("hair", "") for r in (recent or [])[:5]}
+    grp = {h[0]: h[2] for h in HAIRSTYLES}
+    used_g = {grp.get(r.get("hair", ""), "") for r in (recent or [])[:2]}       # 직전 2편과 다른 길이
+    hair = random.choice([h for h in HAIRSTYLES if h[0] not in used and h[2] not in used_g]
+                         or [h for h in HAIRSTYLES if h[0] not in used] or HAIRSTYLES)
     used_o = {r.get("outfit", "") for r in (recent or [])[:3]}
     pool = OUTFITS + ([YUKATA] if month in (6, 7, 8) else [])   # 유카타는 여름(6~8월)에만
     outfit = random.choice([o for o in pool if o not in used_o] or pool)
