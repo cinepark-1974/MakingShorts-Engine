@@ -155,7 +155,25 @@ INTRO_FORMS = [
 GENERAL_SEEDS_JA = ["朗読 泣ける", "人生の後半", "昭和 思い出", "平成 思い出", "80年代 思い出", "老後 生き方"]
 
 # 주인공 1958~1974년생의 젊은 날 = 1975~2004년 (쇼와 50년대 ~ 헤이세이 10년대 초)
-NOW_YEAR = 2026        # 이야기의 '지금' (2026-11-18: 그림 지시에 Present day 2024 가 나오고, 나이와 회상 연도가 안 맞았다)
+def now_year() -> int:
+    """이야기의 '지금' = 도쿄 시각의 올해 (서버 시계 기준 자동 계산. 2026-11-18: 그림 지시에 Present day 2024 가 나오고 나이와 회상 연도가 안 맞았다)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.datetime.now(ZoneInfo("Asia/Tokyo")).year
+    except Exception:
+        return (dt.datetime.utcnow() + dt.timedelta(hours=9)).year
+
+
+def reiwa(y: int) -> str:
+    return f"令和{_kanji_num(y - 2018)}年" if y > 2019 else ("令和元年" if y == 2019 else "")
+
+
+def _kanji_num(n: int) -> str:
+    d = "〇一二三四五六七八九"
+    if n < 10:
+        return d[n]
+    t, o = divmod(n, 10)
+    return ("" if t == 1 else d[t]) + "十" + ("" if o == 0 else d[o])
 ERA_PAST = [
     ("昭和50年代（1975〜1984）", "喫茶店、カセットテープ、ラジカセ、公衆電話、文通、国鉄の駅、団地の新築"),
     ("昭和の終わり（1985〜1989）", "ディスコ、肩パッドのスーツ、社員旅行、テレホンカード、深夜のタクシー、寿退社"),
@@ -308,7 +326,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
   "kind": "指定された題材の型（そのまま書く）",
   "picked_query": "選んだ検索語（リストの文言そのまま）",
   "why_ko": "그 검색어를 고른 이유 (한국어 한두 문장)",
-  "title_ja": "作品タイトル（12字以内、物・場所・時間が見える言葉。例：閉店の日の豆腐屋、隣の部屋の朝顔、二人分の湯たんぽ）",
+  "title_ja": "作品タイトル（12字以内、物・場所・時間が見える言葉。例：閉店の日の豆腐屋、隣の部屋の朝顔、二人分の湯たんぽ。専門用語や辞書にない合成語〈採寸台など〉は使わず、誰でも知っている言葉で）",
   "title_ko": "제목의 한국어 뜻",
   "logline_ja": "一行あらすじ（人物・出来事・秘密が入る）",
   "logline_ko": "한 줄 줄거리 (한국어)",
@@ -771,6 +789,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     # 주인공 나이를 코드에서 정하고, 그 나이로 스무~서른다섯 살이 되는 시대만 회상 시대로 고른다
     # (2026-11-18『晩秋の採寸台』: 57세 주인공이 昭和58年에 「はたちを過ぎたばかり」 — 실제로는 열네 살. 시대와 나이를 따로 뽑아서 생긴 모순)
     hero_age = random.randint(52, 62)
+    NOW_YEAR = now_year()
     birth = NOW_YEAR - hero_age
     def _yrs(e):
         m = re.search(r"（(\d{4})〜(\d{4})）", e[0])
@@ -778,7 +797,7 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     fit = [e for e in ERA_PAST if _yrs(e)[1] - birth >= 20 and _yrs(e)[0] - birth <= 35]
     era, era_things = random.choice(fit or ERA_PAST)
     y1, y2 = _yrs((era, era_things))
-    age_line = (f"主人公の年齢（必須）: {hero_age}歳（{birth}年生まれ）。いまは{NOW_YEAR}年（令和八年）。"
+    age_line = (f"主人公の年齢（必須）: {hero_age}歳（{birth}年生まれ）。いまは{NOW_YEAR}年（{reiwa(NOW_YEAR)}）。"
                 f"回想の時代 {y1}〜{y2}年に主人公は{max(0, y1 - birth)}〜{y2 - birth}歳。本文の和暦・年数・年齢はすべてこの勘定に合わせる"
                 f"（昭和N年＝1925＋N年、平成N年＝1988＋N年。例: {birth + 20}年＝主人公二十歳）。image_prompt の現在は Present day {NOW_YEAR}。\n")
     abroad = random.random() < OVERSEAS_KINDS.get(kind, 0.0)
@@ -898,6 +917,7 @@ WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家で�
 
 [朗読のための日本語]
 - 三人称・過去形。地の文はやさしい語彙、一文は短め（40字前後まで）。難しい漢字語は避ける。
+- 耳で一度聞いて分からない言葉（専門用語・業界の言い回し・辞書にない合成語。例: 採寸台、表具、仕入帳の符丁）は使わない。物語に欠かせない物なら、初めて出る所で見て分かる言い方にする（「採寸台」ではなく「お客さんが乗って寸法を測る、桐の低い台」。二度目からは「桐の台」）。
 - 会話は「」。誰が話したか耳で分かるように、会話の前後に話し手の動作を一つ置く。
 - 数字は漢数字（六十七歳、四十五年）。英語・記号・括弧は使わない。
 - 耳で一度で分かる数字の書き方:
@@ -941,7 +961,7 @@ EDIT_SYSTEM = """あなたは日本の朗読ドラマのベテラン編集者で
  opening（第1章の最初の一文が人物の台詞で、3文目までに誰が・何を失いそうか分かるか。情景描写から始まったら4点以下）
  surprise（隠し玉が第1章の手がかりから「そういえば」と思える形で明かされ、相手の顔色が変わる場面があるか。中盤に小さな反撃があるか。書類だけで静かに勝つなら4点以下）
  consistency（章をまたいで人物の職業・年齢・年数・関係・「いつ知ったか」が食い違わないか。冒頭の語り（narrator_intro）に出る人物や物が本編とつながっているか。   例（2026-11-15『登記簿の女』）: 第2章で高校の英語教師の女が第6章で「大学で教えていた」、数日前に名前を知った相手を「十一年間、名前だけを知っていた」、冒頭の語りの「伯母」が本編に一度も出ない → 3点以下）
-consistency では次の二つを必ず計算して確かめる: ①年齢と和暦（今年は令和八年＝二〇二六年。五十八歳なら二十歳は昭和六十三年。「昭和六十一年に二十歳」と書いてあれば食い違い）と、本文の「〜年」の数がその差と合うか ②地名の関係（舞台が谷中など東京の町なのに『東京へ出た』『東京から電話した』と書く、のように舞台の町とその外を取り違えていないか）。一つでも食い違えば consistency は4点以下にし、どの章のどの言葉をどう直すかを書く。
+consistency では次の二つを必ず計算して確かめる: ①年齢と和暦（今年が何年かはユーザー文に書く。例: 二〇二六年に五十八歳なら二十歳は昭和六十三年。「昭和六十一年に二十歳」と書いてあれば食い違い）と、本文の「〜年」の数がその差と合うか ②地名の関係（舞台が谷中など東京の町なのに『東京へ出た』『東京から電話した』と書く、のように舞台の町とその外を取り違えていないか）。一つでも食い違えば consistency は4点以下にし、どの章のどの言葉をどう直すかを書く。
 直すべき章を最大3つ選び、具体的な直し方を書く（「もっと良く」ではなく「第5章で、相手が序盤に言った〇〇を主人公が自分で突きつける場面にする」のように）。
 reality・consistency（スカットでは surprise も）が6点以下なら、その問題がある章は必ず直す対象に入れる（食い違いはどの章のどの言葉をどう直すかまで書く）。
 agency・confront・use・start のどれかが6点以下なら、その章を必ず直す対象に入れ、小さな一文の追加ではなく場面の作り直しを指示する（誰が・どこで・何と言い・相手が何と返し・そのあと何が変わるか、まで書く）。直す章が3つを超えるときは confront → start → use → consistency の順に選ぶ。
@@ -960,7 +980,8 @@ def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
     try:
         gb = genre_build(plan.get("kind", ""))
         ay = age_year_issues(plan, "\n".join(c.get("text", "") for c in chs))
-        rv = _json_call(api_key, EDIT_SYSTEM, f"作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
+        NOW_YEAR = now_year()
+        rv = _json_call(api_key, EDIT_SYSTEM, f"今年: {NOW_YEAR}年（{reiwa(NOW_YEAR)}）\n作品: {plan.get('title_ja')}\n設計図: {json.dumps(design, ensure_ascii=False)}\n"
                         + (f"機械計算で見つかった年齢と和暦の食い違い（必ず consistency を4点以下にし、その章を直す対象に入れ、正しい和暦・年数を書く。"
                            f"主人公は{NOW_YEAR - _int0(plan.get('hero_age') or 0) if plan.get('hero_age') else '?'}年生まれ）: " + " / ".join(ay) + "\n" if ay else "")
                         + (f"この型の組み立て（promise はこれを満たしたかで採点）:\n{gb}\n" if gb else "")
@@ -3462,7 +3483,7 @@ def age_year_issues(plan: dict, story: str) -> list:
     age = _int0(plan.get("hero_age") or hero.get("age"))
     if not (40 <= age <= 80):
         return []
-    birth = NOW_YEAR - age
+    birth = now_year() - age
     out = []
     for m in re.finditer(r"(昭和|平成)(" + _KANJI_NUM_RE + r"|元)年(?!代)", story):
         n = 1 if m.group(2) == "元" else _int0(_num_norm(m.group(2)))
