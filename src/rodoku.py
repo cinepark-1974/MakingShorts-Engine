@@ -2533,7 +2533,7 @@ def _render(job, state, keys, save_fn):
 
 
 N_SHORTS = 3          # 최대
-DEFAULT_SHORTS = 1    # 2026-11-17: 본편 하나에 쇼츠 하나(다 담는 60초). 이전 값 3 — 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
+DEFAULT_SHORTS = 2    # 2026-11-19 작가: 쇼츠를 하나 더 — 완결형 2편(서로 다른 장면). 이전 값 1 — 2026-11-17: 본편 하나에 쇼츠 하나(다 담는 60초). 이전 값 3 — 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
 DEFAULT_SCENES = 3    # 장마다 그림 수 (1~3)
 SHORT_ANGLES = [
     "",   # 1번: 자유 — 続きを聴きたくなる一節
@@ -2768,10 +2768,10 @@ COMPLETE_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者
 ① blow: 主人公が受ける一撃。見下す台詞・突き放す宣告。ショートの最初の1秒になるので、いちばん強い一文から始める。
 ② turn: 形勢が変わる瞬間。隠していた物・事実が明かされる。
 ③ last: 結末で主人公が言う品のある一言、またはそれを受けた相手の沈黙。勝ち誇らない。
-各か所は本文から一字も変えずに1〜3文。3か所の合計は空白を除いて220〜330字（60秒以内）。設計に short_lines があればそれを含む文を優先する。
+各か所は本文から一字も変えずに1〜3文。3か所の合計は空白を除いて150〜220字（朗読は1秒に約4.6字。240字を超えると60秒を超えて使えない）。設計に short_lines があればそれを含む文を優先する。
 JSONだけを出力: {"parts": [{"role": "blow", "chapter": 章番号, "excerpt": "本文そのまま"}, {"role": "turn", ...}, {"role": "last", ...}],
 "hook_line": "①の台詞を「」付きで14字以内に縮めたもの（「〜ない」で終えない。問い・命令・言い切り・数字で終える）", "face_en": "①を聞いた瞬間の主人公（50代の女性）の顔を英語で一文。表情は一つだけ断定",
-"shorts_title": "台詞「」を先頭に、年数か金額を入れた30字以内の題"}"""
+"shorts_title": "台詞「」を先頭に、金額・回数・日数のどれかを入れた30字以内の題（年数は入れない）"}"""
 
 
 ALLIN_SYSTEM = """あなたは朗読ドラマの60秒ショートの編集者です。1本の本編につきショートは1本だけ。その1本が、それだけで一つの作品として完成していること（2026-11-17 作家の決定: ショート1本に完成度）。
@@ -2797,6 +2797,12 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
     if mode == "allin":
         hint += "\n[設計 hidden_card]\n" + json.dumps(plan.get("hidden_card") or {}, ensure_ascii=False)
         hint += "\n[設計 mid_counter]\n" + json.dumps(plan.get("mid_counter") or {}, ensure_ascii=False)
+    if mode == "complete":                 # 2026-11-19: 쇼츠 2편 — 1편째(완결형)에서 쓴 대목·훅은 피한다
+        t0 = state.get("trailer") or {}
+        used = [str(x.get("excerpt", ""))[:40] for x in (t0.get("parts") or []) if isinstance(x, dict)] or [str(t0.get("excerpt", ""))[:200]]
+        if any(used) or t0.get("hook_line"):
+            hint += ("\n[1本目のショートで使った所（同じ文・同じ台詞から始めない。別の場面と別の台詞で一話にする）]\n"
+                     + json.dumps({"hook_line": t0.get("hook_line", ""), "excerpts": used}, ensure_ascii=False))
     pick = _json_call(keys.get("ANTHROPIC_API_KEY", ""), ALLIN_SYSTEM if mode == "allin" else COMPLETE_SYSTEM,
                       f"[設計 short_lines]\n{hint}\n\n{full}", max_tokens=2000)
     def _plen(pk):
@@ -2908,6 +2914,38 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
             "chapters": [sg[0]["no"] for sg in segs]}
 
 
+def _trailer_second(job, state, keys, folder):
+    """쇼츠 2편일 때의 두 번째: 1편째와 다른 대목으로 만든 또 하나의 완결형 60초 (2026-11-19 작가: 쇼츠를 하나 더 늘리기).
+    완결형을 못 만들면 예전 예고형(앞부분)으로 대신한다."""
+    job["msg"] = "쇼츠 2: 다른 장면으로 완결되는 60초 만드는 중"
+    done = None
+    for attempt in range(2):
+        try:
+            done = _complete_short(job, state, keys, folder, mode="complete")
+        except Exception as e:
+            print(f"[rodoku] 두 번째 완결형 쇼츠 실패 {attempt + 1}/2: {e}", flush=True)
+            state["allin_error2"] = f"{type(e).__name__}: {e}"[:200]
+            done = None
+        if done:
+            state.pop("allin_error2", None)
+            return _finish_short(job, state, keys, 1, folder, done["pick"], done["c"], done["audio"], done["vloop"],
+                                 kind="complete", chapters=done["chapters"])
+    if not state.get("allin_error2"):
+        state["allin_error2"] = state.get("allin_error") or "두 번째 완결형을 만들지 못함"
+    state.pop("allin_error", None)
+    print("[rodoku] 두 번째 쇼츠는 예고형으로 만듭니다.", flush=True)
+    return _trailer_teaser1(job, state, keys)        # 예전 예고형 경로(앞 두 장)로
+
+
+def _trailer_teaser1(job, state, keys):
+    n = state.get("n_shorts")
+    state["n_shorts"] = 3
+    try:
+        return _trailer(job, state, keys, 1)
+    finally:
+        state["n_shorts"] = n
+
+
 def _trailer(job, state, keys, slot: int = 0):
     """예고 쇼츠 slot 번째 (0: state['trailer'], 1·2: state['trailers'][slot-1]). 장면이 겹치지 않게 고른다."""
     from src.audio import generate_narration
@@ -2915,6 +2953,8 @@ def _trailer(job, state, keys, slot: int = 0):
     from src.assembler import render_scene_clip
     chs = state["chapters"]
     folder = "trailer" if slot == 0 else f"trailer{slot + 1}"
+    if slot == 1 and int(state.get("n_shorts", DEFAULT_SHORTS) or 1) == 2:
+        return _trailer_second(job, state, keys, folder)
     used = [t.get("chapter") for t in [state.get("trailer") or {}] + (state.get("trailers") or []) if t.get("chapter")]
     pool = chs[:-1]                                                         # 마지막 장(결말)은 빼고 고른다
     if slot == 1:
@@ -3094,6 +3134,8 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
                         "shorts_title": _fix_title_years(keys, pick.get("shorts_title", ""), "ショートのタイトル"),
                         "face_opener": bool(face_img), "kind": kind, "chapters": chapters or [no], "end_tease": tease,
                         "pin_comment": (pick.get("pin_comment") or "").strip()[:60],
+                        "parts": [{"chapter": x.get("chapter"), "excerpt": str(x.get("excerpt", ""))[:120]}
+                                  for x in (pick.get("parts") or []) if isinstance(x, dict)][:4],
                         "r2_key": keep(keys, state, out, f"{folder}.mp4", "video/mp4")}
     if slot == 0:
         state["trailer"] = item
@@ -3668,6 +3710,11 @@ def self_audit(state: dict) -> list:
         add(trl.get("kind") == "allin", "쇼츠가 완결형(한 편에 다 담음)", f"쇼츠가 완결형이 아님({trl.get('kind') or '기록 없음'}) — '예고 쇼츠 다시 만들기' 필요"
             + (f" · 실패 이유: {state['allin_error']}" if state.get("allin_error") else ""))
         add(float(trl.get("seconds") or 0) <= 62.5, f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초", f"쇼츠 길이 {float(trl.get('seconds') or 0):.0f}초 — 62초 초과")
+    if int(state.get("n_shorts") or 1) == 2:
+        t2 = ((state.get("trailers") or []) + [{}])[0] or {}
+        if t2.get("local") or t2.get("r2_key"):
+            add(t2.get("kind") == "complete", f"쇼츠 2도 완결형 ({float(t2.get('seconds') or 0):.0f}초)",
+                f"쇼츠 2가 완결형이 아님({t2.get('kind') or '기록 없음'})" + (f" · 실패 이유: {state['allin_error2']}" if state.get("allin_error2") else ""))
     # ── 재생목록
     if recent and plan.get("kind"):
         last = _playlist_key({"kind": recent[0].get("kind", "")})
