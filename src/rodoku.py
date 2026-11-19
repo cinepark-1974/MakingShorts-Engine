@@ -2533,7 +2533,7 @@ def _render(job, state, keys, save_fn):
 
 
 N_SHORTS = 3          # 최대
-DEFAULT_SHORTS = 2    # 2026-11-19 작가: 쇼츠를 하나 더 — 완결형 2편(서로 다른 장면). 이전 값 1 — 2026-11-17: 본편 하나에 쇼츠 하나(다 담는 60초). 이전 값 3 — 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
+DEFAULT_SHORTS = 1    # 2026-11-17: 본편 하나에 쇼츠 하나(다 담는 60초). 이전 값 3 — 2026-11-07: 쇼츠 1개 ≈ 1천 회(28일 데이터) → 한 편에서 장면이 다른 쇼츠 3개 (화면에서 1로 바꿀 수 있음)
 DEFAULT_SCENES = 3    # 장마다 그림 수 (1~3)
 SHORT_ANGLES = [
     "",   # 1번: 자유 — 続きを聴きたくなる一節
@@ -2887,20 +2887,42 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
         state["allin_error"] = err
         print(f"[rodoku] 완결형 쇼츠 실패 → 예고형: {err}", flush=True)
         return None
-    # 그림: 세 대목 각자의 장 그림(움직임 우선)을 그 길이만큼 이어 붙인다
-    clips = []
-    for i, (c, ex, a, d) in enumerate(segs):
-        ln = d + (0.45 if i < len(segs) - 1 else 1.5)
-        raw = hz.ensure_local(keys, c.get("motion") or {}, pf(state, f"ch{c['no']:02d}_motion.mp4"))
-        v = ""
+    # 그림: 대목마다 그 장의 그림(움직임 우선). 2026-11-19 작가: 쇼츠 안의 그림을 한 장 더 —
+    # 가장 긴 대목은 그 장의 다른 장면 그림으로 반을 나눠 보여 주고, 같은 장이 두 번 나오면 다른 장면 그림을 쓴다.
+    def _scene_srcs(c):
+        out = []
+        for k, sc in enumerate([c] + list(c.get("extra") or [])):
+            tag = f"{c['no']:02d}" + ("" if k == 0 else f"_s{k + 1}")
+            img = hz.ensure_local(keys, sc.get("image") or {}, pf(state, f"ch{tag}.jpg"))
+            if img:
+                out.append((tag, img, sc.get("motion") or {}))
+        return out
+
+    def _clip(src, sec, i):
+        tag, img, mot = src
+        raw = hz.ensure_local(keys, mot, pf(state, f"ch{tag}_motion.mp4")) if mot else ""
         if raw:
             try:
-                v = _vertical_anime(raw, os.path.join(tmp, f"vl{i}.mp4"), sec=int(ln) + 1)
+                return _vertical_anime(raw, os.path.join(tmp, f"vl{i}.mp4"), sec=int(sec) + 1)
             except Exception:
-                v = ""
-        if not v:
-            v = _vertical_loop(c["image"]["local"], os.path.join(tmp, f"vl{i}.mp4"), sec=int(ln) + 1)
-        clips.append((v, ln))
+                pass
+        return _vertical_loop(img, os.path.join(tmp, f"vl{i}.mp4"), sec=int(sec) + 1)
+
+    lens = [sg[3] + (0.45 if i < len(segs) - 1 else 1.5) for i, sg in enumerate(segs)]
+    longest = max(range(len(segs)), key=lambda i: lens[i])
+    used_tags, clips, n = set(), [], 0
+    for i, (c, ex, a, d) in enumerate(segs):
+        srcs = _scene_srcs(c) or [(f"{c['no']:02d}", c["image"]["local"], c.get("motion") or {})]
+        fresh = [x for x in srcs if x[0] not in used_tags] or srcs
+        pieces = [(fresh[0], lens[i])]
+        if i == longest and lens[i] >= 8:
+            second = next((x for x in fresh[1:] if x[0] not in used_tags), None) or next((x for x in srcs if x[0] != fresh[0][0]), None)
+            if second:
+                pieces = [(fresh[0], lens[i] / 2), (second, lens[i] - lens[i] / 2)]
+        for src, ln in pieces:
+            used_tags.add(src[0])
+            clips.append((_clip(src, ln, n), ln))
+            n += 1
     vloop = os.path.join(tmp, "vloop_complete.mp4")
     ins, fc = [], ""
     for i, (v, ln) in enumerate(clips):
