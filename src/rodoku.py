@@ -361,6 +361,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
      "image_prompt": "English. One still scene for this chapter: place, season, light, one object, the heroine (face visible, one clear expression) or one figure seen from behind, and the ONE vermilion red accent named in red_accent. Definitive single state.",
      "with_hero": true,
      "with_young": false,
+     "with_partner": "",
      "ambience_en": "English. この章の場面の環境音を一文で（例: gentle rain on a tin roof with a distant railway crossing bell / summer cicadas and a wind chime on a veranda / quiet waves on a pebble beach）。人の声・音楽は入れない",
      "motion_prompt": "English. この絵の中で小さく繰り返し動くもの2〜3個だけ（例: grass and her hair sway in a soft breeze, clouds drift slowly, light ripples on the water, petals float down）。カメラ・人物の位置・構図は動かさない。手・指・腕は動かさない（髪・服・草・光・水・雲などだけ）",
      "more_scenes": [
@@ -461,6 +462,9 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - more_scenes: 各章の絵は image_prompt（章の始まり）＋ more_scenes 2つ（章の中ほど・章の終わり）の3枚。朗読の流れに沿って
   場面が変わるように、引きの絵 → 寄りの絵（主人公の表情、または置かれた小道具の大写し。手のアップは描かない）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち1〜2章）。その章の image_prompt では彼女の顔が見えてよい。
+- with_partner は相手役の男性（夫・恋人・再会の相手・旅先の人など、主人公と向き合う男性。55〜68歳）がその絵に顔の見える姿で映るとき "now"、回想の若い頃の彼が映るとき "young"、映らないとき ""。
+  男性の相手役がいる物語では、全体で2〜4枚、主人公と同じ画面に二人が映る絵（向き合う・並んで歩く・同じ机をはさむ）を入れる。彼の外見は決まっているので image_prompt には顔や髪を書かず、居る場所・服・しぐさだけを書く。
+  相手役の男性は68歳以下にする（70歳以上は顔を描かない決まりのため）。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
 - 小道具をひとつ決め、第1章で出し、反転で意味を変え、最終章で戻す（例：合鍵、鍋の焦げ跡、将棋の駒、古い腕時計、湯呑み、自転車の鍵、編みかけのセーター）。
 - 反転は最後から2番目の章に置く。各章で必ず出来事がひとつ起きる。回想は全体の3割以内。
@@ -1355,7 +1359,7 @@ ART_PREFIX = (
 )
 ART_SUFFIX = (
     " The vermilion red object is the only red in the whole image. "
-    "The woman in her fifties may show her face; people aged seventy or older are seen from behind, in silhouette or small in the distance, with no facial features. "
+    "The woman in her fifties and the man around sixty may show their faces; people aged seventy or older are seen from behind, in silhouette or small in the distance, with no facial features. "
     "Hands are relaxed and simple — resting in the lap, at the sides, in pockets or out of frame; no raised hands, no gestures. "
     "No text, no letters, no numbers, no signboard writing, no road signs with symbols."
 )
@@ -1573,8 +1577,10 @@ def _worker(job, state, keys, save_fn, made_titles):
                               "motion_prompt": c.get("motion_prompt", ""), "ambience_en": c.get("ambience_en", ""),
                               "with_young": bool(c.get("with_young")) or (c["no"] == _cover_no(plan) and not plan.get("heroine")),
                               "with_hero": bool(c.get("with_hero")) or (c["no"] == _cover_no(plan) and bool(plan.get("heroine"))),
+                              "with_partner": str(c.get("with_partner") or ""),
                               "extra": [{"image_prompt": m.get("image_prompt", ""), "motion_prompt": m.get("motion_prompt", ""),
-                                         "with_young": bool(m.get("with_young")), "with_hero": bool(m.get("with_hero"))}
+                                         "with_young": bool(m.get("with_young")), "with_hero": bool(m.get("with_hero")),
+                                         "with_partner": str(m.get("with_partner") or "")}
                                         for m in (c.get("more_scenes") or []) if isinstance(m, dict) and m.get("image_prompt")
                                         ][:max(int(state.get("n_scenes", DEFAULT_SCENES)) - 1, 0)]}
                              for c in plan["chapters"]]
@@ -1904,6 +1910,15 @@ def paint(keys: dict, prompt: str, aspect: str, dest: str, state: dict = None, c
     return "flux-dev"
 
 
+# 상대역 남자 — 작가가 만든 고정 배역 (Google Drive 「SceneStory 캐릭터 기준 이미지」 grandpa_now_portrait / young_man_portrait).
+# 2026-11-19: 남자 인물이 그림에 거의 안 나오고 섬네일은 늘 여자 혼자였다 → 상대역은 이 두 얼굴로 그린다. 옷은 장면에 맞게 바뀐다.
+PARTNER_NOW_EN = ("The man: a handsome Japanese man around sixty, tall and fit, thick swept-back dark brown hair with natural silver at the temples, "
+                  "warm brown eyes with fine laugh lines, a gentle confident closed-mouth smile, clean-shaven, a strong jaw, "
+                  "dressed neatly (a navy jacket over a white open-collar shirt unless the scene says otherwise). His face is visible")
+PARTNER_YOUNG_EN = ("The young man: a handsome Japanese man in his mid-twenties, lean and tall, tousled wavy brown hair falling to his collar, "
+                    "clear brown eyes, a calm slight smile, clean-shaven, dressed in the clothes of the era named in the scene (a plain white T-shirt unless the scene says otherwise). "
+                    "His face is visible")
+
 HEROINE_AGE = ("She is an elegant, beautiful woman in her mid-fifties, like the graceful heroine of a mature josei anime: "
                "a slim refined figure, a slender oval face with clear bright eyes, soft natural makeup, faint laugh lines only at the corners of the eyes, "
                "a few fine silver strands in her neatly styled hair, graceful upright posture. Attractive and dignified, clearly an adult woman, "
@@ -1935,6 +1950,9 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     yw = plan.get("young_woman") or {}
     if sc.get("with_young") and yw.get("look_en"):
         body += f" The young Japanese woman in her twenties: {yw['look_en'].strip().rstrip('.')}. Her face is visible."
+    wp = str(sc.get("with_partner") or "").lower()
+    if wp in ("now", "young"):
+        body += " " + (PARTNER_NOW_EN if wp == "now" else PARTNER_YOUNG_EN) + "."
     return body
 
 
@@ -3792,7 +3810,8 @@ def _pack(state, keys):
     def _img(x):
         return (x.get("image") or {}).get("local") or ""
     usedimg = {_img(a_src)}
-    cands = [turn] + [c for c in chs if c.get("with_hero")] + [c for c in chs if c.get("with_young")] + list(chs)
+    two = [c for c in chs if c.get("with_partner") and c.get("with_hero")]   # 2026-11-19: 두 사람이 함께 나온 장면을 섬네일 후보 맨 앞에
+    cands = two + [turn] + [c for c in chs if c.get("with_hero")] + [c for c in chs if c.get("with_young")] + list(chs)
     b_src = next((c for c in cands if _img(c) and _img(c) not in usedimg), turn)
     usedimg.add(_img(b_src))
     c_src = next((c for c in [chs[0]] + cands if _img(c) and _img(c) not in usedimg), b_src)
