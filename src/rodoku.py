@@ -1957,7 +1957,7 @@ def _partner_cover(face: str) -> str:
     mood = ("a warm gentle closed-mouth smile" if smiling
             else "a quiet serious face with no smile, mouth closed, his eyes turned toward her with concern")
     man = PARTNER_NOW_EN.replace("a gentle confident closed-mouth smile", mood).replace(" His face is visible", "")
-    return (man + ". His whole handsome face is fully visible and sharp, nothing covering it. "
+    return (man.rstrip(". ") + ". His whole handsome face is fully visible and sharp, nothing covering it. "
             "The woman is nearer to the viewer and in front: her face is the largest face in the picture and the brightest; "
             "his face is set a little behind hers and is the same size as hers or slightly smaller, never larger.")
 
