@@ -1935,6 +1935,16 @@ def _slim_look(look: str) -> str:
     return re.sub(r"\s{2,}", " ", t).strip().strip(";,").strip().rstrip(".")
 
 
+def pair_on(state: dict) -> bool:
+    """사랑편(恋の話)이면 표지·섬네일·쇼츠 첫 화면에 상대 남자를 함께 세운다.
+    2026-11-21 작가: 사랑편『晩秋の書道教室』 섬네일·쇼츠 표지에 여자 혼자만 나옴 — 본편 그림에만 남자가 있었다."""
+    return _playlist_key((state or {}).get("plan") or {}) == "koi"
+
+
+PAIR_CLOSE = (" The woman and the man are close together, shoulder to shoulder, both inside the middle third of the frame "
+              "(the picture is also cropped to a tall vertical strip, so neither face may sit near the left or right edge).")
+
+
 def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     body = (sc.get("image_prompt") or c.get("image_prompt") or "").strip().rstrip(".") + "."
     if "red" not in body.lower():
@@ -1953,6 +1963,8 @@ def _scene_body(plan: dict, c: dict, k: int, sc: dict) -> str:
     wp = str(sc.get("with_partner") or "").lower()
     if wp in ("now", "young"):
         body += " " + (PARTNER_NOW_EN if wp == "now" else PARTNER_YOUNG_EN) + "."
+        if sc.get("with_hero"):
+            body += PAIR_CLOSE
     return body
 
 
@@ -2613,6 +2625,11 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
             f"out-of-focus background with no detail. Main character: a Japanese woman aged {hr.get('age') or 56} "
             f"(not a girl, not a young woman). {HEROINE_AGE}{_slim_look(hr['look_en'])}. {face}. "
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
+    if pair_on(state):     # 사랑편: 쇼츠 첫 화면·표지에도 상대 남자를 어깨 너머에
+        body = body.replace("One person only.",
+                            f"{PARTNER_NOW_EN}. He stands just behind her shoulder, a little taller than her, looking at her; "
+                            f"his whole face is inside the frame, clear and sharp, below the empty top third. "
+                            f"Two people only, the woman in front.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     dest = pf(state, folder, "hook_face.jpg")
     for attempt in range(2):
@@ -3726,6 +3743,12 @@ def self_audit(state: dict) -> list:
     add(not (state.get("flux_used") or state.get("gpt_no_credit")), "그림이 정상 모델로 그려짐",
         "그림 크레딧 문제 — 예비 모델이 쓰여 주인공이 젊게 나왔을 수 있음")
     tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
+    if pair_on(state):      # 사랑편: 상대 남자가 그림·섬네일에 나왔는가 (2026-11-21)
+        nsc = sum(1 for c in state.get("chapters") or [] for x in [c] + list(c.get("extra") or [])
+                  if x.get("with_partner") and x.get("with_hero"))
+        add(nsc >= 2, f"사랑편: 두 사람이 함께 나오는 그림 {nsc}장", f"사랑편인데 두 사람이 함께 나오는 그림이 {nsc}장뿐")
+        ta = next((t for t in state.get("thumbnails") or [] if t.get("tag") == "A"), {})
+        add(bool(ta.get("pair")), "사랑편: 섬네일 A 에 상대 남자가 함께 나옴", "사랑편인데 섬네일 A 가 주인공 혼자 — 업로드 정보 다시 만들기 필요")
     add({"A", "B", "C"} <= tags, "섬네일 A·B·C 모두 있음", "섬네일 빠짐: " + ", ".join(sorted({"A", "B", "C"} - tags)))
     # ── 쇼츠
     if trl.get("local") or trl.get("r2_key"):
@@ -3772,7 +3795,7 @@ def _quote_lines(d, text: str, font_path, jp_font, maxw: int, min_one: int = 56)
 
 
 def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = "A",
-              label: str = "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것") -> dict:
+              label: str = "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것", pair: bool = False) -> dict:
     """대사형 본편 섬네일 (1280x720): 오른쪽에 주인공 얼굴 크게, 왼쪽에 상대의 대사를 노란 특대 글씨로.
     2026-11-12: 클릭률 2.6% → 시니어 낭독 상위 채널들처럼 '대사 + 얼굴'로. 실패하면 None (예비 섬네일 사용)."""
     from PIL import Image, ImageDraw
@@ -3798,8 +3821,13 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
             f"{_slim_look(hr['look_en'])}. Expression: {face}. She is on the {me} half of the frame. {pose} "
             f"Her face is clear and sharp. The {other} half of the frame is {place}, softly blurred, with no people and no detail. "
             f"Warm light on her face. One person only.")
+    if pair:      # 사랑편: 주인공 바로 뒤 어깨 너머에 상대 남자 (두 얼굴 모두 또렷하게)
+        body = body.replace("One person only.",
+                            f"{PARTNER_NOW_EN}. He stands just behind her shoulder on the same {me} half, a little taller than her, "
+                            f"looking at her with a gentle smile; his face is clear and sharp, not hidden by her head. "
+                            f"Two people only, the woman in front.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
-    base = pf(state, "thumb_v2_base.jpg")
+    base = pf(state, "thumb_v2_pair.jpg" if pair else "thumb_v2_base.jpg")
     best = base_img if base_img and hz.usable(base_img) else None
     for attempt in range(0 if best else 3):
         cand = base.replace(".jpg", f"_try{attempt + 1}.jpg")
@@ -3851,7 +3879,7 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
            anchor=anchor, stroke_width=3, stroke_fill=ink)
     dst = pf(state, f"thumbnail_{tag}.jpg")
     Image.alpha_composite(im, over).convert("RGB").save(dst, quality=93)
-    return {"tag": tag, "label": label, "local": dst, "base": best,
+    return {"tag": tag, "label": label, "local": dst, "base": best, "pair": bool(pair),
             "r2_key": keep(keys, state, dst, f"thumbnail_{tag}.jpg", "image/jpeg")}
 
 
@@ -3942,18 +3970,21 @@ def _pack(state, keys):
             pack["thumb_sub"] = re.sub(r"[、・\s]*" + _YEARS.pattern, "", pack["thumb_sub"]).strip("、・ ") or plan.get("title_ja", "")
         if _has_years(hook):
             hook = _fix_years(keys, hook, _story, "サムネイルの台詞")
-        a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "")
+        pr = pair_on(state)      # 사랑편: A·C 는 두 사람, B 는 주인공 혼자(비교용)
+        a = _thumb_v2(state, keys, pack.get("thumb_quote") or hook, pack.get("thumb_sub") or "", pair=pr,
+                      label=("기본 — 대사 + 두 사람 (사랑편) · 한 장만 올릴 때는 이것" if pr
+                             else "기본 — 대사 + 얼굴 (상위 채널 형식) · 한 장만 올릴 때는 이것"))
         if a:
             # B·C 도 같은 얼굴 그림에 문구만 바꾼 새 형식 (그림 추가 비용 없음). 예전 형식은 쓰지 않는다 (2026-11-13)
             b = c = None
             try:     # B·C 하나가 실패해도 A 는 남긴다 (2026-11-15『六〇五号室』: B 가 예전 형식으로 나옴)
-                b = _thumb_v2(state, keys, pack.get("thumb_reply") or "", pack.get("thumb_sub") or "", a["base"], "B",
-                              "예비 — 주인공의 한마디 + 얼굴")
+                b = _thumb_v2(state, keys, pack.get("thumb_reply") or "", pack.get("thumb_sub") or "",
+                              "" if pr else a["base"], "B", "예비 — 주인공의 한마디 + 얼굴")
             except Exception as e:
                 print(f"[rodoku] 섬네일 B 실패: {e}", flush=True)
             try:
                 c = _thumb_v2(state, keys, f"『{plan.get('title_ja', '')}』", pack.get("thumb_sub") or "", a["base"], "C",
-                              "예비 — 작품 제목 + 얼굴")
+                              "예비 — 작품 제목 + 얼굴", pair=pr)
             except Exception as e:
                 print(f"[rodoku] 섬네일 C 실패: {e}", flush=True)
             old = {t.get("tag"): t for t in state.get("thumbnails") or []}
