@@ -1943,11 +1943,23 @@ def pair_on(state: dict) -> bool:
 
 # 사랑편 표지의 두 사람 자세 — 편마다 돌린다. 포옹까지 (2026-11-21 작가). 두 얼굴이 모두 보이는 자세만 쓴다.
 PAIR_POSES = [
-    "He stands right beside her, their shoulders touching, a little taller than her",
+    "He stands right beside her and half a step behind, their shoulders touching",
     "He holds her gently from behind, his arms around her shoulders, his cheek near her temple, both of them facing the viewer",
     "He stands beside her with one arm around her shoulders, drawing her close, and she leans her head on his shoulder",
     "They embrace softly, her hands resting on his chest, their heads close together, both faces turned toward the viewer",
 ]
+
+
+def _partner_cover(face: str) -> str:
+    """표지용 상대 남자 — 표정은 주인공 표정(대사의 분위기)에 맞추고, 얼굴은 주인공보다 크지 않게.
+    2026-11-21『晩秋の書道教室』: 주인공은 눈물 맺힌 얼굴인데 남자는 정면을 보고 웃었고, 남자 얼굴이 더 크게 나왔다."""
+    smiling = "smile" in (face or "").lower() and "no smile" not in (face or "").lower()
+    mood = ("a warm gentle closed-mouth smile" if smiling
+            else "a quiet serious face with no smile, mouth closed, his eyes turned toward her with concern")
+    man = PARTNER_NOW_EN.replace("a gentle confident closed-mouth smile", mood).replace(" His face is visible", "")
+    return (man + ". His whole handsome face is fully visible and sharp, nothing covering it. "
+            "The woman is nearer to the viewer and in front: her face is the largest face in the picture and the brightest; "
+            "his face is set a little behind hers and is the same size as hers or slightly smaller, never larger.")
 
 
 PAIR_CLOSE = (" The woman and the man are close together, shoulder to shoulder, both inside the middle third of the frame "
@@ -2636,9 +2648,8 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
     if pair_on(state):     # 사랑편: 쇼츠 첫 화면·표지에도 상대 남자를 어깨 너머에
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. {PAIR_POSES[(_ep_k(state, keys) + 1) % len(PAIR_POSES)]}; "
-                            f"his whole handsome face is fully visible inside the frame, as large and as sharp as hers, "
-                            f"below the empty top third, nothing covering it. Two people only, both faces side by side.")
+                            f"{PAIR_POSES[(_ep_k(state, keys) + 1) % len(PAIR_POSES)]}. {_partner_cover(face)} "
+                            f"Both faces are below the empty top third. Two people only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     dest = pf(state, folder, "hook_face.jpg")
     for attempt in range(2):
@@ -3832,9 +3843,8 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
             f"Warm light on her face. One person only.")
     if pair:      # 사랑편: 주인공 바로 뒤 어깨 너머에 상대 남자 (두 얼굴 모두 또렷하게)
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. {PAIR_POSES[k % len(PAIR_POSES)]}, on the same {me} half; "
-                            f"his whole handsome face is fully visible, as large and as sharp as hers, turned toward the viewer "
-                            f"with a gentle smile, nothing covering it. Two people only, both faces side by side.")
+                            f"{PAIR_POSES[k % len(PAIR_POSES)]}, on the same {me} half. {_partner_cover(face)} "
+                            f"Two people only.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_pair.jpg" if pair else "thumb_v2_base.jpg")
     best = base_img if base_img and hz.usable(base_img) else None
