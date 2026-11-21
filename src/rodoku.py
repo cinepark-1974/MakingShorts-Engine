@@ -462,7 +462,7 @@ PLAN_SYSTEM = """あなたは日本の50〜70代の女性に向けたYouTube「S
 - more_scenes: 各章の絵は image_prompt（章の始まり）＋ more_scenes 2つ（章の中ほど・章の終わり）の3枚。朗読の流れに沿って
   場面が変わるように、引きの絵 → 寄りの絵（主人公の表情、または置かれた小道具の大写し。手のアップは描かない）→ 別の場所や時間の絵、のように画角と内容を変える。同じ構図を繰り返さない。
 - with_young はその章の絵に young_woman が映るなら true（全章のうち1〜2章）。その章の image_prompt では彼女の顔が見えてよい。
-- with_partner は相手役の男性（夫・恋人・再会の相手・旅先の人など、主人公と向き合う男性。55〜68歳）がその絵に顔の見える姿で映るとき "now"、回想の若い頃の彼が映るとき "young"、映らないとき ""。
+- with_partner は相手役の男性（夫・恋人・再会の相手・旅先の人など、主人公と向き合う男性。55〜68歳）がその絵に顔の見える姿で映るとき "now"、回想の若い頃の彼が映るとき "young"、映らないとき ""。恋の話では、二人が寄り添う・肩を抱く・そっと抱きしめる絵を、物語にその場面があるときに一枚入れてよい（二人の顔が見える構図で。それ以上の接触は描かない）。
   男性の相手役がいる物語では、全体で2〜4枚、主人公と同じ画面に二人が映る絵（向き合う・並んで歩く・同じ机をはさむ）を入れる。彼の外見は決まっているので image_prompt には顔や髪を書かず、居る場所・服・しぐさだけを書く。
   相手役の男性は68歳以下にする（70歳以上は顔を描かない決まりのため）。
 - 不倫・恋・夫婦の秘密などを扱ってよいが、性的描写・暴力・自死は書かない。読後に温かさか、静かな痛みが残る結末にする。
@@ -1941,6 +1941,15 @@ def pair_on(state: dict) -> bool:
     return _playlist_key((state or {}).get("plan") or {}) == "koi"
 
 
+# 사랑편 표지의 두 사람 자세 — 편마다 돌린다. 포옹까지 (2026-11-21 작가). 두 얼굴이 모두 보이는 자세만 쓴다.
+PAIR_POSES = [
+    "He stands right beside her, their shoulders touching, a little taller than her",
+    "He holds her gently from behind, his arms around her shoulders, his cheek near her temple, both of them facing the viewer",
+    "He stands beside her with one arm around her shoulders, drawing her close, and she leans her head on his shoulder",
+    "They embrace softly, her hands resting on his chest, their heads close together, both faces turned toward the viewer",
+]
+
+
 PAIR_CLOSE = (" The woman and the man are close together, shoulder to shoulder, both inside the middle third of the frame "
               "(the picture is also cropped to a tall vertical strip, so neither face may sit near the left or right edge).")
 
@@ -2627,7 +2636,7 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
     if pair_on(state):     # 사랑편: 쇼츠 첫 화면·표지에도 상대 남자를 어깨 너머에
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. He stands right beside her, their shoulders touching, a little taller than her; "
+                            f"{PARTNER_NOW_EN}. {PAIR_POSES[(_ep_k(state, keys) + 1) % len(PAIR_POSES)]}; "
                             f"his whole handsome face is fully visible inside the frame, as large and as sharp as hers, "
                             f"below the empty top third, nothing covering it. Two people only, both faces side by side.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
@@ -3823,7 +3832,7 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
             f"Warm light on her face. One person only.")
     if pair:      # 사랑편: 주인공 바로 뒤 어깨 너머에 상대 남자 (두 얼굴 모두 또렷하게)
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. He stands right beside her on the same {me} half, their shoulders touching, a little taller than her; "
+                            f"{PARTNER_NOW_EN}. {PAIR_POSES[k % len(PAIR_POSES)]}, on the same {me} half; "
                             f"his whole handsome face is fully visible, as large and as sharp as hers, turned toward the viewer "
                             f"with a gentle smile, nothing covering it. Two people only, both faces side by side.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
