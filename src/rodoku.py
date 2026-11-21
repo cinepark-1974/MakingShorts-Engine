@@ -2627,9 +2627,9 @@ def _hook_face(state, keys, folder: str, pick: dict, c: dict) -> str:
             f"Background: {place or 'a quiet Japanese room'}, softly blurred. One person only.")
     if pair_on(state):     # 사랑편: 쇼츠 첫 화면·표지에도 상대 남자를 어깨 너머에
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. He stands just behind her shoulder, a little taller than her, looking at her; "
-                            f"his whole face is inside the frame, clear and sharp, below the empty top third. "
-                            f"Two people only, the woman in front.")
+                            f"{PARTNER_NOW_EN}. He stands right beside her, their shoulders touching, a little taller than her; "
+                            f"his whole handsome face is fully visible inside the frame, as large and as sharp as hers, "
+                            f"below the empty top third, nothing covering it. Two people only, both faces side by side.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     dest = pf(state, folder, "hook_face.jpg")
     for attempt in range(2):
@@ -3823,9 +3823,9 @@ def _thumb_v2(state, keys, quote: str, sub: str, base_img: str = "", tag: str = 
             f"Warm light on her face. One person only.")
     if pair:      # 사랑편: 주인공 바로 뒤 어깨 너머에 상대 남자 (두 얼굴 모두 또렷하게)
         body = body.replace("One person only.",
-                            f"{PARTNER_NOW_EN}. He stands just behind her shoulder on the same {me} half, a little taller than her, "
-                            f"looking at her with a gentle smile; his face is clear and sharp, not hidden by her head. "
-                            f"Two people only, the woman in front.")
+                            f"{PARTNER_NOW_EN}. He stands right beside her on the same {me} half, their shoulders touching, a little taller than her; "
+                            f"his whole handsome face is fully visible, as large and as sharp as hers, turned toward the viewer "
+                            f"with a gentle smile, nothing covering it. Two people only, both faces side by side.")
     prompt = ART_PREFIX + " " + body + ART_SUFFIX
     base = pf(state, "thumb_v2_pair.jpg" if pair else "thumb_v2_base.jpg")
     best = base_img if base_img and hz.usable(base_img) else None
