@@ -795,7 +795,7 @@ def pick_look(recent: list, month: int = 0) -> tuple:
 
 
 def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, kind: str = "",
-              recent: list = None, viral: str = "", seed: dict = None, archive: str = "") -> dict:
+              recent: list = None, viral: str = "", seed: dict = None, archive: str = "", fix_notes: list = None) -> dict:
     import random
     kdesc = next((d for k, d, _ in STORY_KINDS if k == kind), "")
     rec = "\n".join(f"- 『{r.get('title', '')}』 型:{r.get('kind', '?')} / 小道具:{r.get('object', '')} / "
@@ -851,7 +851,10 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             f"\n\n章の数: ちょうど {n_chapters} 章\n"
             f"最近の作品（タイトル・小道具・赤いもの・舞台を重ねない）:\n{rec or 'なし'}\n"
             f"使用禁止の小道具・赤いもの: {', '.join(banned) or 'なし'}\n"
-            f"ほかに作った作品: {', '.join(made_titles[:20]) or 'なし'}\nJSONのみ出力。")
+            f"ほかに作った作品: {', '.join(made_titles[:20]) or 'なし'}\n"
+            + ("前回の設計は次の理由で差し戻された。同じ矛盾を作らないこと（必須）:\n" + "\n".join(f"- {x}" for x in fix_notes) + "\n"
+               if fix_notes else "")
+            + "JSONのみ出力。")
     plan = _json_call(api_key, PLAN_SYSTEM, user, max_tokens=16000)
     chs = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)][:n_chapters]
     if len(chs) < 3:
@@ -869,6 +872,57 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
     plan["drive"] = drive[0]
     plan["hero_age"], plan["hero_birth"] = hero_age, birth
     return plan
+
+
+PLAN_CHECK_SYSTEM = """あなたは朗読ドラマの設計書を、執筆に入る前に点検する編集者です。物語の好みではなく、筋が通らない所だけを探す。
+次の点を一つずつ確かめる:
+1. 舞台と人物の出自・言葉・文化が合っているか（例: 台湾出身の母の話なのに韓国で韓国の衣裳を作る、中国語の資格を韓国人相手に使う、は不可）。
+2. 主人公の年齢・生まれ年と、回想の年号・当時の年齢・「〜年間」が計算で合っているか（昭和N年＝1925＋N、平成N年＝1988＋N）。親や祖父母の出来事は主人公の誕生前でよい。
+3. 隠し玉（hidden_card）がこの舞台・この相手に実際に使えて、結末を動かせるか。
+4. 題材の型の約束を守っているか（恋の型なら相手の男性が実際に登場し二人の距離が変わる。スカッとなら相手が悪事をし、主人公が自分で覆す）。
+5. 現実にありえない手続き・職業・制度・地理がないか。人物の名前や数字が設計の中で食い違っていないか。
+6. 外国の文字（ハングル・簡体字・アルファベット）が日本語の本文用の欄に混ざっていないか。
+問題がなければ ok:true。あれば ok:false と、直し方が分かる具体的な日本語の指摘（一文ずつ、最大6件）。
+JSONのみ: {"ok": true/false, "problems": ["..."]}"""
+
+
+def plan_code_issues(plan: dict, seed: dict = None) -> list:
+    """코드로 바로 잡히는 설계 모순 (AI 점검 전에)."""
+    out = []
+    txt = json.dumps({k: plan.get(k) for k in ("title_ja", "logline_ja", "turn", "ending_ja", "core", "characters",
+                                               "hidden_card", "say_scene", "card_use", "first_step", "short_lines")},
+                     ensure_ascii=False)
+    hg = re.findall(r"[\uac00-\ud7a3]+", re.sub(r"（[^）]*[\uac00-\ud7a3][^）]*）", "", txt))   # 이름 옆 괄호 속 원어 표기는 허용
+    if hg:
+        out.append(f"日本語の欄にハングルがある: 「{'」「'.join(hg[:3])}」— カタカナか日本語にする")
+    sp = seed_place(seed or {})
+    if sp and plan.get("region") and sp not in str(plan.get("region")):
+        out.append(f"元の案の舞台（{sp}）と設計の舞台（{plan.get('region')}）が違う — 人物の出自・衣裳・言葉を舞台に合わせる")
+    if _KIND_PLAYLIST.get(plan.get("kind", "")) == "koi" and plan.get("kind") not in ("海外の旅", "旅先の出会い") and not _has_partner(plan):
+        out.append("恋の型なのに相手の男性が一枚の絵にも出ない（with_partner が全部空）— 相手を登場させる")
+    yrs = age_year_issues(plan, txt)
+    out += [f"年齢と年号が合わない: {x}" for x in yrs]
+    return out
+
+
+def check_plan(api_key: str, plan: dict, seed: dict = None) -> list:
+    """설계 점검 (2026-11-23 작가: 설계가 끝나면 자동으로 검사하고, 틀리면 다시 설계 — 나는 결과물만 본다).
+    돌려주는 값: 문제 목록 (빈 목록 = 통과). AI 점검이 실패하면 코드 점검만."""
+    out = plan_code_issues(plan, seed)
+    brief = {k: plan.get(k) for k in ("kind", "title_ja", "logline_ja", "setting", "region", "era", "hero_age", "hero_birth",
+                                       "characters", "core", "turn", "hidden_card", "mid_counter", "say_scene", "card_use",
+                                       "first_step", "ending_ja", "ally", "plants")}
+    brief["chapters"] = [{k: c.get(k) for k in ("no", "title_ja", "beat_ko", "with_partner")} for c in plan.get("chapters") or []]
+    try:
+        rv = _json_call(api_key, PLAN_CHECK_SYSTEM, json.dumps(brief, ensure_ascii=False), max_tokens=1500)
+        if not rv.get("ok"):
+            out += [str(x)[:200] for x in (rv.get("problems") or [])][:6]
+    except Exception as e:
+        print(f"[rodoku] 설계 점검(AI) 실패 → 코드 점검만: {e}", flush=True)
+    return list(dict.fromkeys(out))
+
+
+PLAN_TRIES = 3
 
 
 def recent_plans(keys: dict, skip_pid: str = "") -> list:
@@ -1583,11 +1637,23 @@ def _worker(job, state, keys, save_fn, made_titles):
                 state["seed_error"] = f"{type(e).__name__}: {e}"[:300]
                 print(f"[rodoku] 소재 후보 채점 실패 → 예전 방식으로 설계: {e}", flush=True)
             hz._save(save_fn, state)
-        _stage(job, state, save_fn, "plan", 1, "설계 중 (6장 골격·복선표·장별 질문)")
-        plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
-                         kind=kind_now, recent=recent,
-                         viral=V.as_prompt(state.get("viral") or []), seed=state.get("seed") or {},
-                         archive=state.get("_archive", ""))
+        # 설계 → 점검 → 틀리면 지적을 붙여 다시 설계 (최대 PLAN_TRIES 번, 가장 문제가 적은 설계를 쓴다)
+        tries, notes = [], []
+        for t in range(PLAN_TRIES):
+            _stage(job, state, save_fn, "plan", 1, "설계 중 (6장 골격·복선표·장별 질문)" if not t else f"설계 다시 하는 중 ({t + 1}/{PLAN_TRIES}) — 점검에서 모순 발견")
+            plan = make_plan(ak, state["trend"]["queries"], n_ch, made_titles,
+                             kind=kind_now, recent=recent,
+                             viral=V.as_prompt(state.get("viral") or []), seed=state.get("seed") or {},
+                             archive=state.get("_archive", ""), fix_notes=notes or None)
+            _stage(job, state, save_fn, "plan", 1, "설계 점검 중 (무대·출신·나이·숨은 카드·이야기 종류)")
+            probs = check_plan(ak, plan, state.get("seed") or {})
+            tries.append((plan, probs))
+            print(f"[rodoku] 설계 점검 {t + 1}/{PLAN_TRIES}: {'통과' if not probs else ' / '.join(probs)[:300]}", flush=True)
+            if not probs:
+                break
+            notes = (notes + probs)[-10:]
+        plan, probs = min(tries, key=lambda x: len(x[1]))
+        state["plan_check"] = {"tries": len(tries), "left": probs, "history": [p for _, p in tries]}
         state["plan"] = plan
         state["title"] = f"{plan.get('title_ja', '')} ({plan.get('title_ko', '')})"
         state["topic"] = f"{plan.get('title_ja', '')} · {plan.get('title_ko', '')}"
@@ -3795,6 +3861,10 @@ def self_audit(state: dict) -> list:
     add(not (state.get("flux_used") or state.get("gpt_no_credit")), "그림이 정상 모델로 그려짐",
         "그림 크레딧 문제 — 예비 모델이 쓰여 주인공이 젊게 나왔을 수 있음")
     tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
+    pc = state.get("plan_check")
+    if pc:
+        add(not pc.get("left"), f"설계 점검 통과 (설계 {pc.get('tries', 1)}번)",
+            f"설계 점검 {pc.get('tries', 1)}번 모두 문제 남음: " + " / ".join(pc.get("left") or [])[:200])
     hg = re.findall(r"[\uac00-\ud7a3]+", story)
     add(not hg, "원고에 외국 문자 없음", f"원고에 한글이 그대로 있음: 「{'」「'.join(hg[:3])}」 — 낭독이 이상하게 읽힘")
     sn = _num_norm(story)
