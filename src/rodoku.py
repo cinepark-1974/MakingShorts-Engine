@@ -32,8 +32,10 @@ TITLE_CARD_SEC = 4.0
 CHAPTER_PAD_SEC = 1.2
 BGM_VOLUME = 0.10
 
-LENGTHS = {15: {"label": "약 15분 (5장)", "chapters": 5}, 20: {"label": "약 20분 (6장)", "chapters": 6}}
-DEFAULT_MIN = 15
+LENGTHS = {15: {"label": "약 15분 (5장)", "chapters": 5}, 20: {"label": "약 20분 (6장)", "chapters": 6},
+           25: {"label": "약 25분 (6장)", "chapters": 6}}
+DEFAULT_MIN = 25          # 2026-11-23: 4분을 넘긴 시청자 30%가 끝까지 봄 → 길이를 늘리면 그대로 시청 시간 (본편 16분 → 25분)
+WRITE_BOOST = 1.2         # 작가가 목표 글자 수보다 15~20% 짧게 써서 '20분'이 실제 16분이 됨 → 목표를 그만큼 올린다
 
 # 일본 시니어 연애·인생 검색 씨앗 — 자동완성으로 실제 검색어를 모은다
 SEEDS_JA = [
@@ -992,6 +994,12 @@ def _novel_rules() -> str:
 WRITE_SYSTEM_HEAD = """あなたは「SceneStory 朗読ドラマ」の作家です。日本の60〜70代が夜、テレビの前で耳で聴く短編を書きます。
 本文だけを出力します（章題・見出し・注釈・記号の説明は書かない）。
 
+[ドラマとして聴かせる（必須）]
+- 台詞は配役の声で読まれる。どの章も、人と人が向き合ってやりとりする場面を少なくとも一つ入れ、台詞を三往復以上続ける（地の文の要約で済ませない）。本文の四割前後を台詞にする。
+- 章の始まりは動き（誰かが来る・電話が鳴る・物が置かれる・言われる）から。回想や心の説明から始めない。
+- 章の終わりは、新しい事実・相手の一言・出てきた物で切る（「〜だった。」の静かな感想で閉じない）。聴き手が次の章を待つ切り方にする。
+- 一つの章の中で、主人公の立場が一度は良くなるか悪くなる（何も変わらない章を作らない）。
+
 [朗読のための日本語]
 - 三人称・過去形。地の文はやさしい語彙、一文は短め（40字前後まで）。難しい漢字語は避ける。
 - 言葉は、その世代の人がふだん口にする話し言葉で書く（2026-11-19 作家: 説明を長く付けた言い方も、人が使わない言葉なら同じこと）。専門用語・業界の言い回し・辞書にない合成語（例: 採寸台）は使わない。長い説明を名詞の前に付けた書き言葉（「お客さんが乗って寸法を測る、桐の低い台」）も使わない。物はふだんの呼び名で言い（「台」「桐の台」）、何に使うかは別の短い文で、人の動きとして見せる（例: 「六畳間の隅に、桐の台がある。お客さんにはその上に立ってもらう。澄子が寸法を測る」）。迷ったら、主人公が隣の人に話すときの言い方を選ぶ。
@@ -1066,6 +1074,10 @@ def edit_pass(api_key: str, plan: dict, chs: list) -> dict:
                            if dialect_rule(plan.get("region", "")) else "") + f"\n{full}", 2500)
         fix = [f for f in (rv.get("fix") or []) if isinstance(f, dict) and f.get("note")][:3]
         sc = rv.get("scores") if isinstance(rv.get("scores"), dict) else {}
+        # 2026-11-23: 본편 시청자가 처음 20초에 30% 나간다 → 도입부 점수가 낮으면 제1장은 반드시 다시 쓴다
+        if isinstance(sc.get("opening"), (int, float)) and sc["opening"] <= 6 and not any(_int0(f.get("no")) == 1 for f in fix):
+            fix = [{"no": 1, "note": "第1章の冒頭を作り直す。最初の一文は相手か主人公の強い台詞、二文目で主人公が何を失いそうか、"
+                                     "三文目までに期限か相手の要求が分かるようにする。情景・天気・朝の支度から始めない。最初の一分で事件を起こす。"}] + fix[:2]
         return {"overall": rv.get("overall", ""), "scores": sc, "fix": fix}
     except Exception as e:
         print(f"[rodoku] 편집 검토 실패 → 건너뜀: {e}", flush=True)
@@ -1147,10 +1159,37 @@ def _card_png(out: str, big: str, small: str = "", W: int = 1920, H: int = 1080)
     return out
 
 
-OUTRO_JA = "お聴きくださり、ありがとうございました。また、次のお話で。"   # 짧게 — 등록 안내는 화면 카드 글자로만
+OUTRO_JA = "お聴きくださり、ありがとうございました。このあと、次のお話も続けてどうぞ。"   # 짧게 — 등록 안내는 화면 카드 글자로만
 COLD_SYSTEM = """あなたは朗読ドラマの編集者です。本文から、動画の冒頭（タイトルの前）に置く一文を選びます。
 条件: 本文の文をそのまま抜き出す（改変しない）。空白を除いて15〜45字。聴いた人が「なぜ？」と続きを知りたくなる文。
 物語の結末・最後の答えは明かさない。JSONだけを出力: {"line": "抜き出した一文"}"""
+
+
+HOOK_SYSTEM = """あなたは朗読ドラマの予告編の編集者です。動画の最初の15〜25秒に流す『山場の一場面』を本文から選びます。
+条件: 本文から連続した一続きの部分をそのまま抜き出す（改変・省略・つなぎ合わせをしない）。空白を除いて70〜150字。
+人と人が向き合う台詞のやりとり（二人以上の台詞を含む）で、緊張がいちばん高い瞬間。最後は答えが出る直前で切れていること
+（相手の顔色が変わる・言葉に詰まる・何かを差し出す所まで）。物語の結末そのものは含めない。
+JSONだけを出力: {"excerpt": "抜き出した部分"}"""
+HOOK_BRIDGE = "――話は、その日の少し前にさかのぼります。"
+
+
+def pick_hook_open(api_key: str, state: dict) -> dict:
+    """첫머리 '산장면' — 클라이맥스(마주 보고 말하는 장) 본문에서 대사가 오가는 대목을 그대로 뽑는다.
+    2026-11-23: 본편 시청자가 시작 20초에 90%→60%로 떨어짐(「老後はひとりで」 시청 지속 곡선). 한 문장 낭독 대신 배역 목소리의 실제 장면으로 연다."""
+    plan, chs = state["plan"], state["chapters"]
+    nos = [_int0((plan.get("say_scene") or {}).get("ch") if isinstance(plan.get("say_scene"), dict) else 0), _int0(plan.get("turn_chapter"))]
+    for no in [n for n in nos if n] + [chs[max(len(chs) - 2, 0)]["no"]]:
+        c = next((x for x in chs if x["no"] == no), None)
+        if not c:
+            continue
+        try:
+            ex = (_json_call(api_key, HOOK_SYSTEM, f"作品: {plan.get('title_ja')}\n\n[本文]\n{c.get('text', '')}", 600).get("excerpt") or "").strip()
+        except Exception as e:
+            print(f"[rodoku] 첫머리 장면 고르기 실패: {e}", flush=True)
+            continue
+        if ex and re.sub(r"\s", "", ex) in re.sub(r"\s", "", c.get("text", "")) and 50 <= _n(ex) <= 180 and ex.count("「") >= 2:
+            return {"chapter": c["no"], "excerpt": ex}
+    return {}
 
 
 def pick_cold_open(api_key: str, state: dict) -> str:
@@ -1673,7 +1712,7 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ③ 집필
     total_chars = minutes * 60 * JA_CPS - (OPEN_CARD_SEC + len(chs) * (CHAPTER_PAD_SEC + 2)) * JA_CPS
-    per = int(total_chars / len(chs))
+    per = int(total_chars / len(chs) * WRITE_BOOST)
     prev = ""
     for c in chs:
         if not c.get("text"):
@@ -1754,8 +1793,9 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ④-3 콜드 오픈 문장 (영상 첫머리, 제목 전에 반전 장의 한 문장)
     if "cold" not in state:
-        _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 고르는 중")
-        state["cold"] = {"text": pick_cold_open(ak, state)}
+        _stage(job, state, save_fn, "voice", 5, "첫머리 산장면 고르는 중")
+        hk = pick_hook_open(ak, state) if state.get("hook_open_on", True) else {}
+        state["cold"] = ({"text": hk["excerpt"], "hook": hk} if hk else {"text": pick_cold_open(ak, state)})
         hz._save(save_fn, state)
 
     # ⑤ 목소리
@@ -1796,7 +1836,34 @@ def _worker(job, state, keys, save_fn, made_titles):
 
     # ⑤-0 콜드 오픈 낭독
     cold = state.get("cold") or {}
-    if cold.get("text") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
+    if cold.get("hook") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
+        # 산장면: 본편 장 낭독(배역 목소리)에서 그 대목을 잘라 + 0.7초 쉼 + 「話は、その日の少し前に…」
+        _stage(job, state, save_fn, "voice", 5, "첫머리 산장면 만들기 (본편 낭독에서 잘라 쓰기)")
+        try:
+            hk = cold["hook"]
+            c = next(x for x in chs if x["no"] == hk["chapter"])
+            part = pf(state, "work", "hook_part.mp3")
+            os.makedirs(os.path.dirname(part), exist_ok=True)
+            if excerpt_from_main(keys, c, hk["excerpt"], part) <= 0:
+                raise RuntimeError("본편 낭독에서 대목을 찾지 못함")
+            br = pf(state, "work", "hook_bridge.mp3")
+            generate_narration(keys.get("ELEVENLABS_API_KEY", ""), HOOK_BRIDGE, br, voice_id=voice, info={})
+            gap = pf(state, "work", "hook_gap.mp3")
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.7",
+                            "-c:a", "libmp3lame", gap], check=True, timeout=60)
+            dest = pf(state, "cold.mp3")
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", part, "-i", gap, "-i", br, "-filter_complex",
+                            "[0:a]aresample=44100,aformat=channel_layouts=mono[a0];[1:a]aresample=44100[a1];"
+                            "[2:a]aresample=44100,aformat=channel_layouts=mono[a2];[a0][a1][a2]concat=n=3:v=0:a=1[a]",
+                            "-map", "[a]", "-c:a", "libmp3lame", "-b:a", "192k", dest], check=True, timeout=120)
+            cold["text"] = re.sub(r"\s+", "", hk["excerpt"]) + HOOK_BRIDGE      # 자막 줄바꿈은 _caption_pages 가 한다
+            cold.update(local=dest, seconds=round(hz.duration(dest), 2), r2_key=keep(keys, state, dest, "cold.mp3", "audio/mpeg"))
+        except Exception as e:
+            print(f"[rodoku] 첫머리 산장면 실패 → 한 문장 방식: {e}", flush=True)
+            cold.pop("hook", None)
+            cold["text"] = pick_cold_open(ak, state)
+        hz._save(save_fn, state)
+    if cold.get("text") and not cold.get("hook") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
         _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 낭독")
         try:
             dest = pf(state, "cold.mp3")
@@ -2529,7 +2596,7 @@ def _render(job, state, keys, save_fn):
     cold = state.get("cold") or {}
     if hz.usable(cold.get("local", "")):   # 콜드 오픈: 반전 장 화면 + 자막 + 낭독 → 그다음 제목
         try:
-            tno = int(state["plan"].get("turn_chapter") or 0)
+            tno = int((cold.get("hook") or {}).get("chapter") or state["plan"].get("turn_chapter") or 0)
         except (TypeError, ValueError):
             tno = 0
         tloop = loops.get(tno) or loops[chs[max(len(chs) - 2, 0)]["no"]]
@@ -3861,6 +3928,12 @@ def self_audit(state: dict) -> list:
     add(not (state.get("flux_used") or state.get("gpt_no_credit")), "그림이 정상 모델로 그려짐",
         "그림 크레딧 문제 — 예비 모델이 쓰여 주인공이 젊게 나왔을 수 있음")
     tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
+    if state.get("cold"):
+        add(bool((state.get("cold") or {}).get("hook")), "첫머리: 클라이맥스 대사 장면으로 시작",
+            "첫머리가 한 문장 낭독 방식 (산장면을 본편 낭독에서 찾지 못함)")
+    fs = (state.get("final") or {}).get("seconds") or 0
+    if fs:
+        add(fs >= 20 * 60 or int(state.get("minutes") or 0) < 25, f"본편 길이 {fs / 60:.0f}분", f"본편 길이 {fs / 60:.0f}분 — 25분 목표보다 짧음")
     pc = state.get("plan_check")
     if pc:
         add(not pc.get("left"), f"설계 점검 통과 (설계 {pc.get('tries', 1)}번)",
