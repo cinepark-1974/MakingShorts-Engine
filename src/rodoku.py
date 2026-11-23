@@ -883,7 +883,8 @@ PLAN_CHECK_SYSTEM = """あなたは朗読ドラマの設計書を、執筆に入
 3. 隠し玉（hidden_card）がこの舞台・この相手に実際に使えて、結末を動かせるか。
 4. 題材の型の約束を守っているか（恋の型なら相手の男性が実際に登場し二人の距離が変わる。スカッとなら相手が悪事をし、主人公が自分で覆す）。
 5. 現実にありえない手続き・職業・制度・地理がないか。人物の名前や数字が設計の中で食い違っていないか。
-6. 外国の文字（ハングル・簡体字・アルファベット）が日本語の本文用の欄に混ざっていないか。
+6. 外国の文字（ハングル・簡体字・アルファベット）が、物語の日本語の欄（台詞・あらすじ・人物名・題）に混ざっていないか。
+   ※ chapters の beat_memo_ko は作者が読むための韓国語の作業メモ。韓国語で正しい。この欄の言語は点検しない（指摘したら誤り）。
 問題がなければ ok:true。あれば ok:false と、直し方が分かる具体的な日本語の指摘（一文ずつ、最大6件）。
 JSONのみ: {"ok": true/false, "problems": ["..."]}"""
 
@@ -914,11 +915,14 @@ def check_plan(api_key: str, plan: dict, seed: dict = None) -> list:
     brief = {k: plan.get(k) for k in ("kind", "title_ja", "logline_ja", "setting", "region", "era", "hero_age", "hero_birth",
                                        "characters", "core", "turn", "hidden_card", "mid_counter", "say_scene", "card_use",
                                        "first_step", "ending_ja", "ally", "plants")}
-    brief["chapters"] = [{k: c.get(k) for k in ("no", "title_ja", "beat_ko", "with_partner")} for c in plan.get("chapters") or []]
+    brief["chapters"] = [{"no": c.get("no"), "title_ja": c.get("title_ja"), "beat_memo_ko": c.get("beat_ko"),
+                          "with_partner": c.get("with_partner")} for c in plan.get("chapters") or []]
     try:
         rv = _json_call(api_key, PLAN_CHECK_SYSTEM, json.dumps(brief, ensure_ascii=False), max_tokens=1500)
         if not rv.get("ok"):
-            out += [str(x)[:200] for x in (rv.get("problems") or [])][:6]
+            # 2026-11-23『嫁の鑑定眼』: AI 가 작가용 한국어 메모(beat_ko)를 '외국 문자'로 잡아 3번 다 실패 처리 → 그 지적은 버린다
+            out += [str(x)[:200] for x in (rv.get("problems") or [])
+                    if not re.search(r"beat_ko|beat_memo|ハングル|韓国語", str(x)) or re.search(r"台詞|本文|title|名前", str(x))][:6]
     except Exception as e:
         print(f"[rodoku] 설계 점검(AI) 실패 → 코드 점검만: {e}", flush=True)
     return list(dict.fromkeys(out))
@@ -1187,9 +1191,33 @@ def pick_hook_open(api_key: str, state: dict) -> dict:
         except Exception as e:
             print(f"[rodoku] 첫머리 장면 고르기 실패: {e}", flush=True)
             continue
-        if ex and re.sub(r"\s", "", ex) in re.sub(r"\s", "", c.get("text", "")) and 50 <= _n(ex) <= 180 and ex.count("「") >= 2:
+        if ex and re.sub(r"\s", "", ex) in re.sub(r"\s", "", c.get("text", "")) and 50 <= _n(ex) <= 260 and ex.count("「") >= 2:
             return {"chapter": c["no"], "excerpt": ex}
+        print(f"[rodoku] 첫머리 장면 후보 탈락 (제{no}장, {_n(ex)}자, 대사 {ex.count('「')}개, 본문 일치 "
+              f"{bool(ex) and re.sub(chr(92) + 's', '', ex) in re.sub(chr(92) + 's', '', c.get('text', ''))})", flush=True)
+        # 2026-11-23『嫁の鑑定眼』: AI 가 고른 대목이 본문과 글자가 달라 탈락 → 코드로 직접 잘라 낸다
+        fb = _hook_by_code(c, plan)
+        if fb:
+            return {"chapter": c["no"], "excerpt": fb}
     return {}
+
+
+def _hook_by_code(c: dict, plan: dict) -> str:
+    """클라이맥스 장에서 대사(「」)가 가장 촘촘한 연속 대목(문단 2~5개, 70~220자, 대사 2개 이상)을 그대로 고른다.
+    주인공의 마주 보는 대사(say_scene.heroine_line)가 들어간 대목을 우선."""
+    paras = [x.strip() for x in re.split(r"\n\s*\n", c.get("text", "")) if x.strip()]
+    want = re.sub(r"[\s「」]", "", ((plan.get("say_scene") or {}).get("heroine_line") or "") if isinstance(plan.get("say_scene"), dict) else "")[:12]
+    best, score = "", -1.0
+    for i in range(len(paras)):
+        for j in range(i + 2, min(i + 6, len(paras)) + 1):
+            blk = "\n\n".join(paras[i:j])
+            n, q = _n(blk), blk.count("「")
+            if not (70 <= n <= 220) or q < 2 or j >= len(paras):     # 마지막 문단(답)은 넣지 않는다
+                continue
+            sc = q / n * 100 + (5 if want and want in re.sub(r"[\s「」]", "", blk) else 0)
+            if sc > score:
+                best, score = blk, sc
+    return best
 
 
 def pick_cold_open(api_key: str, state: dict) -> str:
@@ -3013,6 +3041,9 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
     for k in ("pin_comment", "shorts_title"):                # 고정 댓글·쇼츠 제목의 연수는 그 부분만 지운다 (「２２年間この登記のことを」)
         if _has_years(pick.get(k) or ""):
             pick[k] = _strip_years(pick[k])
+    for k in ("shorts_title", "hook_line"):                  # 원고에 없는 숫자 (2026-11-23『嫁の鑑定眼』: 61세 주인공인데 「51歳」)
+        if pick.get(k):
+            pick[k] = fix_fake_numbers(pick[k], _story_text(state), (state.get("plan") or {}).get("hero_age"))
     tmp = pf(state, folder, "x").rsplit("/", 1)[0]
     au = pf(state, folder, "voice.mp3")
     gap = os.path.join(tmp, "gap.mp3")
@@ -3815,6 +3846,27 @@ def _num_norm(text: str) -> str:
 
 _NAME_SFX = re.compile(r"([一-龥ぁ-んァ-ヶー]{1,6}?)(さん|様|くん|君|ちゃん)")
 _NUM_UNIT = re.compile(r"(\d+)\s*(か月|ヶ月|カ月|日|円|万円|センチ|歳|回|枚|時|分|通|人|軒|部屋)")
+
+
+def fix_fake_numbers(text: str, story: str, hero_age=None) -> str:
+    """제목·훅에서 원고에 없는 「숫자+단위」를 고친다: 나이(歳)는 주인공 나이로, 그 밖은 숫자 부분을 지운다."""
+    sn = _num_norm(story)
+    out = text
+    for m in list(_NUM_UNIT.finditer(_num_norm(text))):
+        tok = m.group(1) + m.group(2)
+        if tok in sn:
+            continue
+        raw = re.search(r"[0-9０-９一二三四五六七八九十百千]+\s*" + re.escape(m.group(2)), out)
+        if not raw:
+            continue
+        if m.group(2) == "歳" and _int0(hero_age):
+            new = f"{int(hero_age)}歳"
+        else:
+            new = ""
+        print(f"[rodoku] 원고에 없는 숫자 교체: {raw.group(0)} → {new or '(삭제)'}", flush=True)
+        end = raw.end() + (1 if not new and out[raw.end():raw.end() + 1] in ("の", "も", "、") else 0)
+        out = out[:raw.start()] + new + out[end:]
+    return re.sub(r"\s{2,}", " ", out).strip()
 
 
 def pack_fact_issues(pack: dict, story: str) -> list:
