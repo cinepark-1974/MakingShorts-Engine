@@ -564,14 +564,28 @@ def _weathers(month: int, snowy: bool, region: str) -> list:
     return out
 
 
-def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0, overseas: bool = False) -> dict:
-    """최근 5편에 안 쓴 지역 + 지금 달 + 그 지역에 맞는 날씨."""
+_SEED_PLACE = [("済州", "済州"), ("釜山", "釜山"), ("ソウル", "ソウル"), ("ホノルル", "ホノルル"), ("オアフ", "オアフ"),
+               ("ハワイ", "ホノルル"), ("九份", "九份"), ("台北", "台北"), ("台湾", "台北"), ("パリ", "パリ"),
+               ("フィレンツェ", "フィレンツェ"), ("ホイアン", "ホイアン"), ("韓国", "ソウル")]
+
+
+def seed_place(seed: dict) -> str:
+    """씨앗 이야기가 고른 해외 도시 → OVERSEAS 이름 조각. 2026-11-22『済州の青い布』: 씨앗은 '台北の仕立て屋'(대만 출신 어머니)인데
+    무대를 따로 뽑아 済州가 되었고, 대만 어머니·중국어 통역·한국 저고리가 뒤섞였다. 무대는 씨앗을 따른다."""
+    t = " ".join(str((seed or {}).get(k) or "") for k in ("title_ja", "logline_ja", "first_event", "goal", "wound_event"))
+    return next((frag for kw, frag in _SEED_PLACE if kw in t), "")
+
+
+def pick_place_weather(recent_regions: list, month: int = 0, salt: float = 0.0, overseas: bool = False, prefer: str = "") -> dict:
+    """최근 5편에 안 쓴 지역 + 지금 달 + 그 지역에 맞는 날씨. prefer 가 있으면 그 이름이 들어간 곳을 고른다."""
     import random
     rnd = random.Random(salt or time.time())
     month = month or (dt.datetime.utcnow() + dt.timedelta(hours=9)).month
     used = [r for r in recent_regions if r][:5]
     src = OVERSEAS if overseas else REGIONS
     pool = [r for r in src if r[0] not in used] or src
+    if prefer:
+        pool = [r for r in pool if prefer in r[0]] or [r for r in src if prefer in r[0]] or pool
     name, scene, snowy = rnd.choice(pool)
     wkey, wen = rnd.choice(_weathers(month, snowy, name))
     return {"region": name, "region_en": scene, "month": month, "season": _SEASON[month], "weather": wkey, "weather_en": wen}
@@ -805,7 +819,10 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
                 f"回想の時代 {y1}〜{y2}年に主人公は{max(0, y1 - birth)}〜{y2 - birth}歳。本文の和暦・年数・年齢はすべてこの勘定に合わせる"
                 f"（昭和N年＝1925＋N年、平成N年＝1988＋N年。例: {birth + 20}年＝主人公二十歳）。image_prompt の現在は Present day {NOW_YEAR}。\n")
     abroad = random.random() < OVERSEAS_KINDS.get(kind, 0.0)
-    pw = pick_place_weather([r.get("region", "") for r in (recent or [])], overseas=abroad)
+    if not abroad and seed_place(seed or {}):        # 씨앗이 해외 도시를 골랐으면 해외로
+        abroad = kind in OVERSEAS_KINDS
+    pw = pick_place_weather([r.get("region", "") for r in (recent or [])], overseas=abroad,
+                            prefer=seed_place(seed or {}) if abroad else "")
     hair, outfit = pick_look(recent, pw.get("month", 0))
     hidden = pick_hidden(recent)
     drive = pick_drive(recent)
@@ -819,7 +836,9 @@ def make_plan(api_key: str, queries: list, n_chapters: int, made_titles: list, k
             + ("この作品の組み立て（必須）:\n" + genre_build(kind) + "\n" if genre_build(kind) else "") +
             f"物語の舞台（必須）: {pw['region']}（{pw['region_en']}）。いま（2020年代）の季節は{pw['month']}月・{pw['season']}にする\n"
             + ("海外の舞台の決まり（必須）: 主人公は日本から来た旅行者。物語の大半をこの町で進め、最後の章で帰国後に始めることを一つ決める。"
-               "出会う相手は現地で暮らすその国の人（日本人の駐在員や旅行者にしない）。50〜70代の男性なら、茶房の主人・タクシー運転手・市場の店主・宿の主人・元教師など、土地に根のある仕事を持つ。言葉が半分しか通じないことを物語に使う（片言の日本語・翻訳アプリ・身ぶり・書いて見せる文字）。相手を理想の王子にせず、暮らしと事情のある一人の人として書く。現地の人の台詞は日本語で書き（片言は短く区切った日本語で表す）、現地の言葉は短い挨拶だけをカタカナで（ハングルやアルファベットは書かない）。実在の店名・芸能人名は出さない。\n" if abroad else "") +
+               "出会う相手は現地で暮らすその国の人（日本人の駐在員や旅行者にしない）。50〜70代の男性なら、茶房の主人・タクシー運転手・市場の店主・宿の主人・元教師など、土地に根のある仕事を持つ。言葉が半分しか通じないことを物語に使う（片言の日本語・翻訳アプリ・身ぶり・書いて見せる文字）。相手を理想の王子にせず、暮らしと事情のある一人の人として書く。現地の人の台詞は日本語で書き（片言は短く区切った日本語で表す）、現地の言葉は短い挨拶だけをカタカナで（ハングルやアルファベットは書かない）。実在の店名・芸能人名は出さない。"
+               "主人公と家族の出自・言葉・物語の衣裳や料理は、この土地と筋が通るものにする（台湾ゆかりの母の話なら台湾で中国語、韓国の衣裳なら韓国の人と韓国語。別の国のものを混ぜない）。"
+               "本文に外国の文字（ハングル・中国語の簡体字・アルファベット）をそのまま書かない。\n" if abroad else "") +
             f"表紙（cover_scene・cover_chapter）の天気と光（必須）: {pw['weather_en']}\n"
             f"主人公（視点人物）: {hero_age}歳の{hero}（視聴者は50〜70代の女性が中心。その人が自分のこととして聴ける人物にする）\n"
             + age_line +
@@ -3420,11 +3439,21 @@ _KIND_PLAYLIST = {
 }
 
 
+def _has_partner(plan: dict) -> bool:
+    chs = (plan or {}).get("chapters") or []
+    return any(str(x.get("with_partner") or "") for c in chs if isinstance(c, dict)
+               for x in [c] + list(c.get("more_scenes") or c.get("extra") or []) if isinstance(x, dict))
+
+
 def _playlist_key(plan: dict) -> str:
     kind = (plan or {}).get("kind", "")
     if is_sukatto(kind):
         return "suka"
-    return _KIND_PLAYLIST.get(kind, "naku")
+    key = _KIND_PLAYLIST.get(kind, "naku")
+    # 2026-11-22『済州の青い布』: 海外の旅인데 상대 남자가 한 장면도 없는 '어머니와 딸' 이야기 → 사랑편·두 사람 섬네일이 어긋남
+    if key == "koi" and kind in ("海外の旅", "旅先の出会い") and (plan or {}).get("chapters") and not _has_partner(plan):
+        return "naku"
+    return key
 
 
 def playlist_for(plan: dict) -> str:
@@ -3610,6 +3639,9 @@ def age_year_issues(plan: dict, story: str) -> list:
         a = y - birth
         near = story[max(0, m.start() - 40): m.end() + 60]
         said = re.search(r"はたち|二十歳|(" + _KANJI_NUM_RE + r")歳", near)
+        ctx = story[max(0, m.start() - 160): m.end() + 40]
+        if a < 0 and re.search(r"母|父|祖|師匠|夫の|義", ctx):     # 부모·조부모의 일(어머니의 결혼 등)은 주인공 출생 전이어도 맞다
+            continue
         if a < 15:
             out.append(f"{m.group(0)}({y}년) → 주인공은 {a}세")
         elif said:
@@ -3763,6 +3795,12 @@ def self_audit(state: dict) -> list:
     add(not (state.get("flux_used") or state.get("gpt_no_credit")), "그림이 정상 모델로 그려짐",
         "그림 크레딧 문제 — 예비 모델이 쓰여 주인공이 젊게 나왔을 수 있음")
     tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
+    hg = re.findall(r"[\uac00-\ud7a3]+", story)
+    add(not hg, "원고에 외국 문자 없음", f"원고에 한글이 그대로 있음: 「{'」「'.join(hg[:3])}」 — 낭독이 이상하게 읽힘")
+    sn = _num_norm(story)
+    snum = [m.group(0) for k in ("shorts_title", "hook_line") for m in _NUM_UNIT.finditer(_num_norm(trl.get(k) or ""))
+            if (m.group(1) + m.group(2)) not in sn]
+    add(not snum, "쇼츠 제목·훅의 숫자가 원고와 맞음", "쇼츠 제목·훅에 원고에 없는 숫자: " + ", ".join(snum[:3]))
     if pair_on(state):      # 사랑편: 상대 남자가 그림·섬네일에 나왔는가 (2026-11-21)
         nsc = sum(1 for c in state.get("chapters") or [] for x in [c] + list(c.get("extra") or [])
                   if x.get("with_partner") and x.get("with_hero"))
