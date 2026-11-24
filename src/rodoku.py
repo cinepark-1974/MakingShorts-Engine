@@ -1188,9 +1188,9 @@ def pick_hook_open(api_key: str, state: dict) -> dict:
             continue
         try:
             ex = (_json_call(api_key, HOOK_SYSTEM, f"作品: {plan.get('title_ja')}\n\n[本文]\n{c.get('text', '')}", 600).get("excerpt") or "").strip()
-        except Exception as e:
-            print(f"[rodoku] 첫머리 장면 고르기 실패: {e}", flush=True)
-            continue
+        except Exception as e:      # 2026-11-24『仏壇の受験票』: 여기서 continue 하는 바람에 코드 대체도 건너뛰어 첫머리가 비었다
+            print(f"[rodoku] 첫머리 장면 고르기(AI) 실패 → 코드로: {e}", flush=True)
+            ex = ""
         if ex and re.sub(r"\s", "", ex) in re.sub(r"\s", "", c.get("text", "")) and 50 <= _n(ex) <= 260 and ex.count("「") >= 2:
             return {"chapter": c["no"], "excerpt": ex}
         print(f"[rodoku] 첫머리 장면 후보 탈락 (제{no}장, {_n(ex)}자, 대사 {ex.count('「')}개, 본문 일치 "
@@ -3806,15 +3806,17 @@ def age_year_issues(plan: dict, story: str) -> list:
         ctx = story[max(0, m.start() - 160): m.end() + 40]
         if a < 0 and re.search(r"母|父|祖|師匠|夫の|義", ctx):     # 부모·조부모의 일(어머니의 결혼 등)은 주인공 출생 전이어도 맞다
             continue
-        if a < 15:
-            out.append(f"{m.group(0)}({y}년) → 주인공은 {a}세")
+        # 2026-11-24『仏壇の受験票』: 1972년생이 昭和61年에 「十四歳」(중학 3학년) — 맞는 계산인데 '15세 미만'이라 빨강이 됐다.
+        # 어린 시절 일 자체는 오류가 아니다 → 태어나기 전이거나, 본문에 적힌 나이와 계산이 2살 이상 다를 때만 잡는다.
+        if a < 0:
+            out.append(f"{m.group(0)}({y}년) → 주인공은 태어나기 전({a}세)")
         elif said:
             s_age = 20 if said.group(0) in ("はたち", "二十歳") else _int0(_num_norm(said.group(1) or ""))
-            if 15 <= s_age <= 45 and abs(s_age - a) >= 3:
+            if 5 <= s_age <= 45 and abs(s_age - a) >= 2:
                 out.append(f"{m.group(0)}({y}년) → 주인공은 {a}세인데 본문은 {said.group(0)}")
     for m in re.finditer(r"(" + _KANJI_NUM_RE + r")年(前|間)", story):   # 「四十一年前」 같은 연수가 나이보다 길면
         n = _int0(_num_norm(m.group(1)))
-        if n and age - n < 15 and m.group(2) == "前":
+        if n and age - n < 6 and m.group(2) == "前":
             out.append(f"{m.group(0)} → 주인공 {age - n}세 때")
     return list(dict.fromkeys(out))[:5]
 
