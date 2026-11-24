@@ -2235,7 +2235,22 @@ def _motion_one(state, keys, c, k, sc):
               "unchanged — do not animate hands. Keep the hand-drawn animation look. No text.")
     dest = pf(state, name)
     try:
-        url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img, prompt_optimizer=False)
+        url = ""
+        # 2026-11-24 작가: Replicate 충전이 너무 잦다 → DROPSHOT_API_KEY 가 있으면 드롭샷 먼저(같은 Hailuo 2.3 Fast), 실패하면 Replicate
+        ds_key = (keys.get("DROPSHOT_API_KEY") or "").strip()
+        r2k = (sc.get("image") or {}).get("r2_key")
+        if ds_key and r2k:
+            try:
+                from src import r2_store, video_dropshot
+                url = video_dropshot.generate_clip_url(ds_key, prompt, r2_store.download_link(keys, r2k, 3600),
+                                                       resolution=(keys.get("DROPSHOT_RES") or "1080p").strip())
+                mo["provider"] = "dropshot"
+            except Exception as e:
+                print(f"[rodoku] 제{c['no']}장 장면{k + 1} 드롭샷 실패 → Replicate: {e}", flush=True)
+                mo["dropshot_error"] = str(e)[:200]
+        if not url:
+            url = generate_single_clip_url(keys.get("REPLICATE_API_TOKEN", ""), prompt, image_url=img, prompt_optimizer=False)
+            mo["provider"] = "replicate"
         hz._download(url, dest)
         bad = _motion_defect(keys, dest, sc.get("image_prompt") or c.get("image_prompt", ""), state.get("plan") or {})
         if bad:   # 움직이다 손·얼굴이 일그러진 영상은 버리고, 검수를 통과한 정지 그림(Ken Burns)으로

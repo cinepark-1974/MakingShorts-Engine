@@ -528,6 +528,8 @@ def load_api_keys():
         "ELEVENLABS_VOICE_ID",
         "FAL_KEY",
         "REPLICATE_API_TOKEN",     # Replicate MiniMax Video-01 (fal.ai 대안 비디오 백엔드)
+        "DROPSHOT_API_KEY",        # 드롭샷 — 있으면 SceneStory 움직이는 컷을 Replicate 대신 (같은 Hailuo 2.3 Fast)
+        "DROPSHOT_RES",            # 드롭샷 컷 화질 1080p(기본) / 768p (약 58% 가격)
         "UNSPLASH_ACCESS_KEY",     # Unsplash 라이센스 프리 사진 검색용
         "GOOGLE_API_KEY",          # 구글 드라이브 이미지 목록 조회용 (폴백)
         "GDRIVE_REF_FOLDER_ID",    # 레퍼런스 이미지 폴더 ID (폴백)
@@ -764,6 +766,20 @@ with st.sidebar:
             else:
                 st.error("항목을 읽지 못했습니다 — REPLICATE_API_TOKEN 확인. 이 경우 MiniMax 공통 이름으로 요청하고, "
                          "실패하면 video-01 로 되돌립니다.")
+
+        st.markdown("---")
+        st.caption("드롭샷: 남은 크레딧과 Hailuo 2.3 Fast 입력 항목·가격을 읽어 옵니다 (영상은 만들지 않아 무료).")
+        if st.button("🎬 드롭샷 연결 확인", key="dropshot_test_btn", use_container_width=True):
+            from src import video_dropshot as _vd
+            _vd._SCHEMA.clear()
+            st.session_state["_dropshot_rep"] = _vd.test_report(_tk.get("DROPSHOT_API_KEY", "")) if _tk.get("DROPSHOT_API_KEY") \
+                else {"ok": False, "error": "Secrets 에 DROPSHOT_API_KEY 가 없습니다"}
+        _dr = st.session_state.get("_dropshot_rep")
+        if _dr is not None:
+            (st.success if _dr.get("ok") else st.error)("연결 성공 — 다음 편부터 움직이는 컷을 드롭샷으로 만듭니다." if _dr.get("ok")
+                                                       else f"실패 — {_dr.get('error')}")
+            st.download_button("⬇ 확인 결과 JSON (Claude 에게 전달용)", data=__import__("json").dumps(_dr, ensure_ascii=False, indent=1, default=str),
+                               file_name="dropshot_test.json", mime="application/json", key="dropshot_dl", use_container_width=True)
 
         st.markdown("---")
         st.caption("Lyria 30초 음악 클립 1개를 받아 봅니다 (Google 요금이 발생할 수 있음).")
