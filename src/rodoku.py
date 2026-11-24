@@ -1220,6 +1220,21 @@ def _hook_by_code(c: dict, plan: dict) -> str:
     return best
 
 
+def _cold_fallback(state: dict) -> str:
+    """첫머리 한 문장이 비었을 때: 설계의 '첫 한 방' 대사 → 주인공의 마주 보는 대사 → 반전 장 첫 문장."""
+    plan = state.get("plan") or {}
+    for x in plan.get("short_lines") or []:
+        if isinstance(x, dict) and x.get("role") == "blow" and x.get("line"):
+            ln = re.sub(r"——.*$", "", str(x["line"])).strip()
+            if 4 <= _n(ln) <= 60:
+                return ln
+    ss = plan.get("say_scene") if isinstance(plan.get("say_scene"), dict) else {}
+    if 4 <= _n(ss.get("heroine_line") or "") <= 60:
+        return ss["heroine_line"]
+    c = next((x for x in state.get("chapters") or [] if x["no"] == _int0(plan.get("turn_chapter"))), None)
+    return (re.split(r"(?<=。)", (c or {}).get("text", "").strip())[0] or "")[:60]
+
+
 def pick_cold_open(api_key: str, state: dict) -> str:
     """콜드 오픈 한 문장 — 반전 장 본문에서 그대로 뽑는다 (본문에 없는 문장이면 버린다)."""
     plan, chs = state["plan"], state["chapters"]
@@ -1823,7 +1838,8 @@ def _worker(job, state, keys, save_fn, made_titles):
     if "cold" not in state:
         _stage(job, state, save_fn, "voice", 5, "첫머리 산장면 고르는 중")
         hk = pick_hook_open(ak, state) if state.get("hook_open_on", True) else {}
-        state["cold"] = ({"text": hk["excerpt"], "hook": hk} if hk else {"text": pick_cold_open(ak, state)})
+        state["cold"] = ({"text": hk["excerpt"], "hook": hk} if hk else {"text": pick_cold_open(ak, state) or _cold_fallback(state),
+                                                                          "hook_error": "산장면 대목을 고르지 못함"})
         hz._save(save_fn, state)
 
     # ⑤ 목소리
@@ -1889,7 +1905,8 @@ def _worker(job, state, keys, save_fn, made_titles):
         except Exception as e:
             print(f"[rodoku] 첫머리 산장면 실패 → 한 문장 방식: {e}", flush=True)
             cold.pop("hook", None)
-            cold["text"] = pick_cold_open(ak, state)
+            cold["hook_error"] = f"{type(e).__name__}: {e}"[:200]
+            cold["text"] = pick_cold_open(ak, state) or _cold_fallback(state)   # 2026-11-25: 둘 다 비어 첫머리가 통째로 빠졌다
         hz._save(save_fn, state)
     if cold.get("text") and not cold.get("hook") and not hz.ensure_local(keys, cold, pf(state, "cold.mp3")) and not cold.get("error"):
         _stage(job, state, save_fn, "voice", 5, "첫머리 한 문장 낭독")
@@ -2806,6 +2823,9 @@ def _norm_ja(t: str) -> str:
     return "".join(ch for ch in speakable(t or "") if ch not in _NORM_DROP)
 
 
+_TIMING = {}      # 잘라 낸 쇼츠 소리 경로 → [(글자, 시작초, 끝초)] (본편 자막 타이밍을 그대로 옮긴 것)
+
+
 def excerpt_from_main(keys: dict, c: dict, excerpt: str, dest: str) -> float:
     """쇼츠 대목을 본편 장 낭독에서 잘라 쓴다 (ElevenLabs 크레딧 0, 목소리도 본편과 똑같음).
     c['subs'] = [[글자, 시작, 끝], ...] (장 낭독 기준 초, 본편 자막 맞추기 때 저장된 것)를 이어 붙여 대목의 위치를 찾는다.
@@ -2836,6 +2856,9 @@ def excerpt_from_main(keys: dict, c: dict, excerpt: str, dest: str) -> float:
     if not src_au:
         return 0.0
     start, end = max(0.0, a - 0.15), b + 0.35
+    # 2026-11-25『旧館最後の七日』: 쇼츠 자막을 글자 수 비율로 나눠 낭독과 어긋남 → 본편 자막의 실제 시각을 그대로 옮겨 둔다
+    _TIMING[dest] = [(txt, max(0.0, float(sa) - start), min(end - start, float(sb) - start))
+                     for (txt, sa, sb), (s0, s1, _a, _b) in zip(subs, spans) if s1 > i and s0 < j and float(sb) > start]
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", src_au,
                     "-af", "afade=t=in:d=0.08,afade=t=out:st=" + f"{max(0.0, end - start - 0.25):.3f}" + ":d=0.25",
                     "-c:a", "libmp3lame", "-b:a", "192k", dest], check=True, timeout=120)
@@ -3110,6 +3133,11 @@ def _complete_short(job, state, keys, folder: str, mode: str = "complete"):
             if excerpt_from_main(keys, c, ex, a) <= 0:
                 return None, f"{x.get('role', i + 1)} 대목을 제{c['no']}장 낭독에서 찾지 못함: {ex[:20]}…"
             segs.append((c, ex, a, hz.duration(a)))
+        tl, off, gd = [], 0.0, hz.duration(gap)
+        for i, sg in enumerate(segs):
+            tl += [(t, a0 + off, b0 + off) for t, a0, b0 in _TIMING.get(sg[2], [])]
+            off += sg[3] + (gd if i < len(segs) - 1 else 0)
+        _TIMING[au] = tl
         lst = os.path.join(tmp, "parts.txt")
         with open(lst, "w") as f:
             for i, sg in enumerate(segs):
@@ -3340,6 +3368,22 @@ def _trailer(job, state, keys, slot: int = 0):
     return _finish_short(job, state, keys, slot, folder, pick, c, au, vloop)
 
 
+def _timed_caps(timing: list, limit: float, tmp: str) -> list:
+    """본편 자막 시각 → 세로 쇼츠 자막 PNG [(시작, 끝, png)]. 한 줄이 길면 구절로 나눠 그 줄의 시간 안에서 글자 수로 나눈다."""
+    from src import captions as cap
+    out, k = [], 0
+    for txt, a, b in timing:
+        if a >= limit - 0.2 or b <= a:
+            continue
+        b = min(b, limit)
+        for pa, pb, ph in cap.timeline(cap.split_phrases(txt, "ja"), b - a):
+            png = os.path.join(tmp, f"tcap_{k:03d}.png")
+            cap.render_caption_png(ph, png, 1080, 1920, lang="ja")
+            out.append((round(a + pa, 2), round(a + pb, 2), png))
+            k += 1
+    return out
+
+
 def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teaser", chapters=None):
     """얼굴 첫 장면 + 위 문구 + 자막 + 소리를 합쳐 쇼츠를 완성하고 state 에 넣는다."""
     from src import captions as cap
@@ -3356,6 +3400,7 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
         except Exception as e:
             print(f"[rodoku] 끝 질문 다시 받기 실패: {e}", flush=True)
     tail = 2.6 if tease else 1.5
+    timing = list(_TIMING.get(au) or [])
     if hz.duration(au) + tail > 62.0:
         # 낭독이 길면 62초 직전 숨자리에서 끊는다 (2026-11-15『六〇五号室』: 「廊下の向こう、」 문장 중간에 잘리고 끝 질문이 자막을 덮음)
         cut = max([q for q in _quiet_points(au) if q < 62.0 - tail - 0.2] or [62.0 - tail])
@@ -3406,7 +3451,9 @@ def _finish_short(job, state, keys, slot, folder, pick, c, au, vloop, kind="teas
            font=jp_font(JP_SANS_BOLD, 44), fill=(227, 181, 164, 255), anchor="ma",
            stroke_width=4, stroke_fill=(20, 14, 12, 255))
     im.save(top)
-    caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
+    caps = _timed_caps(timing, hz.duration(au), tmp) if timing else []
+    if not caps:      # 새로 낭독한 경우(본편에서 못 잘라 냄)만 글자 수 비율로
+        caps = cap.build_for_scene({"narration": excerpt}, sec, tmp, 1, 1080, 1920, lang="ja", instant=True)
     silent = os.path.join(tmp, "v.mp4")
     render_scene_clip(vloop, top, sec, silent, instant=True, captions=caps, punch_in=False)
     if tease:
@@ -4028,7 +4075,8 @@ def self_audit(state: dict) -> list:
     tags = {t.get("tag") for t in state.get("thumbnails") or [] if t.get("local") or t.get("r2_key")}
     if state.get("cold"):
         add(bool((state.get("cold") or {}).get("hook")), "첫머리: 클라이맥스 대사 장면으로 시작",
-            "첫머리가 한 문장 낭독 방식 (산장면을 본편 낭독에서 찾지 못함)")
+            "첫머리가 한 문장 낭독 방식 — " + str((state.get("cold") or {}).get("hook_error") or "산장면을 본편 낭독에서 찾지 못함")
+            if (state.get("cold") or {}).get("text") else "첫머리가 비어 있음 (제목 화면부터 시작)")
     fs = (state.get("final") or {}).get("seconds") or 0
     if fs:
         add(fs >= 20 * 60 or int(state.get("minutes") or 0) < 25, f"본편 길이 {fs / 60:.0f}분", f"본편 길이 {fs / 60:.0f}분 — 25분 목표보다 짧음")
