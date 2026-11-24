@@ -40,13 +40,15 @@ def render_new(st, manager, api_keys):
                           value=True, key="rd_motion",
                           help="끄면 그림을 천천히 확대·축소(Ken Burns)만 합니다. 켜면 Replicate 영상 비용이 장 수만큼 추가되고 "
                                "제작 시간이 10~20분 늘어납니다. 실패한 장은 자동으로 Ken Burns 로 대신합니다.")
+    motion_all = st.toggle("🎞 모든 장면을 움직이기 (끄면 장마다 대표 장면 1컷만 움직이고, 나머지는 천천히 흐르는 화면 · 약 1/3 비용)",
+                           value=False, key="rd_motion_all", disabled=not motion_on)
     miss = [k for k in NEED_KEYS if not str(api_keys.get(k, "")).strip()]
     if miss:
         st.error("Secrets 에 없는 키: " + ", ".join(miss))
     if st.button("🤖 자동 제작 시작", type="primary", use_container_width=True, disabled=bool(miss), key="rd_start"):
         state = manager.create_new_project(chapter="朗読ドラマ", topic="朗読ドラマ 자동", channel="scenestory")
         state.update(mode="rodoku", minutes=int(minutes), title="朗読ドラマ (자동 제작 중)", stage="queued",
-                     motion_on=bool(motion_on), n_shorts=int(n_shorts), n_scenes=int(n_scenes),
+                     motion_on=bool(motion_on), motion_all=bool(motion_all), n_shorts=int(n_shorts), n_scenes=int(n_scenes),
                      ambience_on=bool(ambience_on), subs_on=bool(subs_on), group=group)
         manager.save_state(state)
         made = [p["title"] for p in manager.list_projects() if p.get("channel") == "scenestory"]

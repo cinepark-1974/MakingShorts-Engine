@@ -2445,8 +2445,11 @@ def _make_motion(job, state, keys, save_fn):
     if state.get("motion_on") is False:
         return
     todo = []
+    allm = bool(state.get("motion_all", False))    # 2026-11-24: 기본은 장마다 대표 장면 1컷만 (18컷 → 6컷, 약 $6 → $2)
     for c in state["chapters"]:
         for k, sc in enumerate([c] + list(c.get("extra") or [])):
+            if k > 0 and not allm:
+                continue
             if not (sc.get("image") or {}).get("local") and not (sc.get("image") or {}).get("r2_key"):
                 continue
             name = f"ch{c['no']:02d}_motion.mp4" if k == 0 else f"ch{c['no']:02d}_s{k + 1}_motion.mp4"
@@ -2464,6 +2467,28 @@ def _make_motion(job, state, keys, save_fn):
             c, k = futs[f]
             done += 1
             _stage(job, state, save_fn, "motion", 4, f"움직임 {done}/{len(todo)} · 제{c['no']}장 장면{k + 1}")
+
+
+DRIFT_MODES = ["right", "down", "left", "up", "diag"]
+
+
+def build_drift_loop(image: str, out: str, mode: str = "right", period: int = 24, zoom: float = 1.10,
+                     base: tuple = (2560, 1440)) -> str:
+    """정지 그림 → 카메라가 천천히 옆·위아래로 흘렀다 돌아오는 24초 루프 (이음매 없음).
+    2026-11-24 작가: 움직이는 컷을 장마다 1개로 줄이되 지루하면 안 된다 → 숨쉬기 줌(3%) 대신 눈에 보이는 이동."""
+    n = int(period * hz.FPS)
+    c = f"(1-cos(2*PI*on/{n}))/2"                       # 0 → 1 → 0
+    mx, my = "(iw-iw/zoom)", "(ih-ih/zoom)"
+    x, y = {"right": (f"{mx}*{c}", f"{my}/2"), "left": (f"{mx}*(1-{c})", f"{my}/2"),
+            "down": (f"{mx}/2", f"{my}*{c}"), "up": (f"{mx}/2", f"{my}*(1-{c})"),
+            "diag": (f"{mx}*{c}", f"{my}*{c}")}.get(mode, (f"{mx}*{c}", f"{my}/2"))
+    bw, bh = base
+    vf = (f"scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},"
+          f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={hz.W}x{hz.H}:fps={hz.FPS},setsar=1,format=yuv420p")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(hz.FPS), "-t", f"{n / hz.FPS:.3f}",
+                    "-i", image, "-vf", vf, "-frames:v", str(n), *X264_FAST, "-crf", "20", "-an",
+                    "-movflags", "+faststart", out], check=True, timeout=900)
+    return out
 
 
 def build_anime_loop(raw: str, out: str) -> str:
@@ -2631,7 +2656,11 @@ def _render(job, state, keys, save_fn):
                         print(f"[rodoku] 제{c['no']}장 장면{k + 1} 움직임 루프 실패 → Ken Burns: {e}", flush=True)
                         lp = pf(state, "work", f"loop{tag}.mp4")
                 if not hz.usable(lp):
-                    hz.build_kenburns_loop(img, lp, base=(2560, 1440), x264=X264_FAST)   # 4K 대신 2.5K 에서 줌 → 계산량 약 절반
+                    try:     # 정지 그림은 장면마다 다른 방향으로 천천히 흐르게 (2026-11-24)
+                        build_drift_loop(img, lp, DRIFT_MODES[(c["no"] + k) % len(DRIFT_MODES)])
+                    except Exception as e:
+                        print(f"[rodoku] 제{c['no']}장 장면{k + 1} 흐르는 화면 실패 → Ken Burns: {e}", flush=True)
+                        hz.build_kenburns_loop(img, lp, base=(2560, 1440), x264=X264_FAST)
             scene_loops[c["no"]].append(lp)
         loops[c["no"]] = scene_loops[c["no"]][0]
     title = state["plan"].get("title_ja", "")
